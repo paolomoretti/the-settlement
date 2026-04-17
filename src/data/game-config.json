@@ -1,0 +1,45 @@
+{
+  "starting": {
+    "headquarters": {
+      "position": "center",
+      "startingResources": {
+        "wood_log": 30,
+        "wood_plank": 20,
+        "stone": 30,
+        "coal": 10,
+        "iron_ore": 5,
+        "grain": 10,
+        "water": 5,
+        "fish": 5,
+        "bread": 10,
+        "hammer": 3,
+        "axe": 2,
+        "saw": 1,
+        "pickaxe": 1,
+        "scythe": 1
+      },
+      "startingPopulation": 10
+    },
+    "exploration": {
+      "initialRadius": 25
+    }
+  },
+
+  "population": {
+    "maxPerHut": 3,
+    "maxPerHouse": 6,
+    "workerWalkSpeed": 2.5
+  },
+
+  "economy": {
+    "baseProductionRate": 1.0,
+    "storageWarningThreshold": 0.8
+  },
+
+  "world": {
+    "mapSize": {
+      "width": 1000,
+      "height": 1000
+    }
+  }
+}

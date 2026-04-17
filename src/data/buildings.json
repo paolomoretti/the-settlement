@@ -1,0 +1,603 @@
+{
+  "headquarters": {
+    "id": "headquarters",
+    "name": "Headquarters",
+    "description": "Your main base. Stores resources and houses workers.",
+    "size": {
+      "width": 4,
+      "height": 4
+    },
+    "visual": {
+      "buildingHeight": 100,
+      "color": "#8b6914",
+      "sprite": "/assets/buildings/headquarters.png"
+    },
+    "buildCost": {},
+    "buildTime": 0,
+    "requiresRoad": false,
+    "storage": {
+      "capacity": 1000
+    },
+    "population": {
+      "provides": 10
+    },
+    "isHeadquarters": true,
+    "category": "core",
+    "tier": 1
+  },
+
+  "warehouse": {
+    "id": "warehouse",
+    "name": "Warehouse",
+    "description": "Large storage building for resources.",
+    "size": {
+      "width": 3,
+      "height": 3
+    },
+    "visual": {
+      "buildingHeight": 80,
+      "color": "#d4a574",
+      "sprite": "/assets/buildings/warehouse.png"
+    },
+    "buildCost": {
+      "wood_plank": 6,
+      "stone": 8
+    },
+    "buildTime": 60,
+    "requiresRoad": true,
+    "storage": {
+      "capacity": 500
+    },
+    "category": "core",
+    "tier": 1
+  },
+
+  "storehouse": {
+    "id": "storehouse",
+    "name": "Storehouse",
+    "description": "Medium storage building.",
+    "size": {
+      "width": 2,
+      "height": 2
+    },
+    "visual": {
+      "buildingHeight": 60,
+      "color": "#c4a574",
+      "sprite": "/assets/buildings/storehouse.png"
+    },
+    "buildCost": {
+      "wood_plank": 4,
+      "stone": 4
+    },
+    "buildTime": 40,
+    "requiresRoad": true,
+    "storage": {
+      "capacity": 200
+    },
+    "category": "core",
+    "tier": 1
+  },
+
+  "hut": {
+    "id": "hut",
+    "name": "Hut",
+    "description": "Basic housing for 3 workers.",
+    "size": {
+      "width": 2,
+      "height": 2
+    },
+    "visual": {
+      "buildingHeight": 50,
+      "color": "#8b6914",
+      "sprite": "/assets/buildings/hut.png"
+    },
+    "buildCost": {
+      "wood_log": 2,
+      "stone": 1
+    },
+    "buildTime": 30,
+    "requiresRoad": true,
+    "population": {
+      "provides": 3
+    },
+    "category": "residential",
+    "tier": 1,
+    "canUpgrade": "house"
+  },
+
+  "house": {
+    "id": "house",
+    "name": "House",
+    "description": "Advanced housing for 6 workers.",
+    "size": {
+      "width": 2,
+      "height": 2
+    },
+    "visual": {
+      "buildingHeight": 65,
+      "color": "#a68a5a",
+      "sprite": "/assets/buildings/house.png"
+    },
+    "buildCost": {
+      "wood_plank": 4,
+      "stone": 3
+    },
+    "buildTime": 45,
+    "requiresRoad": true,
+    "population": {
+      "provides": 6
+    },
+    "category": "residential",
+    "tier": 2
+  },
+
+  "lumberjack": {
+    "id": "lumberjack",
+    "name": "Lumberjack's Hut",
+    "description": "Harvests wood logs from trees.",
+    "size": {
+      "width": 2,
+      "height": 2
+    },
+    "visual": {
+      "buildingHeight": 60,
+      "color": "#8b4513",
+      "sprite": "/assets/buildings/lumberjack.png"
+    },
+    "buildCost": {
+      "wood_log": 3,
+      "stone": 1
+    },
+    "buildTime": 35,
+    "requiresRoad": true,
+    "production": {
+      "outputs": {
+        "wood_log": 1
+      },
+      "productionTime": 20,
+      "continuous": true
+    },
+    "population": {
+      "requires": 1
+    },
+    "category": "production",
+    "tier": 1
+  },
+
+  "sawmill": {
+    "id": "sawmill",
+    "name": "Sawmill",
+    "description": "Converts logs into planks.",
+    "size": {
+      "width": 2,
+      "height": 2
+    },
+    "visual": {
+      "buildingHeight": 65,
+      "color": "#a0826d",
+      "sprite": "/assets/buildings/sawmill.png"
+    },
+    "buildCost": {
+      "wood_log": 4,
+      "stone": 2
+    },
+    "buildTime": 40,
+    "requiresRoad": true,
+    "production": {
+      "outputs": {
+        "wood_plank": 2
+      },
+      "inputs": {
+        "wood_log": 1
+      },
+      "productionTime": 15,
+      "continuous": true
+    },
+    "population": {
+      "requires": 1
+    },
+    "category": "production",
+    "tier": 1
+  },
+
+  "forester": {
+    "id": "forester",
+    "name": "Forester's Hut",
+    "description": "Plants new trees to sustain forests.",
+    "size": {
+      "width": 2,
+      "height": 2
+    },
+    "visual": {
+      "buildingHeight": 55,
+      "color": "#6b8e23",
+      "sprite": "/assets/buildings/forester.png"
+    },
+    "buildCost": {
+      "wood_log": 3,
+      "stone": 1
+    },
+    "buildTime": 30,
+    "requiresRoad": true,
+    "production": {
+      "outputs": {},
+      "productionTime": 60,
+      "continuous": true
+    },
+    "population": {
+      "requires": 1
+    },
+    "category": "production",
+    "tier": 1
+  },
+
+  "quarry": {
+    "id": "quarry",
+    "name": "Quarry",
+    "description": "Extracts stone from rocks.",
+    "size": {
+      "width": 2,
+      "height": 2
+    },
+    "visual": {
+      "buildingHeight": 55,
+      "color": "#8c8c8c",
+      "sprite": "/assets/buildings/quarry.png"
+    },
+    "buildCost": {
+      "wood_log": 2,
+      "stone": 2
+    },
+    "buildTime": 35,
+    "requiresRoad": true,
+    "production": {
+      "outputs": {
+        "stone": 1
+      },
+      "productionTime": 25,
+      "continuous": true
+    },
+    "population": {
+      "requires": 1
+    },
+    "category": "production",
+    "tier": 1
+  },
+
+  "coal_mine": {
+    "id": "coal_mine",
+    "name": "Coal Mine",
+    "description": "Extracts coal from underground.",
+    "size": {
+      "width": 2,
+      "height": 2
+    },
+    "visual": {
+      "buildingHeight": 60,
+      "color": "#404040",
+      "sprite": "/assets/buildings/coal_mine.png"
+    },
+    "buildCost": {
+      "wood_plank": 4,
+      "stone": 4
+    },
+    "buildTime": 50,
+    "requiresRoad": true,
+    "production": {
+      "outputs": {
+        "coal": 1
+      },
+      "productionTime": 30,
+      "continuous": true
+    },
+    "population": {
+      "requires": 2
+    },
+    "category": "production",
+    "tier": 2
+  },
+
+  "iron_mine": {
+    "id": "iron_mine",
+    "name": "Iron Mine",
+    "description": "Extracts iron ore from underground.",
+    "size": {
+      "width": 2,
+      "height": 2
+    },
+    "visual": {
+      "buildingHeight": 60,
+      "color": "#8c5a3c",
+      "sprite": "/assets/buildings/iron_mine.png"
+    },
+    "buildCost": {
+      "wood_plank": 4,
+      "stone": 5
+    },
+    "buildTime": 55,
+    "requiresRoad": true,
+    "production": {
+      "outputs": {
+        "iron_ore": 1
+      },
+      "productionTime": 35,
+      "continuous": true
+    },
+    "population": {
+      "requires": 2
+    },
+    "category": "production",
+    "tier": 2
+  },
+
+  "iron_smelter": {
+    "id": "iron_smelter",
+    "name": "Iron Smelter",
+    "description": "Smelts iron ore into iron bars.",
+    "size": {
+      "width": 2,
+      "height": 2
+    },
+    "visual": {
+      "buildingHeight": 70,
+      "color": "#d2691e",
+      "sprite": "/assets/buildings/iron_smelter.png"
+    },
+    "buildCost": {
+      "wood_plank": 4,
+      "stone": 6
+    },
+    "buildTime": 50,
+    "requiresRoad": true,
+    "production": {
+      "outputs": {
+        "iron_bar": 1
+      },
+      "inputs": {
+        "iron_ore": 1,
+        "coal": 1
+      },
+      "productionTime": 25,
+      "continuous": true
+    },
+    "population": {
+      "requires": 1
+    },
+    "category": "production",
+    "tier": 2
+  },
+
+  "farm": {
+    "id": "farm",
+    "name": "Farm",
+    "description": "Grows grain for food production.",
+    "size": {
+      "width": 3,
+      "height": 3
+    },
+    "visual": {
+      "buildingHeight": 55,
+      "color": "#daa520",
+      "sprite": "/assets/buildings/farm.png"
+    },
+    "buildCost": {
+      "wood_plank": 3,
+      "stone": 2
+    },
+    "buildTime": 40,
+    "requiresRoad": true,
+    "production": {
+      "outputs": {
+        "grain": 2
+      },
+      "productionTime": 45,
+      "continuous": true
+    },
+    "population": {
+      "requires": 1
+    },
+    "category": "production",
+    "tier": 1
+  },
+
+  "mill": {
+    "id": "mill",
+    "name": "Mill",
+    "description": "Grinds grain into flour.",
+    "size": {
+      "width": 2,
+      "height": 2
+    },
+    "visual": {
+      "buildingHeight": 75,
+      "color": "#f5deb3",
+      "sprite": "/assets/buildings/mill.png"
+    },
+    "buildCost": {
+      "wood_plank": 4,
+      "stone": 3
+    },
+    "buildTime": 45,
+    "requiresRoad": true,
+    "production": {
+      "outputs": {
+        "flour": 2
+      },
+      "inputs": {
+        "grain": 1
+      },
+      "productionTime": 20,
+      "continuous": true
+    },
+    "population": {
+      "requires": 1
+    },
+    "category": "production",
+    "tier": 1
+  },
+
+  "bakery": {
+    "id": "bakery",
+    "name": "Bakery",
+    "description": "Bakes bread from flour and water.",
+    "size": {
+      "width": 2,
+      "height": 2
+    },
+    "visual": {
+      "buildingHeight": 60,
+      "color": "#cd853f",
+      "sprite": "/assets/buildings/bakery.png"
+    },
+    "buildCost": {
+      "wood_plank": 3,
+      "stone": 3
+    },
+    "buildTime": 40,
+    "requiresRoad": true,
+    "production": {
+      "outputs": {
+        "bread": 3
+      },
+      "inputs": {
+        "flour": 1,
+        "water": 1
+      },
+      "productionTime": 25,
+      "continuous": true
+    },
+    "population": {
+      "requires": 1
+    },
+    "category": "production",
+    "tier": 1
+  },
+
+  "well": {
+    "id": "well",
+    "name": "Well",
+    "description": "Provides fresh water.",
+    "size": {
+      "width": 1,
+      "height": 1
+    },
+    "visual": {
+      "buildingHeight": 30,
+      "color": "#4682b4",
+      "sprite": "/assets/buildings/well.png"
+    },
+    "buildCost": {
+      "stone": 3
+    },
+    "buildTime": 25,
+    "requiresRoad": true,
+    "production": {
+      "outputs": {
+        "water": 2
+      },
+      "productionTime": 15,
+      "continuous": true
+    },
+    "population": {
+      "requires": 1
+    },
+    "category": "production",
+    "tier": 1
+  },
+
+  "fisher": {
+    "id": "fisher",
+    "name": "Fisher's Hut",
+    "description": "Catches fish from water.",
+    "size": {
+      "width": 2,
+      "height": 2
+    },
+    "visual": {
+      "buildingHeight": 50,
+      "color": "#5f9ea0",
+      "sprite": "/assets/buildings/fisher.png"
+    },
+    "buildCost": {
+      "wood_log": 2,
+      "stone": 1
+    },
+    "buildTime": 30,
+    "requiresRoad": true,
+    "production": {
+      "outputs": {
+        "fish": 1
+      },
+      "productionTime": 30,
+      "continuous": true
+    },
+    "population": {
+      "requires": 1
+    },
+    "category": "production",
+    "tier": 1
+  },
+
+  "tool_smithy": {
+    "id": "tool_smithy",
+    "name": "Tool Smithy",
+    "description": "Crafts tools from iron bars.",
+    "size": {
+      "width": 2,
+      "height": 2
+    },
+    "visual": {
+      "buildingHeight": 65,
+      "color": "#696969",
+      "sprite": "/assets/buildings/tool_smithy.png"
+    },
+    "buildCost": {
+      "wood_plank": 4,
+      "stone": 4
+    },
+    "buildTime": 50,
+    "requiresRoad": true,
+    "production": {
+      "outputs": {
+        "hammer": 1
+      },
+      "inputs": {
+        "iron_bar": 1
+      },
+      "productionTime": 30,
+      "continuous": true
+    },
+    "population": {
+      "requires": 1
+    },
+    "category": "production",
+    "tier": 2
+  },
+
+  "barracks": {
+    "id": "barracks",
+    "name": "Barracks",
+    "description": "Trains soldiers for defense.",
+    "size": {
+      "width": 3,
+      "height": 3
+    },
+    "visual": {
+      "buildingHeight": 75,
+      "color": "#8b0000",
+      "sprite": "/assets/buildings/barracks.png"
+    },
+    "buildCost": {
+      "wood_plank": 6,
+      "stone": 8,
+      "iron_bar": 2
+    },
+    "buildTime": 60,
+    "requiresRoad": true,
+    "population": {
+      "requires": 2
+    },
+    "category": "military",
+    "tier": 2
+  }
+}

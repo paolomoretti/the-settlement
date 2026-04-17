@@ -1,0 +1,202 @@
+{
+  "wood_log": {
+    "id": "wood_log",
+    "name": "Wood Log",
+    "category": "raw",
+    "description": "Raw timber from trees",
+    "stackSize": 50,
+    "icon": "/assets/ui/icons/wood_log.png"
+  },
+  "wood_plank": {
+    "id": "wood_plank",
+    "name": "Wood Plank",
+    "category": "refined",
+    "description": "Processed timber for construction",
+    "stackSize": 50,
+    "icon": "/assets/ui/icons/wood_plank.png"
+  },
+  "stone": {
+    "id": "stone",
+    "name": "Stone",
+    "category": "raw",
+    "description": "Building stone",
+    "stackSize": 50,
+    "icon": "/assets/ui/icons/stone.png"
+  },
+  "coal": {
+    "id": "coal",
+    "name": "Coal",
+    "category": "raw",
+    "description": "Fuel for smelting",
+    "stackSize": 50,
+    "icon": "/assets/ui/icons/coal.png"
+  },
+  "iron_ore": {
+    "id": "iron_ore",
+    "name": "Iron Ore",
+    "category": "raw",
+    "description": "Raw iron from mines",
+    "stackSize": 50,
+    "icon": "/assets/ui/icons/iron_ore.png"
+  },
+  "iron_bar": {
+    "id": "iron_bar",
+    "name": "Iron Bar",
+    "category": "refined",
+    "description": "Smelted iron for tools and weapons",
+    "stackSize": 50,
+    "icon": "/assets/ui/icons/iron_bar.png"
+  },
+  "gold_ore": {
+    "id": "gold_ore",
+    "name": "Gold Ore",
+    "category": "raw",
+    "description": "Raw gold from mines",
+    "stackSize": 50,
+    "icon": "/assets/ui/icons/gold_ore.png"
+  },
+  "gold_bar": {
+    "id": "gold_bar",
+    "name": "Gold Bar",
+    "category": "refined",
+    "description": "Smelted gold coins",
+    "stackSize": 50,
+    "icon": "/assets/ui/icons/gold_bar.png"
+  },
+  "granite": {
+    "id": "granite",
+    "name": "Granite",
+    "category": "raw",
+    "description": "High-quality building stone",
+    "stackSize": 50,
+    "icon": "/assets/ui/icons/granite.png"
+  },
+  "grain": {
+    "id": "grain",
+    "name": "Grain",
+    "category": "food",
+    "description": "Harvested from farms",
+    "stackSize": 100,
+    "icon": "/assets/ui/icons/grain.png"
+  },
+  "flour": {
+    "id": "flour",
+    "name": "Flour",
+    "category": "food",
+    "description": "Ground grain from mill",
+    "stackSize": 100,
+    "icon": "/assets/ui/icons/flour.png"
+  },
+  "bread": {
+    "id": "bread",
+    "name": "Bread",
+    "category": "food",
+    "description": "Baked bread to feed workers",
+    "stackSize": 100,
+    "icon": "/assets/ui/icons/bread.png"
+  },
+  "water": {
+    "id": "water",
+    "name": "Water",
+    "category": "food",
+    "description": "Fresh water from wells",
+    "stackSize": 100,
+    "icon": "/assets/ui/icons/water.png"
+  },
+  "fish": {
+    "id": "fish",
+    "name": "Fish",
+    "category": "food",
+    "description": "Caught from rivers and lakes",
+    "stackSize": 100,
+    "icon": "/assets/ui/icons/fish.png"
+  },
+  "meat": {
+    "id": "meat",
+    "name": "Meat",
+    "category": "food",
+    "description": "Hunted from wildlife",
+    "stackSize": 100,
+    "icon": "/assets/ui/icons/meat.png"
+  },
+  "hammer": {
+    "id": "hammer",
+    "name": "Hammer",
+    "category": "tool",
+    "description": "For construction workers",
+    "stackSize": 20,
+    "icon": "/assets/ui/icons/hammer.png"
+  },
+  "axe": {
+    "id": "axe",
+    "name": "Axe",
+    "category": "tool",
+    "description": "For lumberjacks",
+    "stackSize": 20,
+    "icon": "/assets/ui/icons/axe.png"
+  },
+  "saw": {
+    "id": "saw",
+    "name": "Saw",
+    "category": "tool",
+    "description": "For sawmill workers",
+    "stackSize": 20,
+    "icon": "/assets/ui/icons/saw.png"
+  },
+  "pickaxe": {
+    "id": "pickaxe",
+    "name": "Pickaxe",
+    "category": "tool",
+    "description": "For miners",
+    "stackSize": 20,
+    "icon": "/assets/ui/icons/pickaxe.png"
+  },
+  "shovel": {
+    "id": "shovel",
+    "name": "Shovel",
+    "category": "tool",
+    "description": "For various workers",
+    "stackSize": 20,
+    "icon": "/assets/ui/icons/shovel.png"
+  },
+  "fishing_rod": {
+    "id": "fishing_rod",
+    "name": "Fishing Rod",
+    "category": "tool",
+    "description": "For fishermen",
+    "stackSize": 20,
+    "icon": "/assets/ui/icons/fishing_rod.png"
+  },
+  "scythe": {
+    "id": "scythe",
+    "name": "Scythe",
+    "category": "tool",
+    "description": "For farmers",
+    "stackSize": 20,
+    "icon": "/assets/ui/icons/scythe.png"
+  },
+  "sword": {
+    "id": "sword",
+    "name": "Sword",
+    "category": "weapon",
+    "description": "For soldiers",
+    "stackSize": 20,
+    "icon": "/assets/ui/icons/sword.png"
+  },
+  "shield": {
+    "id": "shield",
+    "name": "Shield",
+    "category": "weapon",
+    "description": "For soldiers",
+    "stackSize": 20,
+    "icon": "/assets/ui/icons/shield.png"
+  },
+  "bow": {
+    "id": "bow",
+    "name": "Bow",
+    "category": "weapon",
+    "description": "For archers",
+    "stackSize": 20,
+    "icon": "/assets/ui/icons/bow.png"
+  }
+}

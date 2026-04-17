@@ -558,14 +558,20 @@ export class RenderSystem extends System {
     this.ctx.save();
 
     const isInactive = building && !building.isActive;
+    const isUnderConstruction = building && building.state === 'under_construction';
 
     // Apply fade effect for selected buildings
     if (isSelected && building) {
       this.ctx.globalAlpha = 0.7;
     }
 
+    // Apply visual treatment for under-construction buildings
+    if (isUnderConstruction) {
+      this.ctx.globalAlpha = 0.4 + 0.6 * building!.constructionProgress;
+    }
+
     // Apply grayscale + dim for inactive buildings
-    if (isInactive) {
+    if (isInactive && !isUnderConstruction) {
       this.ctx.filter = 'grayscale(85%) brightness(0.65)';
     }
 
@@ -626,8 +632,14 @@ export class RenderSystem extends System {
       this.ctx.filter = 'none';
     }
 
-    // Status bubble for inactive buildings
-    if (isInactive && building) {
+    // Construction overlay for buildings under construction
+    if (building && building.state === 'under_construction') {
+      this.ctx.globalAlpha = 1;
+      this.renderConstructionOverlay(building);
+    }
+
+    // Status bubble for inactive buildings (only when complete)
+    if (isInactive && building && building.isComplete()) {
       const hovered = entity.id === this.hoveredEntityId;
       this.renderStatusBubble(
         building, hovered,
@@ -806,6 +818,60 @@ export class RenderSystem extends System {
     } else {
       drawIcon();
     }
+
+    this.ctx.restore();
+  }
+
+  private renderConstructionOverlay(building: Building): void {
+    const tileW = this.iso.tileWidth;
+    const tileH = this.iso.tileHeight;
+    const width = building.width;
+    const depth = building.height;
+
+    const centerX = ((width - depth) * tileW / 2) / 2;
+    const frontY = (width + depth) * tileH / 2;
+
+    // Progress bar at the bottom of the building footprint
+    const barWidth = (width + depth) * tileW / 3;
+    const barHeight = 4;
+    const barX = centerX - barWidth / 2;
+    const barY = frontY + 4;
+
+    // Red background
+    this.ctx.fillStyle = '#882222';
+    this.ctx.fillRect(barX, barY, barWidth, barHeight);
+
+    // Green progress fill
+    this.ctx.fillStyle = '#44aa44';
+    this.ctx.fillRect(barX, barY, barWidth * building.constructionProgress, barHeight);
+
+    // Thin border
+    this.ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    this.ctx.lineWidth = 0.5;
+    this.ctx.strokeRect(barX, barY, barWidth, barHeight);
+
+    // Hammer icon above the building
+    const hammerX = centerX;
+    const hammerY = frontY / 2 - building.buildingHeight / 2 - 14;
+    const bob = Math.sin(Date.now() * 0.005) * 4;
+
+    this.ctx.save();
+    this.ctx.translate(hammerX, hammerY + bob);
+
+    // Hammer handle
+    this.ctx.strokeStyle = '#8B6914';
+    this.ctx.lineWidth = 4;
+    this.ctx.beginPath();
+    this.ctx.moveTo(0, 6);
+    this.ctx.lineTo(0, 22);
+    this.ctx.stroke();
+
+    // Hammer head
+    this.ctx.fillStyle = '#888888';
+    this.ctx.fillRect(-10, -4, 20, 11);
+    this.ctx.strokeStyle = '#555555';
+    this.ctx.lineWidth = 1.5;
+    this.ctx.strokeRect(-10, -4, 20, 11);
 
     this.ctx.restore();
   }

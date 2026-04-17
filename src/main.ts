@@ -5,6 +5,7 @@
 import { Game } from './core/Game';
 import { eventBus } from './core/EventBus';
 import { dataManager } from './data/DataManager';
+import { BuildingMenu } from './ui/BuildingMenu';
 
 // Wait for DOM to be ready
 window.addEventListener('DOMContentLoaded', () => {
@@ -33,15 +34,21 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupUIControls(game: Game): void {
+  // Initialize building menu
+  const buildingMenu = new BuildingMenu(game);
+
   // Listen to mode changes to update button states
   eventBus.on('input:mode_changed', (mode) => {
     const modeToButtonId: Record<string, string> = {
       'view': 'btn-view',
-      'build_road': 'btn-road',
-      'build_warehouse': 'btn-warehouse',
-      'build_lumberjack': 'btn-lumberjack'
+      'build_road': 'btn-road'
     };
     updateButtonStates(modeToButtonId[mode] || 'btn-view');
+
+    // Refresh building menu when mode changes (to update affordability)
+    if (document.getElementById('building-menu-panel')?.style.display === 'block') {
+      buildingMenu.refresh();
+    }
   });
 
   // View mode
@@ -56,16 +63,10 @@ function setupUIControls(game: Game): void {
     game.inputSystem.setMode('build_road');
   });
 
-  // Build warehouse mode
-  const btnWarehouse = document.getElementById('btn-warehouse');
-  btnWarehouse?.addEventListener('click', () => {
-    game.inputSystem.setMode('build_warehouse');
-  });
-
-  // Build lumberjack mode
-  const btnLumberjack = document.getElementById('btn-lumberjack');
-  btnLumberjack?.addEventListener('click', () => {
-    game.inputSystem.setMode('build_lumberjack');
+  // Building menu button
+  const btnBuildingMenu = document.getElementById('btn-building-menu');
+  btnBuildingMenu?.addEventListener('click', () => {
+    buildingMenu.toggle();
   });
 
   // Spawn worker
@@ -157,7 +158,7 @@ function hideInventoryPanel(): void {
 }
 
 function updateButtonStates(activeButtonId: string): void {
-  const buttons = ['btn-view', 'btn-road', 'btn-warehouse', 'btn-lumberjack'];
+  const buttons = ['btn-view', 'btn-road'];
   buttons.forEach(id => {
     const btn = document.getElementById(id);
     if (btn) {

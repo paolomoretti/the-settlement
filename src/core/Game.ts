@@ -16,7 +16,7 @@ import { Movable } from '@/components/Movable';
 import { Worker } from '@/components/Worker';
 import { Building } from '@/components/Building';
 import { dataManager } from '@/data/DataManager';
-import { Inventory } from '@/types/GameData';
+import { Inventory, BuildingType } from '@/types/GameData';
 
 // Entity factories
 import { createWorker, createBuilding, createBaseCamp, createWarehouse } from '@/entities/EntityFactory';
@@ -78,8 +78,19 @@ export class Game {
   private setupEventListeners(): void {
     // Building events
     eventBus.on('build:road', (data) => this.buildRoad(data.x, data.y));
-    eventBus.on('build:warehouse', (data) => this.buildWarehouse(data.x, data.y));
-    eventBus.on('build:lumberjack', (data) => this.buildLumberjack(data.x, data.y));
+
+    // Generic building handler for all building types
+    const buildingTypes = [
+      'warehouse', 'hut', 'house',
+      'lumberjack', 'sawmill', 'quarry', 'farm', 'mill', 'bakery', 'well', 'fisher',
+      'coal_mine', 'iron_mine', 'iron_smelter', 'tool_smithy',
+      'barracks'
+    ];
+
+    buildingTypes.forEach(type => {
+      eventBus.on(`build:${type}`, (data) => this.buildGeneric(type as any, data.x, data.y));
+    });
+
     eventBus.on('spawn:worker', () => this.spawnWorker());
 
     // Selection events
@@ -251,49 +262,62 @@ export class Game {
     console.log(`👥 Population: ${this.population.current}/${this.population.max}`);
   }
 
+  private buildGeneric(buildingType: BuildingType, x: number, y: number): void {
+    // Get building definition
+    const buildingDef = dataManager.getBuilding(buildingType);
+    if (!buildingDef) {
+      console.error(`Unknown building type: ${buildingType}`);
+      return;
+    }
+
+    // Check affordability
+    if (!dataManager.canAfford(buildingType, this.inventory)) {
+      const missing = dataManager.getMissingResources(buildingType, this.inventory);
+      console.warn(`Cannot afford ${buildingDef.name}. Missing:`, missing);
+      return;
+    }
+
+    // Check if area is explored
+    if (!this.isAreaExplored(x, y, buildingDef.size.width, buildingDef.size.height)) {
+      console.warn('Cannot build in unexplored area');
+      return;
+    }
+
+    // Check if space is available
+    if (!this.canPlaceBuilding(x, y, buildingDef.size.width, buildingDef.size.height, undefined)) {
+      console.warn('Cannot build here - space occupied');
+      return;
+    }
+
+    // Deduct resources
+    Object.entries(buildingDef.buildCost).forEach(([resourceId, amount]) => {
+      this.inventory[resourceId] = (this.inventory[resourceId] || 0) - amount;
+    });
+
+    // Create building entity
+    const entity = createBuilding(buildingType, x, y);
+    const building = entity.getComponent(Building);
+
+    if (!building) return;
+
+    this.addEntity(entity);
+    this.occupyBuildingTiles(entity.id, x, y, building.width, building.height);
+
+    // Update population if residential
+    if (buildingDef.population?.provides) {
+      this.population.max += buildingDef.population.provides;
+    }
+
+    audioManager.playSound('build_placed');
+    console.log(`✅ ${buildingDef.name} (${building.width}x${building.height}) built at (${x}, ${y})`);
+    console.log(`📦 Remaining resources:`, this.inventory);
+    console.log(`👥 Population: ${this.population.current}/${this.population.max}`);
+  }
+
   private buildWarehouse(x: number, y: number): void {
-    const warehouse = createWarehouse(x, y);
-    const building = warehouse.getComponent(Building);
-
-    if (!building) return;
-
-    if (!this.isAreaExplored(x, y, building.width, building.height)) {
-      console.warn('Cannot build warehouse in unexplored area');
-      return;
-    }
-
-    if (!this.canPlaceBuilding(x, y, building.width, building.height, undefined)) {
-      console.warn('Cannot build warehouse here - space occupied');
-      return;
-    }
-
-    this.addEntity(warehouse);
-    this.occupyBuildingTiles(warehouse.id, x, y, building.width, building.height);
-    audioManager.playSound('build_placed');
-    console.log(`Warehouse (${building.width}x${building.height}) built at (${x}, ${y})`);
+    this.buildGeneric('warehouse', x, y);
   }
 
-  private buildLumberjack(x: number, y: number): void {
-    const lumberjack = createBuilding('lumberjack', x, y);
-    const building = lumberjack.getComponent(Building);
-
-    if (!building) return;
-
-    if (!this.isAreaExplored(x, y, building.width, building.height)) {
-      console.warn('Cannot build lumberjack in unexplored area');
-      return;
-    }
-
-    if (!this.canPlaceBuilding(x, y, building.width, building.height, undefined)) {
-      console.warn('Cannot build lumberjack here - space occupied');
-      return;
-    }
-
-    this.addEntity(lumberjack);
-    this.occupyBuildingTiles(lumberjack.id, x, y, building.width, building.height);
-    audioManager.playSound('build_placed');
-    console.log(`Lumberjack (${building.width}x${building.height}) built at (${x}, ${y})`);
-  }
 
   private spawnWorker(): void {
     // Spawn near warehouse (but not on it - warehouse is 3x3)

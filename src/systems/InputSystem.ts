@@ -5,7 +5,26 @@
 import { eventBus } from '@/core/EventBus';
 import { RenderSystem } from './RenderSystem';
 
-export type InputMode = 'view' | 'build_road' | 'build_warehouse' | 'build_lumberjack' | 'select';
+export type InputMode =
+  | 'view'
+  | 'select'
+  | 'build_road'
+  | 'build_warehouse'
+  | 'build_lumberjack'
+  | 'build_hut'
+  | 'build_house'
+  | 'build_sawmill'
+  | 'build_quarry'
+  | 'build_farm'
+  | 'build_mill'
+  | 'build_bakery'
+  | 'build_well'
+  | 'build_fisher'
+  | 'build_coal_mine'
+  | 'build_iron_mine'
+  | 'build_iron_smelter'
+  | 'build_tool_smithy'
+  | 'build_barracks';
 
 export class InputSystem {
   private mode: InputMode = 'view';
@@ -160,13 +179,77 @@ export class InputSystem {
           case 'build_road':
             eventBus.emit('build:road', { x: gridX, y: gridY });
             break;
+
+          // Core buildings
           case 'build_warehouse':
             eventBus.emit('build:warehouse', { x: gridX, y: gridY });
-            this.setMode('view'); // Single placement
+            this.setMode('view');
             break;
+
+          // Residential
+          case 'build_hut':
+            eventBus.emit('build:hut', { x: gridX, y: gridY });
+            this.setMode('view');
+            break;
+          case 'build_house':
+            eventBus.emit('build:house', { x: gridX, y: gridY });
+            this.setMode('view');
+            break;
+
+          // Production
           case 'build_lumberjack':
             eventBus.emit('build:lumberjack', { x: gridX, y: gridY });
-            this.setMode('view'); // Single placement
+            this.setMode('view');
+            break;
+          case 'build_sawmill':
+            eventBus.emit('build:sawmill', { x: gridX, y: gridY });
+            this.setMode('view');
+            break;
+          case 'build_quarry':
+            eventBus.emit('build:quarry', { x: gridX, y: gridY });
+            this.setMode('view');
+            break;
+          case 'build_farm':
+            eventBus.emit('build:farm', { x: gridX, y: gridY });
+            this.setMode('view');
+            break;
+          case 'build_mill':
+            eventBus.emit('build:mill', { x: gridX, y: gridY });
+            this.setMode('view');
+            break;
+          case 'build_bakery':
+            eventBus.emit('build:bakery', { x: gridX, y: gridY });
+            this.setMode('view');
+            break;
+          case 'build_well':
+            eventBus.emit('build:well', { x: gridX, y: gridY });
+            this.setMode('view');
+            break;
+          case 'build_fisher':
+            eventBus.emit('build:fisher', { x: gridX, y: gridY });
+            this.setMode('view');
+            break;
+          case 'build_coal_mine':
+            eventBus.emit('build:coal_mine', { x: gridX, y: gridY });
+            this.setMode('view');
+            break;
+          case 'build_iron_mine':
+            eventBus.emit('build:iron_mine', { x: gridX, y: gridY });
+            this.setMode('view');
+            break;
+          case 'build_iron_smelter':
+            eventBus.emit('build:iron_smelter', { x: gridX, y: gridY });
+            this.setMode('view');
+            break;
+          case 'build_tool_smithy':
+            eventBus.emit('build:tool_smithy', { x: gridX, y: gridY });
+            this.setMode('view');
+            break;
+
+          // Military
+          case 'build_barracks':
+            eventBus.emit('build:barracks', { x: gridX, y: gridY });
+            this.setMode('view');
             break;
         }
       }

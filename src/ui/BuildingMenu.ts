@@ -1,0 +1,272 @@
+/**
+ * BuildingMenu - UI for browsing and selecting buildings to construct
+ */
+
+import { Game } from '@/core/Game';
+import { dataManager } from '@/data/DataManager';
+import { BuildingDefinition, BuildingType } from '@/types/GameData';
+
+export class BuildingMenu {
+  private game: Game;
+  private panel: HTMLElement | null = null;
+  private currentCategory: 'residential' | 'production' | 'military' | 'infrastructure' = 'production';
+
+  constructor(game: Game) {
+    this.game = game;
+    this.setupUI();
+  }
+
+  private setupUI(): void {
+    this.panel = document.getElementById('building-menu-panel');
+    if (!this.panel) return;
+
+    // Tab buttons
+    const tabs = ['residential', 'production', 'military', 'infrastructure'] as const;
+    tabs.forEach(tab => {
+      const btn = document.getElementById(`tab-${tab}`);
+      btn?.addEventListener('click', () => this.switchCategory(tab));
+    });
+
+    // Close button
+    const closeBtn = document.getElementById('btn-close-building-menu');
+    closeBtn?.addEventListener('click', () => this.close());
+  }
+
+  open(): void {
+    if (!this.panel) return;
+    this.panel.style.display = 'block';
+    this.refresh();
+  }
+
+  close(): void {
+    if (!this.panel) return;
+    this.panel.style.display = 'none';
+  }
+
+  toggle(): void {
+    if (!this.panel) return;
+    if (this.panel.style.display === 'block') {
+      this.close();
+    } else {
+      this.open();
+    }
+  }
+
+  private switchCategory(category: typeof this.currentCategory): void {
+    this.currentCategory = category;
+
+    // Update tab button states
+    const tabs = ['residential', 'production', 'military', 'infrastructure'];
+    tabs.forEach(tab => {
+      const btn = document.getElementById(`tab-${tab}`);
+      if (btn) {
+        if (tab === category) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      }
+    });
+
+    this.refresh();
+  }
+
+  refresh(): void {
+    const container = document.getElementById('building-cards-container');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    // Get buildings for current category
+    const buildings = dataManager.getBuildingsByCategory(this.currentCategory);
+
+    // Filter out base camp
+    const buildableBuildings = buildings.filter(b => !b.isHeadquarters);
+
+    if (buildableBuildings.length === 0) {
+      container.innerHTML = '<div style="padding: 20px; text-align: center; opacity: 0.6;">No buildings in this category yet</div>';
+      return;
+    }
+
+    buildableBuildings.forEach(building => {
+      const card = this.createBuildingCard(building);
+      container.appendChild(card);
+    });
+  }
+
+  private createBuildingCard(building: BuildingDefinition): HTMLElement {
+    const card = document.createElement('div');
+    card.className = 'building-card';
+
+    // Check affordability
+    const canAfford = dataManager.canAfford(building.id, this.game.inventory);
+    const missingResources = dataManager.getMissingResources(building.id, this.game.inventory);
+    const hasMissing = Object.keys(missingResources).length > 0;
+
+    if (!canAfford) {
+      card.classList.add('unaffordable');
+    }
+
+    // Building preview (colored square for now)
+    const preview = document.createElement('div');
+    preview.className = 'building-preview';
+    preview.style.backgroundColor = building.visual.color;
+    preview.style.width = '80px';
+    preview.style.height = '60px';
+    preview.style.borderRadius = '4px';
+    preview.style.marginBottom = '8px';
+
+    // Building name
+    const name = document.createElement('div');
+    name.className = 'building-name';
+    name.textContent = building.name;
+
+    // Description
+    const desc = document.createElement('div');
+    desc.className = 'building-description';
+    desc.textContent = building.description;
+
+    // Size info
+    const sizeInfo = document.createElement('div');
+    sizeInfo.className = 'building-info';
+    sizeInfo.textContent = `Size: ${building.size.width}×${building.size.height}`;
+
+    // Build cost
+    const costSection = document.createElement('div');
+    costSection.className = 'building-cost';
+    costSection.innerHTML = '<strong>Cost:</strong>';
+
+    const costList = document.createElement('div');
+    costList.style.marginTop = '4px';
+
+    if (Object.keys(building.buildCost).length === 0) {
+      costList.textContent = 'Free';
+    } else {
+      Object.entries(building.buildCost).forEach(([resourceId, amount]) => {
+        const resource = dataManager.getResource(resourceId as any);
+        if (!resource) return;
+
+        const costItem = document.createElement('div');
+        costItem.className = 'cost-item';
+
+        const available = this.game.inventory[resourceId] || 0;
+        const hasEnough = available >= amount;
+
+        costItem.innerHTML = `
+          <span style="color: ${hasEnough ? '#4caf50' : '#f44336'}">
+            ${hasEnough ? '✓' : '✗'}
+          </span>
+          <span>${resource.name}: ${amount}</span>
+          ${!hasEnough ? `<span style="color: #f44336; font-size: 10px;"> (need ${amount - available})</span>` : ''}
+        `;
+
+        costList.appendChild(costItem);
+      });
+    }
+
+    costSection.appendChild(costList);
+
+    // Production info
+    if (building.production) {
+      const prodSection = document.createElement('div');
+      prodSection.className = 'building-production';
+
+      const outputs = Object.entries(building.production.outputs);
+      const inputs = building.production.inputs ? Object.entries(building.production.inputs) : [];
+
+      if (inputs.length > 0) {
+        // Conversion
+        const inputStr = inputs.map(([id, amt]) => {
+          const res = dataManager.getResource(id as any);
+          return `${res?.name || id}`;
+        }).join(', ');
+
+        const outputStr = outputs.map(([id, amt]) => {
+          const res = dataManager.getResource(id as any);
+          return `${amt} ${res?.name || id}`;
+        }).join(', ');
+
+        prodSection.innerHTML = `<strong>Converts:</strong><br>${inputStr} → ${outputStr}`;
+      } else {
+        // Production
+        const outputStr = outputs.map(([id, amt]) => {
+          const res = dataManager.getResource(id as any);
+          return `${amt} ${res?.name || id}`;
+        }).join(', ');
+
+        prodSection.innerHTML = `<strong>Produces:</strong><br>${outputStr} every ${building.production.productionTime}s`;
+      }
+
+      costSection.appendChild(prodSection);
+    }
+
+    // Population requirements
+    if (building.population) {
+      const popSection = document.createElement('div');
+      popSection.className = 'building-info';
+
+      if (building.population.provides) {
+        popSection.innerHTML = `<strong>Housing:</strong> +${building.population.provides} population`;
+      }
+      if (building.population.requires) {
+        popSection.innerHTML = `<strong>Workers:</strong> ${building.population.requires} needed`;
+      }
+
+      costSection.appendChild(popSection);
+    }
+
+    // Build button
+    const buildBtn = document.createElement('button');
+    buildBtn.className = 'build-button';
+    buildBtn.textContent = canAfford ? 'Build' : 'Cannot Afford';
+    buildBtn.disabled = !canAfford;
+
+    buildBtn.addEventListener('click', () => {
+      if (canAfford) {
+        this.startBuilding(building.id);
+      }
+    });
+
+    // Assemble card
+    card.appendChild(preview);
+    card.appendChild(name);
+    card.appendChild(desc);
+    card.appendChild(sizeInfo);
+    card.appendChild(costSection);
+    card.appendChild(buildBtn);
+
+    return card;
+  }
+
+  private startBuilding(buildingType: BuildingType): void {
+    // Set the appropriate build mode based on building type
+    const modeMap: { [key: string]: string } = {
+      'warehouse': 'build_warehouse',
+      'lumberjack': 'build_lumberjack',
+      'hut': 'build_hut',
+      'house': 'build_house',
+      'sawmill': 'build_sawmill',
+      'quarry': 'build_quarry',
+      'farm': 'build_farm',
+      'mill': 'build_mill',
+      'bakery': 'build_bakery',
+      'well': 'build_well',
+      'fisher': 'build_fisher',
+      'coal_mine': 'build_coal_mine',
+      'iron_mine': 'build_iron_mine',
+      'iron_smelter': 'build_iron_smelter',
+      'tool_smithy': 'build_tool_smithy',
+      'barracks': 'build_barracks'
+    };
+
+    const mode = modeMap[buildingType] || `build_${buildingType}`;
+
+    // Close the menu
+    this.close();
+
+    // Enter build mode
+    this.game.inputSystem.setMode(mode as any);
+
+    console.log(`🏗️ Entering build mode: ${buildingType}`);
+  }
+}

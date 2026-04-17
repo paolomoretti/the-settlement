@@ -11,6 +11,7 @@ import { Worker } from '@/components/Worker';
 import { TileMap } from '@/map/TileMap';
 import { Isometric } from '@/utils/Isometric';
 import { Tile } from '@/map/Tile';
+import { dataManager } from '@/data/DataManager';
 
 export class RenderSystem extends System {
   private ctx: CanvasRenderingContext2D;
@@ -251,14 +252,24 @@ export class RenderSystem extends System {
     const { mode, gridX, gridY } = preview;
 
     if (mode === 'build_road') {
-      // Show road preview
       this.renderRoadPreview(gridX, gridY);
-    } else if (mode === 'build_warehouse') {
-      // Show warehouse preview (3x3)
-      this.renderBuildingPreview(gridX, gridY, 3, 3, 80, '#d4a574');
-    } else if (mode === 'build_lumberjack') {
-      // Show lumberjack preview (2x2)
-      this.renderBuildingPreview(gridX, gridY, 2, 2, 60, '#8b4513');
+      return;
+    }
+
+    // Extract building type from mode (e.g., "build_warehouse" -> "warehouse")
+    const buildingType = mode.replace('build_', '');
+
+    // Get building definition
+    const buildingDef = dataManager.getBuilding(buildingType as any);
+    if (buildingDef) {
+      this.renderBuildingPreview(
+        gridX,
+        gridY,
+        buildingDef.size.width,
+        buildingDef.size.height,
+        buildingDef.visual.buildingHeight,
+        buildingDef.visual.color
+      );
     }
   }
 

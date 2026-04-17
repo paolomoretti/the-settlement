@@ -8,6 +8,7 @@ import { Renderable } from '@/components/Renderable';
 import { Movable } from '@/components/Movable';
 import { Worker } from '@/components/Worker';
 import { Building, BuildingType } from '@/components/Building';
+import { dataManager } from '@/data/DataManager';
 
 export function createWorker(x: number, y: number): Entity {
   const entity = new Entity();
@@ -36,61 +37,49 @@ export function createBuilding(
 
   entity.addComponent(new Position(x, y));
 
-  // Different colors, sizes, and 3D properties for different buildings
-  let color = '#8b7355';
-  let width = 2; // tiles
-  let depth = 2; // tiles
-  let height = 50; // 3D height in pixels
+  // Get building definition from data manager
+  const buildingDef = dataManager.getBuilding(buildingType);
 
-  switch (buildingType) {
-    case 'base_camp':
-      color = '#8b1a1a'; // Dark red
-      width = 6;
-      depth = 6;
-      height = 120;
-      break;
-    case 'warehouse':
-      color = '#d4a574';
-      width = 3;
-      depth = 3;
-      height = 80;
-      break;
-    case 'lumberjack':
-      color = '#8b4513';
-      width = 2;
-      depth = 2;
-      height = 60;
-      break;
-    case 'sawmill':
-      color = '#cd853f';
-      width = 2;
-      depth = 2;
-      height = 65;
-      break;
-    case 'quarry':
-      color = '#696969';
-      width = 2;
-      depth = 2;
-      height = 55;
-      break;
-    case 'farm':
-      color = '#f0e68c';
-      width = 3;
-      depth = 2;
-      height = 45;
-      break;
+  if (!buildingDef) {
+    console.error(`Unknown building type: ${buildingType}`);
+    // Fallback to default values
+    const color = '#8b7355';
+    const width = 2;
+    const depth = 2;
+    const height = 50;
+
+    entity.addComponent(new Renderable(
+      'rectangle',
+      color,
+      { width: width * 32, height: depth * 32 },
+      0,
+      undefined,
+      0
+    ));
+
+    entity.addComponent(new Building(buildingType, width, depth, height));
+
+    return entity;
   }
+
+  // Use data from building definition
+  const { size, visual } = buildingDef;
 
   entity.addComponent(new Renderable(
     'rectangle',
-    color,
-    { width: width * 32, height: depth * 32 },
+    visual.color,
+    { width: size.width * 32, height: size.height * 32 },
     0,
     undefined,
     0 // Layer 0 (below workers)
   ));
 
-  entity.addComponent(new Building(buildingType, width, depth, height));
+  entity.addComponent(new Building(
+    buildingType,
+    size.width,
+    size.height,
+    visual.buildingHeight
+  ));
 
   return entity;
 }

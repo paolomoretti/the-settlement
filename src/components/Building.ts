@@ -21,19 +21,24 @@ export class Building extends Component {
   public height: number; // Depth in tiles (for isometric footprint)
   public buildingHeight: number; // Visual 3D height in pixels
   public passable: boolean; // Can workers walk through?
+  public requiresRoad: boolean;
+  public isActive: boolean = true;
 
   constructor(
     public buildingType: BuildingType,
     width: number = 1,
     height: number = 1,
     buildingHeight: number = 40,
-    passable: boolean = false
+    passable: boolean = false,
+    requiresRoad: boolean = false
   ) {
     super();
     this.width = width;
     this.height = height;
     this.buildingHeight = buildingHeight;
     this.passable = passable;
+    this.requiresRoad = requiresRoad;
+    this.isActive = !requiresRoad;
   }
 
   isComplete(): boolean {

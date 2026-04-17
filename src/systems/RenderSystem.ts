@@ -24,6 +24,7 @@ export class RenderSystem extends System {
   public dragPreviewPosition: { x: number; y: number } | null = null;
   private terrainTextures: TerrainTextures;
   private spriteCache = new Map<string, HTMLImageElement>();
+  public hoveredEntityId: number | null = null;
 
   // Minimap
   private minimapCanvas: HTMLCanvasElement;
@@ -556,9 +557,16 @@ export class RenderSystem extends System {
 
     this.ctx.save();
 
+    const isInactive = building && !building.isActive;
+
     // Apply fade effect for selected buildings
     if (isSelected && building) {
       this.ctx.globalAlpha = 0.7;
+    }
+
+    // Apply grayscale + dim for inactive buildings
+    if (isInactive) {
+      this.ctx.filter = 'grayscale(85%) brightness(0.65)';
     }
 
     // Buildings anchor at the top corner of their starting tile (isometric back corner)
@@ -611,6 +619,21 @@ export class RenderSystem extends System {
       this.ctx.font = '10px monospace';
       this.ctx.textAlign = 'center';
       this.ctx.fillText(building.buildingType, 0, -building.height - 10);
+    }
+
+    // Reset filter before drawing status indicators
+    if (isInactive) {
+      this.ctx.filter = 'none';
+    }
+
+    // Status bubble for inactive buildings
+    if (isInactive && building) {
+      const hovered = entity.id === this.hoveredEntityId;
+      this.renderStatusBubble(
+        building, hovered,
+        () => this.drawRoadMissingIcon(),
+        'No road connection'
+      );
     }
 
     this.ctx.restore();
@@ -726,6 +749,92 @@ export class RenderSystem extends System {
       this.ctx.strokeStyle = '#000';
       this.ctx.lineWidth = 1.5;
     }
+    this.ctx.stroke();
+  }
+
+  private renderStatusBubble(
+    building: Building,
+    isHovered: boolean,
+    drawIcon: () => void,
+    hoverText: string
+  ): void {
+    const tileW = this.iso.tileWidth;
+    const tileH = this.iso.tileHeight;
+
+    const centerX = ((building.width - building.height) * tileW / 2) / 2;
+    const centerY = ((building.width + building.height) * tileH / 2) / 2;
+    const bubbleX = centerX;
+    const bubbleY = centerY - building.buildingHeight - 40;
+
+    const bubbleW = isHovered ? 160 : 44;
+    const bubbleH = isHovered ? 34 : 40;
+    const radius = 8;
+
+    const bob = Math.sin(Date.now() * 0.003) * 2;
+
+    this.ctx.save();
+    this.ctx.translate(bubbleX, bubbleY + bob);
+
+    // Bubble shape with pointer
+    this.ctx.beginPath();
+    this.ctx.moveTo(-bubbleW / 2 + radius, -bubbleH / 2);
+    this.ctx.lineTo(bubbleW / 2 - radius, -bubbleH / 2);
+    this.ctx.arcTo(bubbleW / 2, -bubbleH / 2, bubbleW / 2, -bubbleH / 2 + radius, radius);
+    this.ctx.lineTo(bubbleW / 2, bubbleH / 2 - radius);
+    this.ctx.arcTo(bubbleW / 2, bubbleH / 2, bubbleW / 2 - radius, bubbleH / 2, radius);
+    this.ctx.lineTo(7, bubbleH / 2);
+    this.ctx.lineTo(0, bubbleH / 2 + 10);
+    this.ctx.lineTo(-7, bubbleH / 2);
+    this.ctx.lineTo(-bubbleW / 2 + radius, bubbleH / 2);
+    this.ctx.arcTo(-bubbleW / 2, bubbleH / 2, -bubbleW / 2, bubbleH / 2 - radius, radius);
+    this.ctx.lineTo(-bubbleW / 2, -bubbleH / 2 + radius);
+    this.ctx.arcTo(-bubbleW / 2, -bubbleH / 2, -bubbleW / 2 + radius, -bubbleH / 2, radius);
+    this.ctx.closePath();
+
+    this.ctx.fillStyle = 'rgba(40, 40, 40, 0.92)';
+    this.ctx.fill();
+    this.ctx.strokeStyle = '#cc3333';
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    if (isHovered) {
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.font = 'bold 12px monospace';
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
+      this.ctx.fillText(hoverText, 0, 0);
+    } else {
+      drawIcon();
+    }
+
+    this.ctx.restore();
+  }
+
+  private drawRoadMissingIcon(): void {
+    // Isometric road diamond
+    const dw = 14;
+    const dh = 7;
+
+    this.ctx.beginPath();
+    this.ctx.moveTo(0, -dh);
+    this.ctx.lineTo(dw, 0);
+    this.ctx.lineTo(0, dh);
+    this.ctx.lineTo(-dw, 0);
+    this.ctx.closePath();
+    this.ctx.fillStyle = '#c4a572';
+    this.ctx.fill();
+    this.ctx.strokeStyle = '#a68a5a';
+    this.ctx.lineWidth = 1;
+    this.ctx.stroke();
+
+    // X over the road
+    this.ctx.beginPath();
+    this.ctx.moveTo(-7, -7);
+    this.ctx.lineTo(7, 7);
+    this.ctx.moveTo(7, -7);
+    this.ctx.lineTo(-7, 7);
+    this.ctx.strokeStyle = '#ff4444';
+    this.ctx.lineWidth = 3;
     this.ctx.stroke();
   }
 

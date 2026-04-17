@@ -13,8 +13,7 @@ dist/
 .DS_Store
 Thumbs.db
 
-# Claude
-.claude/
+# Claude (keep .claude/ tracked for project docs)
 
 # Logs
 *.log

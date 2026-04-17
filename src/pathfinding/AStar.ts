@@ -12,8 +12,7 @@ export class PathFinder {
 
   constructor() {
     this.finder = new PF.AStarFinder({
-      allowDiagonal: true,
-      dontCrossCorners: true
+      allowDiagonal: false
     });
   }
 

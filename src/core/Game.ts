@@ -100,6 +100,17 @@ export class Game {
     eventBus.on('drag:move', (data) => this.dragEntityTo(data.x, data.y));
     eventBus.on('drag:end', (data) => this.dropEntity(data.x, data.y));
 
+    // Build failure toast
+    eventBus.on('build:failed', (data) => {
+      if (this.inputSystem.hoverGridPos) {
+        const screenPos = this.renderSystem.gridToScreen(
+          this.inputSystem.hoverGridPos.x,
+          this.inputSystem.hoverGridPos.y
+        );
+        this.renderSystem.showToast(data.reason, screenPos.x, screenPos.y);
+      }
+    });
+
     // Input mode changes
     eventBus.on('input:mode_changed', (mode) => {
       const modeElement = document.getElementById('current-mode');
@@ -275,20 +286,14 @@ export class Game {
   }
 
   private canPlaceBuilding(x: number, y: number, width: number, height: number, ignoreEntityId?: number): boolean {
-    // Check if all tiles needed for the building are available
     for (let dy = 0; dy < height; dy++) {
       for (let dx = 0; dx < width; dx++) {
         const tile = this.tileMap.getTile(x + dx, y + dy);
-        if (!tile) {
-          console.log(`Tile (${x + dx}, ${y + dy}) doesn't exist`);
-          return false;
-        }
+        if (!tile) return false;
 
-        // If tile is occupied by a different entity (not the one we're moving), can't place
-        if (tile.isOccupied() && tile.occupiedBy !== ignoreEntityId) {
-          console.log(`Tile (${x + dx}, ${y + dy}) is occupied by entity #${tile.occupiedBy}`);
-          return false;
-        }
+        if (!tile.walkable) return false;
+
+        if (tile.isOccupied() && tile.occupiedBy !== ignoreEntityId) return false;
       }
     }
     return true;
@@ -342,18 +347,19 @@ export class Game {
     if (!dataManager.canAfford(buildingType, this.inventory)) {
       const missing = dataManager.getMissingResources(buildingType, this.inventory);
       console.warn(`Cannot afford ${buildingDef.name}. Missing:`, missing);
+      eventBus.emit('build:failed', { reason: `Cannot afford ${buildingDef.name}` });
       return;
     }
 
     // Check if area is explored
     if (!this.isAreaExplored(x, y, buildingDef.size.width, buildingDef.size.height)) {
-      console.warn('Cannot build in unexplored area');
+      eventBus.emit('build:failed', { reason: 'Cannot build in unexplored area' });
       return;
     }
 
     // Check if space is available
     if (!this.canPlaceBuilding(x, y, buildingDef.size.width, buildingDef.size.height, undefined)) {
-      console.warn('Cannot build here - space occupied');
+      eventBus.emit('build:failed', { reason: 'Cannot build here' });
       return;
     }
 
@@ -378,9 +384,8 @@ export class Game {
 
     audioManager.playSound('build_placed');
     this.updateBuildingRoadConnections();
+    eventBus.emit('build:success');
     console.log(`✅ ${buildingDef.name} (${building.width}x${building.height}) built at (${x}, ${y})`);
-    console.log(`📦 Remaining resources:`, this.inventory);
-    console.log(`👥 Population: ${this.population.current}/${this.population.max}`);
   }
 
   private buildWarehouse(x: number, y: number): void {

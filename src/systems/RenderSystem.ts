@@ -25,6 +25,7 @@ export class RenderSystem extends System {
   private terrainTextures: TerrainTextures;
   private spriteCache = new Map<string, HTMLImageElement>();
   public hoveredEntityId: number | null = null;
+  private toast: { text: string; x: number; y: number; startTime: number } | null = null;
 
   // Minimap
   private minimapCanvas: HTMLCanvasElement;
@@ -190,6 +191,9 @@ export class RenderSystem extends System {
 
     this.ctx.restore();
 
+    // Render toast message (screen-space, after ctx.restore)
+    this.renderToast();
+
     // Render minimap
     this.renderMinimap();
   }
@@ -307,6 +311,8 @@ export class RenderSystem extends System {
   }
 
   private renderRoadPreview(gridX: number, gridY: number): void {
+    const tile = this.tileMap.getTile(gridX, gridY);
+    const canBuild = tile && tile.walkable && !tile.isOccupied() && !tile.hasRoad;
     const corners = this.iso.getTileCorners(gridX, gridY);
 
     this.ctx.beginPath();
@@ -314,17 +320,32 @@ export class RenderSystem extends System {
     corners.forEach(corner => this.ctx.lineTo(corner.x, corner.y));
     this.ctx.closePath();
 
-    // Semi-transparent road preview
-    this.ctx.fillStyle = 'rgba(196, 165, 114, 0.7)';
+    this.ctx.fillStyle = canBuild ? 'rgba(196, 165, 114, 0.7)' : 'rgba(200, 50, 50, 0.5)';
     this.ctx.fill();
-    this.ctx.strokeStyle = 'rgba(166, 138, 90, 0.9)';
+    this.ctx.strokeStyle = canBuild ? 'rgba(166, 138, 90, 0.9)' : 'rgba(200, 50, 50, 0.9)';
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
   }
 
+  private canPlacePreview(gridX: number, gridY: number, width: number, depth: number): boolean {
+    for (let dy = 0; dy < depth; dy++) {
+      for (let dx = 0; dx < width; dx++) {
+        const tile = this.tileMap.getTile(gridX + dx, gridY + dy);
+        if (!tile || !tile.walkable || tile.isOccupied()) return false;
+      }
+    }
+    return true;
+  }
+
   private renderBuildingPreview(gridX: number, gridY: number, width: number, depth: number, height: number, color: string): void {
+    const canPlace = this.canPlacePreview(gridX, gridY, width, depth);
+
+    const previewColor = canPlace ? color : '#cc3333';
+    const tileHighlight = canPlace ? 'rgba(255, 255, 255, 0.2)' : 'rgba(200, 50, 50, 0.35)';
+    const outlineColor = canPlace ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 80, 80, 0.9)';
+
     // Highlight tiles underneath
-    this.highlightTiles(gridX, gridY, width, depth, 'rgba(255, 255, 255, 0.2)');
+    this.highlightTiles(gridX, gridY, width, depth, tileHighlight);
 
     // Render semi-transparent building
     const screenPos = this.iso.gridToScreen(gridX, gridY);
@@ -332,7 +353,7 @@ export class RenderSystem extends System {
     const tileH = this.iso.tileHeight;
 
     this.ctx.save();
-    this.ctx.globalAlpha = 0.6;
+    this.ctx.globalAlpha = canPlace ? 0.6 : 0.5;
     this.ctx.translate(screenPos.x, screenPos.y - this.iso.tileHeight / 2);
 
     // Calculate base corners (bottom face)
@@ -356,9 +377,9 @@ export class RenderSystem extends System {
     this.ctx.lineTo(topCorners[2].x, topCorners[2].y);
     this.ctx.lineTo(baseCorners[2].x, baseCorners[2].y);
     this.ctx.closePath();
-    this.ctx.fillStyle = this.darkenColor(color, 0.7);
+    this.ctx.fillStyle = this.darkenColor(previewColor, 0.7);
     this.ctx.fill();
-    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    this.ctx.strokeStyle = outlineColor;
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
 
@@ -369,9 +390,9 @@ export class RenderSystem extends System {
     this.ctx.lineTo(topCorners[2].x, topCorners[2].y);
     this.ctx.lineTo(baseCorners[2].x, baseCorners[2].y);
     this.ctx.closePath();
-    this.ctx.fillStyle = this.darkenColor(color, 0.5);
+    this.ctx.fillStyle = this.darkenColor(previewColor, 0.5);
     this.ctx.fill();
-    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    this.ctx.strokeStyle = outlineColor;
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
 
@@ -382,9 +403,9 @@ export class RenderSystem extends System {
     this.ctx.lineTo(topCorners[2].x, topCorners[2].y);
     this.ctx.lineTo(topCorners[3].x, topCorners[3].y);
     this.ctx.closePath();
-    this.ctx.fillStyle = color;
+    this.ctx.fillStyle = previewColor;
     this.ctx.fill();
-    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    this.ctx.strokeStyle = outlineColor;
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
 
@@ -838,6 +859,51 @@ export class RenderSystem extends System {
     this.ctx.stroke();
   }
 
+  public showToast(text: string, screenX: number, screenY: number): void {
+    this.toast = { text, x: screenX, y: screenY - 30, startTime: Date.now() };
+  }
+
+  private renderToast(): void {
+    if (!this.toast) return;
+
+    const elapsed = Date.now() - this.toast.startTime;
+    const duration = 1500;
+    if (elapsed > duration) {
+      this.toast = null;
+      return;
+    }
+
+    const fadeStart = duration * 0.6;
+    const alpha = elapsed > fadeStart ? 1 - (elapsed - fadeStart) / (duration - fadeStart) : 1;
+    const rise = elapsed * 0.02;
+
+    this.ctx.save();
+    this.ctx.globalAlpha = alpha;
+    this.ctx.font = 'bold 13px monospace';
+    this.ctx.textAlign = 'center';
+
+    const tx = this.toast.x;
+    const ty = this.toast.y - rise;
+    const textWidth = this.ctx.measureText(this.toast.text).width;
+    const pad = 10;
+
+    // Background
+    this.ctx.fillStyle = 'rgba(40, 40, 40, 0.9)';
+    this.ctx.beginPath();
+    this.ctx.roundRect(tx - textWidth / 2 - pad, ty - 12, textWidth + pad * 2, 24, 6);
+    this.ctx.fill();
+    this.ctx.strokeStyle = '#cc3333';
+    this.ctx.lineWidth = 1.5;
+    this.ctx.stroke();
+
+    // Text
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillText(this.toast.text, tx, ty);
+
+    this.ctx.restore();
+  }
+
   private darkenColor(color: string, factor: number): string {
     // Simple color darkening
     const hex = color.replace('#', '');
@@ -916,6 +982,14 @@ export class RenderSystem extends System {
     const worldX = (screenX - this.camera.x) / this.camera.zoom;
     const worldY = (screenY - this.camera.y) / this.camera.zoom;
     return this.iso.screenToGrid(worldX, worldY);
+  }
+
+  gridToScreen(gridX: number, gridY: number): { x: number; y: number } {
+    const worldPos = this.iso.gridToScreen(gridX, gridY);
+    return {
+      x: worldPos.x * this.camera.zoom + this.camera.x,
+      y: worldPos.y * this.camera.zoom + this.camera.y
+    };
   }
 
   // Update tilemap reference (used when loading a saved game)

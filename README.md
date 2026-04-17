@@ -53,7 +53,7 @@ npm run preview
 
 We're using AI-generated sprites in the style of The Settlers II. For detailed instructions on creating and integrating assets, see:
 
-**📖 [Asset Guide](./docs/ASSET_GUIDE.md)**
+**📖 [Asset Guide](./.claude/ASSET_GUIDE.md)**
 
 Quick summary:
 - **Terrain tiles**: 64×32px isometric diamonds
@@ -89,7 +89,7 @@ settler/
 │   ├── buildings/
 │   ├── units/
 │   └── ui/
-├── docs/               # Documentation
+├── .claude/            # Project docs (asset guide, prompts)
 └── index.html          # Main HTML file
 ```
 

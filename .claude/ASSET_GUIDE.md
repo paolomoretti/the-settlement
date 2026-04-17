@@ -399,117 +399,123 @@ Reference style: The Settlers II carrier/worker units
 
 ---
 
-## Integration Guide
+## Integration Guide — Adding a Building Sprite
 
-### Step 1: Save Asset
-1. Generate image using AI with appropriate prompt
-2. Review image for style consistency and technical requirements
-3. Save to correct folder in `/assets/`
-4. Use proper naming convention
-5. Verify dimensions and transparency
+When the user provides a building sprite image (via prompt attachment, file path, etc.), follow these steps to integrate it. No other code changes are needed beyond what's described here.
 
-### Step 2: Import in Code
+### Step 1: Save the image to `assets/buildings/`
 
-Create or update asset loader:
+The filename **must** match the building's `BuildingType` id (from `src/types/GameData.ts`).
 
-```typescript
-// src/assets/AssetLoader.ts
-export class AssetLoader {
-  private static images = new Map<string, HTMLImageElement>();
-  
-  static async loadImage(path: string): Promise<HTMLImageElement> {
-    if (this.images.has(path)) {
-      return this.images.get(path)!;
-    }
-    
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => {
-        this.images.set(path, img);
-        resolve(img);
-      };
-      img.onerror = reject;
-      img.src = path;
-    });
-  }
-  
-  static async loadTerrain(): Promise<void> {
-    await Promise.all([
-      this.loadImage('/assets/terrain/grass.png'),
-      this.loadImage('/assets/terrain/water.png'),
-      this.loadImage('/assets/terrain/dirt.png'),
-      // ... etc
-    ]);
-  }
-  
-  static getImage(path: string): HTMLImageElement | undefined {
-    return this.images.get(path);
-  }
-}
+```
+assets/buildings/<buildingType>.png
 ```
 
-### Step 3: Update RenderSystem
+Valid building type ids (see `src/types/GameData.ts` for the full list):
 
-Replace programmatic rendering with sprite rendering:
+| BuildingType     | Sprite path                          | Tile size |
+|------------------|--------------------------------------|-----------|
+| `base_camp`      | `assets/buildings/base_camp.png`     | 6x6       |
+| `warehouse`      | `assets/buildings/warehouse.png`     | 3x3       |
+| `lumberjack`     | `assets/buildings/lumberjack.png`    | 2x2       |
+| `sawmill`        | `assets/buildings/sawmill.png`       | 2x2       |
+| `quarry`         | `assets/buildings/quarry.png`        | 2x2       |
+| `farm`           | `assets/buildings/farm.png`          | 3x2       |
 
-```typescript
-// In RenderSystem.ts
-private renderGrass(tile: Tile): void {
-  const img = AssetLoader.getImage('/assets/terrain/grass.png');
-  if (img) {
-    const screenPos = this.iso.gridToScreen(tile.x, tile.y);
-    this.ctx.drawImage(
-      img,
-      screenPos.x - 32, // Center horizontally
-      screenPos.y - 16  // Center vertically
-    );
-  } else {
-    // Fallback to current programmatic rendering
-    // ... existing code
-  }
-}
-```
+### Step 2: Set `spritePath` in `EntityFactory.ts`
 
-### Step 4: Preload Assets
-
-In main.ts, load before starting game:
+In `src/entities/EntityFactory.ts`, find the building's `case` in the `switch (buildingType)` block and add a `spritePath` line:
 
 ```typescript
-async function init() {
-  const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
-  
-  // Show loading screen
-  console.log('Loading assets...');
-  
-  // Preload all assets
-  await AssetLoader.loadTerrain();
-  await AssetLoader.loadBuildings();
-  await AssetLoader.loadUnits();
-  
-  // Start game
-  const game = new Game(canvas);
-  game.start();
-  
-  console.log('🎮 Game started with assets loaded!');
-}
+case 'warehouse':
+  color = '#d4a574';
+  width = 3;
+  depth = 3;
+  height = 80;
+  spritePath = '/assets/buildings/warehouse.png';  // <-- add this
+  break;
 ```
 
----
+That's it. The `spritePath` variable is already declared above the switch. The Renderable component will automatically be created with type `'sprite'` when spritePath is set, and the RenderSystem will lazy-load and cache the image on first render.
 
-## Checklist for New Assets
+### How the sprite system works
 
-Before considering an asset complete:
+- **Lazy loading:** `RenderSystem.loadSprite()` starts loading on the first frame a sprite is needed and caches the `HTMLImageElement` in a `spriteCache` Map. The building is invisible until the image loads (no placeholder flash).
+- **Auto-scaling:** `RenderSystem.renderBuildingSprite()` scales the sprite to fit the building's isometric diamond footprint. The footprint width is `(tileWidth + tileDepth) * 32` pixels. The sprite's aspect ratio is preserved.
+- **Positioning:** The sprite is centered horizontally on the footprint and anchored at the bottom to the footprint's front (south) corner.
+- **Selection:** Yellow diamond outline is drawn over the footprint when selected, same as other buildings.
+- **Fallback:** Buildings without a `spritePath` still render as procedural 3D isometric boxes using their `color` property.
 
-- [ ] Correct dimensions for asset type
-- [ ] PNG format with transparency
-- [ ] Follows naming convention
-- [ ] Saved in correct folder
-- [ ] Matches Settlers II style (warm colors, hand-painted)
-- [ ] Isometric perspective (2:1 ratio)
-- [ ] Lighting from top-left
-- [ ] Transparent background (no white edges)
-- [ ] Tested in-game
-- [ ] Git committed with descriptive message
+### Sprite geometry — how sprites align to the tile grid
+
+The renderer scales the sprite so its **full width matches the building's isometric footprint width**, then anchors the **bottom-center of the image to the front (south) corner** of the diamond. For the sprite to align with the tile grid, the isometric base diamond in the image must follow these rules:
+
+```
+              (back/north corner)
+                     *
+                    / \
+image top →  ------/---\------
+              |   /     \   |
+              |  /       \  |
+  left edge → * (base)    * ← right edge
+              |  \       /  |
+              |   \     /   |
+              |    \   /    |
+              |     \ /     |
+image bot →   ------*------
+              (front/south corner)
+              ↑  bottom-center  ↑
+```
+
+**Rules for the base diamond in the sprite:**
+
+1. **Left (west) corner** touches the **left edge** of the image
+2. **Right (east) corner** touches the **right edge** of the image
+3. **Front (south) corner** is at the **bottom-center** of the image
+4. **Diamond height = exactly half the image width** (the 2:1 isometric ratio)
+5. The building structure extends **above** the base diamond (adding to image height)
+
+The image can be any pixel size — the renderer auto-scales. What matters is that these proportional rules hold.
+
+#### Reference dimensions per building size
+
+These are the exact pixel dimensions of the isometric footprint for each building. The sprite image width should match (or be proportional to) the footprint width. The image height = base height + however tall the building structure is above ground.
+
+| Building     | Tiles (WxD) | Footprint width | Base height | Notes |
+|--------------|-------------|-----------------|-------------|-------|
+| `base_camp`  | 6x6         | 384px           | 192px       | Square — diamond is centered |
+| `warehouse`  | 3x3         | 192px           | 96px        | Square — diamond is centered |
+| `lumberjack` | 2x2         | 128px           | 64px        | Square — diamond is centered |
+| `sawmill`    | 2x2         | 128px           | 64px        | Square — diamond is centered |
+| `quarry`     | 2x2         | 128px           | 64px        | Square — diamond is centered |
+| `farm`       | 3x2         | 160px           | 80px        | Non-square — see below |
+
+**Formula:** footprint width = `(W + D) * 32`, base height = `(W + D) * 16`
+
+#### Non-square buildings (e.g. farm 3x2)
+
+For square buildings (W=D), the diamond is perfectly centered — the left and right corners are at the same height, and the back corner is at top-center. For non-square buildings, the left and right corners are at different heights:
+
+- Left (west) corner: left edge, `W * 16` px from the bottom
+- Right (east) corner: right edge, `D * 16` px from the bottom
+
+The front corner is still at bottom-center. Just make sure the base diamond shape in the sprite reflects the correct W:D ratio.
+
+### AI prompt tip for sprite generation
+
+When generating a building sprite with AI, include this in the prompt:
+
+> The building sits on an isometric diamond base. The diamond must span the full width of the image. The front (south) point of the diamond must be at the bottom-center of the image. The diamond's height is exactly half its width (2:1 isometric ratio). The building structure rises above this diamond base. Use a transparent background.
+
+### Quick checklist
+
+- [ ] Image saved to `assets/buildings/<buildingType>.png`
+- [ ] `spritePath` added to the correct `case` in `EntityFactory.ts`
+- [ ] Base diamond spans full image width (left/right corners touch edges)
+- [ ] Front corner at bottom-center of image
+- [ ] Diamond height is half the image width (2:1 ratio)
+- [ ] Transparent background, PNG format
+- [ ] Tested in-game (`npm run dev`) — sprite aligns with tile grid
 
 ---
 

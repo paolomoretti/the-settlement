@@ -42,7 +42,6 @@ export function createBuilding(
 
   if (!buildingDef) {
     console.error(`Unknown building type: ${buildingType}`);
-    // Fallback to default values
     const color = '#8b7355';
     const width = 2;
     const depth = 2;
@@ -65,13 +64,19 @@ export function createBuilding(
   // Use data from building definition
   const { size, visual } = buildingDef;
 
+  const SPRITE_PATHS: Record<string, string> = {
+    base_camp: '/assets/buildings/base_camp.png',
+    warehouse: '/assets/buildings/warehouse.png',
+  };
+  const spritePath = SPRITE_PATHS[buildingType];
+
   entity.addComponent(new Renderable(
-    'rectangle',
+    spritePath ? 'sprite' : 'rectangle',
     visual.color,
     { width: size.width * 32, height: size.height * 32 },
     0,
-    undefined,
-    0 // Layer 0 (below workers)
+    spritePath,
+    0
   ));
 
   entity.addComponent(new Building(

@@ -118,35 +118,23 @@ export class Game {
       this.spawnWorker();
     }
 
-    // Build extensive initial road network
-    // Main horizontal road
+    // Build initial road network (cardinal directions only)
+    // Main horizontal road (grid X axis)
     for (let i = -15; i <= 15; i++) {
       this.buildRoad(centerX + i, centerY);
     }
 
-    // Main vertical road
+    // Main vertical road (grid Y axis)
     for (let i = -15; i <= 15; i++) {
       this.buildRoad(centerX, centerY + i);
     }
 
-    // Diagonal roads (NE and SE)
-    for (let i = 1; i <= 10; i++) {
-      this.buildRoad(centerX + i, centerY - i); // NE
-      this.buildRoad(centerX + i, centerY + i); // SE
-    }
-
-    // Diagonal roads (NW and SW)
-    for (let i = 1; i <= 10; i++) {
-      this.buildRoad(centerX - i, centerY - i); // NW
-      this.buildRoad(centerX - i, centerY + i); // SW
-    }
-
-    // Additional connecting roads
-    for (let i = -8; i <= 8; i++) {
-      this.buildRoad(centerX + i, centerY + 8); // South horizontal
-      this.buildRoad(centerX + i, centerY - 8); // North horizontal
-      this.buildRoad(centerX + 8, centerY + i); // East vertical
-      this.buildRoad(centerX - 8, centerY + i); // West vertical
+    // Connecting roads forming a grid
+    for (let i = -10; i <= 10; i++) {
+      this.buildRoad(centerX + i, centerY + 8);
+      this.buildRoad(centerX + i, centerY - 8);
+      this.buildRoad(centerX + 8, centerY + i);
+      this.buildRoad(centerX - 8, centerY + i);
     }
 
     console.log(`World initialized at (${centerX}, ${centerY}) - Map size: ${this.tileMap.width}x${this.tileMap.height}`);

@@ -191,6 +191,86 @@ export class Game {
 
     if (this.tileMap.buildRoad(x, y)) {
       audioManager.playSound('build_placed');
+      this.updateBuildingRoadConnections();
+    }
+  }
+
+  private getBaseCampConnectedRoads(): Set<string> {
+    const connected = new Set<string>();
+    if (!this.baseCampEntity) return connected;
+
+    const baseCampPos = this.baseCampEntity.getComponent(Position);
+    const baseCampBuilding = this.baseCampEntity.getComponent(Building);
+    if (!baseCampPos || !baseCampBuilding) return connected;
+
+    const bx = baseCampPos.x;
+    const by = baseCampPos.y;
+    const bw = baseCampBuilding.width;
+    const bh = baseCampBuilding.height;
+
+    // Find road tiles adjacent to the base camp as BFS seeds
+    const queue: { x: number; y: number }[] = [];
+    for (let dy = -1; dy <= bh; dy++) {
+      for (let dx = -1; dx <= bw; dx++) {
+        const isInside = dx >= 0 && dx < bw && dy >= 0 && dy < bh;
+        if (isInside) continue;
+        const tile = this.tileMap.getTile(bx + dx, by + dy);
+        if (tile && tile.hasRoad) {
+          const key = `${bx + dx},${by + dy}`;
+          if (!connected.has(key)) {
+            connected.add(key);
+            queue.push({ x: bx + dx, y: by + dy });
+          }
+        }
+      }
+    }
+
+    // BFS flood-fill through connected road tiles
+    while (queue.length > 0) {
+      const { x, y } = queue.shift()!;
+      const neighbors = this.tileMap.getNeighbors(x, y);
+      for (const neighbor of neighbors) {
+        if (neighbor.hasRoad) {
+          const key = `${neighbor.x},${neighbor.y}`;
+          if (!connected.has(key)) {
+            connected.add(key);
+            queue.push({ x: neighbor.x, y: neighbor.y });
+          }
+        }
+      }
+    }
+
+    return connected;
+  }
+
+  private hasBuildingConnectedRoad(pos: Position, building: Building, connectedRoads: Set<string>): boolean {
+    const bx = pos.x;
+    const by = pos.y;
+    const bw = building.width;
+    const bh = building.height;
+
+    for (let dy = -1; dy <= bh; dy++) {
+      for (let dx = -1; dx <= bw; dx++) {
+        const isInsideFootprint = dx >= 0 && dx < bw && dy >= 0 && dy < bh;
+        if (isInsideFootprint) continue;
+
+        const key = `${bx + dx},${by + dy}`;
+        if (connectedRoads.has(key)) return true;
+      }
+    }
+    return false;
+  }
+
+  public updateBuildingRoadConnections(): void {
+    const connectedRoads = this.getBaseCampConnectedRoads();
+
+    for (const entity of this.entities) {
+      if (!entity.active) continue;
+      const building = entity.getComponent(Building);
+      const pos = entity.getComponent(Position);
+      if (!building || !pos || !building.requiresRoad) continue;
+
+      building.isActive = this.hasBuildingConnectedRoad(pos, building, connectedRoads);
     }
   }
 
@@ -297,6 +377,7 @@ export class Game {
     }
 
     audioManager.playSound('build_placed');
+    this.updateBuildingRoadConnections();
     console.log(`✅ ${buildingDef.name} (${building.width}x${building.height}) built at (${x}, ${y})`);
     console.log(`📦 Remaining resources:`, this.inventory);
     console.log(`👥 Population: ${this.population.current}/${this.population.max}`);
@@ -305,7 +386,6 @@ export class Game {
   private buildWarehouse(x: number, y: number): void {
     this.buildGeneric('warehouse', x, y);
   }
-
 
   private spawnWorker(): void {
     // Spawn near warehouse (but not on it - warehouse is 3x3)
@@ -456,6 +536,22 @@ export class Game {
     this.renderSystem.selectedEntityId = this.selectedEntity?.id ?? null;
     this.renderSystem.dragPreviewPosition = this.dragPreviewPosition;
 
+    // Track hovered entity for tooltips
+    if (this.inputSystem.hoverGridPos) {
+      const hx = this.inputSystem.hoverGridPos.x;
+      const hy = this.inputSystem.hoverGridPos.y;
+      const hoveredEntity = this.entities.find(entity => {
+        const pos = entity.getComponent(Position);
+        const building = entity.getComponent(Building);
+        if (!pos || !building) return false;
+        return hx >= pos.x && hx < pos.x + building.width &&
+               hy >= pos.y && hy < pos.y + building.height;
+      });
+      this.renderSystem.hoveredEntityId = hoveredEntity?.id ?? null;
+    } else {
+      this.renderSystem.hoveredEntityId = null;
+    }
+
     // Explore area around visible viewport
     this.exploreVisibleArea();
 
@@ -586,6 +682,7 @@ export class Game {
       this.removeEntity(this.selectedEntity);
       this.selectedEntity = null;
       this.updateSelectionUI();
+      this.updateBuildingRoadConnections();
     }
   }
 
@@ -657,6 +754,7 @@ export class Game {
     this.isDraggingEntity = false;
     this.originalDragPosition = null;
     this.dragPreviewPosition = null;
+    this.updateBuildingRoadConnections();
   }
 
   private updateSelectionUI(): void {
@@ -801,6 +899,8 @@ export class Game {
           if (tile?.isExplored()) exploredCount++;
         }
       }
+
+      this.updateBuildingRoadConnections();
 
       console.log(`📂 Game loaded! ${saveData.buildings.length} buildings, ${exploredCount} explored tiles, ${this.entities.length} total entities`);
       return true;

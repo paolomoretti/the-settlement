@@ -83,7 +83,9 @@ export function createBuilding(
     buildingType,
     size.width,
     size.height,
-    visual.buildingHeight
+    visual.buildingHeight,
+    false,
+    buildingDef.requiresRoad
   ));
 
   return entity;

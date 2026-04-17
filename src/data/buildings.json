@@ -1,25 +1,25 @@
 {
-  "headquarters": {
-    "id": "headquarters",
-    "name": "Headquarters",
-    "description": "Your main base. Stores resources and houses workers.",
+  "base_camp": {
+    "id": "base_camp",
+    "name": "Base Camp",
+    "description": "Your starting settlement. Stores all resources and houses your initial workers.",
     "size": {
-      "width": 4,
-      "height": 4
+      "width": 6,
+      "height": 6
     },
     "visual": {
-      "buildingHeight": 100,
-      "color": "#8b6914",
-      "sprite": "/assets/buildings/headquarters.png"
+      "buildingHeight": 120,
+      "color": "#8b1a1a",
+      "sprite": "/assets/buildings/base_camp.png"
     },
     "buildCost": {},
     "buildTime": 0,
     "requiresRoad": false,
     "storage": {
-      "capacity": 1000
+      "capacity": 2000
     },
     "population": {
-      "provides": 10
+      "provides": 15
     },
     "isHeadquarters": true,
     "category": "core",

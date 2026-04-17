@@ -664,7 +664,12 @@ export class RenderSystem extends System {
 
     // Render buildings as isometric 3D boxes
     if (building) {
-      this.renderIsometricBuilding(building, renderable, isSelected);
+      // Special rendering for base camp (pyramid)
+      if (building.buildingType === 'base_camp') {
+        this.renderBaseCampPyramid(building, renderable, isSelected);
+      } else {
+        this.renderIsometricBuilding(building, renderable, isSelected);
+      }
     } else {
       // Render non-building entities with their normal shapes
       switch (renderable.type) {
@@ -702,6 +707,106 @@ export class RenderSystem extends System {
     }
 
     this.ctx.restore();
+  }
+
+  private renderBaseCampPyramid(building: Building, renderable: Renderable, isSelected: boolean = false): void {
+    const tileW = this.iso.tileWidth;
+    const tileH = this.iso.tileHeight;
+
+    // Building dimensions
+    const width = building.width;
+    const depth = building.height;
+    const height = building.buildingHeight;
+
+    // Calculate the center of the base
+    const baseCenter = {
+      x: (width * tileW / 2 - depth * tileW / 2) / 2,
+      y: (width * tileH / 2 + depth * tileH / 2) / 2
+    };
+
+    // Peak of the pyramid
+    const peak = { x: baseCenter.x, y: baseCenter.y - height };
+
+    // Base corners
+    const baseCorners = [
+      { x: 0, y: 0 },                                           // Back (top)
+      { x: width * tileW / 2, y: width * tileH / 2 },          // Right
+      { x: (width - depth) * tileW / 2, y: (width + depth) * tileH / 2 }, // Front (bottom)
+      { x: -depth * tileW / 2, y: depth * tileH / 2 }          // Left
+    ];
+
+    // Back face (darkest - dark red)
+    this.ctx.beginPath();
+    this.ctx.moveTo(baseCorners[0].x, baseCorners[0].y); // back
+    this.ctx.lineTo(peak.x, peak.y); // peak
+    this.ctx.lineTo(baseCorners[3].x, baseCorners[3].y); // left
+    this.ctx.closePath();
+    this.ctx.fillStyle = '#5a0a0a';
+    this.ctx.fill();
+    this.ctx.strokeStyle = '#3a0000';
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    // Right face (medium red)
+    this.ctx.beginPath();
+    this.ctx.moveTo(baseCorners[0].x, baseCorners[0].y); // back
+    this.ctx.lineTo(peak.x, peak.y); // peak
+    this.ctx.lineTo(baseCorners[1].x, baseCorners[1].y); // right
+    this.ctx.closePath();
+    this.ctx.fillStyle = '#8b1a1a';
+    this.ctx.fill();
+    this.ctx.strokeStyle = '#6b0000';
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    // Left face (lighter red)
+    this.ctx.beginPath();
+    this.ctx.moveTo(baseCorners[3].x, baseCorners[3].y); // left
+    this.ctx.lineTo(peak.x, peak.y); // peak
+    this.ctx.lineTo(baseCorners[2].x, baseCorners[2].y); // front
+    this.ctx.closePath();
+    this.ctx.fillStyle = '#a52a2a';
+    this.ctx.fill();
+    this.ctx.strokeStyle = '#8b0000';
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    // Front face (lightest red)
+    this.ctx.beginPath();
+    this.ctx.moveTo(baseCorners[1].x, baseCorners[1].y); // right
+    this.ctx.lineTo(peak.x, peak.y); // peak
+    this.ctx.lineTo(baseCorners[2].x, baseCorners[2].y); // front
+    this.ctx.closePath();
+    this.ctx.fillStyle = '#cd5c5c';
+    this.ctx.fill();
+    this.ctx.strokeStyle = '#a52a2a';
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    // Cap at peak (golden)
+    this.ctx.beginPath();
+    this.ctx.arc(peak.x, peak.y, 6, 0, Math.PI * 2);
+    this.ctx.fillStyle = '#ffd700';
+    this.ctx.fill();
+    this.ctx.strokeStyle = '#daa520';
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    // Glow effect if selected
+    if (isSelected) {
+      this.ctx.strokeStyle = '#ffff00';
+      this.ctx.lineWidth = 4;
+      this.ctx.beginPath();
+      baseCorners.forEach((corner, i) => {
+        if (i === 0) {
+          this.ctx.moveTo(corner.x, corner.y);
+        } else {
+          this.ctx.lineTo(corner.x, corner.y);
+        }
+      });
+      this.ctx.closePath();
+      this.ctx.stroke();
+    }
   }
 
   private renderIsometricBuilding(building: Building, renderable: Renderable, isSelected: boolean = false): void {

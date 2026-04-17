@@ -58,7 +58,7 @@ export interface ResourceDefinition {
 
 export type BuildingType =
   // Core Buildings
-  | 'headquarters'
+  | 'base_camp'
   | 'warehouse'
   | 'storehouse'
 
@@ -175,7 +175,7 @@ export interface BuildingDefinition {
 export interface GameConfig {
   // Starting conditions
   starting: {
-    headquarters: {
+    baseCamp: {
       position: { x: number; y: number } | 'center';
       startingResources: BuildingCost;
       startingPopulation: number;

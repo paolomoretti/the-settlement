@@ -1,6 +1,6 @@
 {
   "starting": {
-    "headquarters": {
+    "baseCamp": {
       "position": "center",
       "startingResources": {
         "wood_log": 30,

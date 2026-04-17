@@ -4,6 +4,7 @@
 
 import { Game } from './core/Game';
 import { eventBus } from './core/EventBus';
+import { dataManager } from './data/DataManager';
 
 // Wait for DOM to be ready
 window.addEventListener('DOMContentLoaded', () => {
@@ -96,6 +97,63 @@ function setupUIControls(game: Game): void {
     eventBus.emit('delete:selected');
     showMessage('Building deleted');
   });
+
+  // Inventory panel
+  eventBus.on('open:inventory', () => {
+    showInventoryPanel(game);
+  });
+
+  const btnCloseInventory = document.getElementById('btn-close-inventory');
+  btnCloseInventory?.addEventListener('click', () => {
+    hideInventoryPanel();
+  });
+}
+
+function showInventoryPanel(game: Game): void {
+  const panel = document.getElementById('inventory-panel');
+  if (!panel) return;
+
+  // Update population display
+  const popDisplay = document.getElementById('population-display');
+  if (popDisplay) {
+    popDisplay.textContent = `${game.population.current}/${game.population.max}`;
+  }
+
+  // Update inventory list
+  const inventoryList = document.getElementById('inventory-list');
+  if (!inventoryList) return;
+
+  inventoryList.innerHTML = '';
+
+  // Group resources by category
+  const categories = ['raw', 'refined', 'food', 'tool', 'weapon'] as const;
+
+  categories.forEach(category => {
+    const resources = dataManager.getResourcesByCategory(category);
+    resources.forEach(resource => {
+      const count = game.inventory[resource.id] || 0;
+
+      // Only show resources that exist in inventory
+      if (count > 0) {
+        const item = document.createElement('div');
+        item.className = 'inventory-item';
+        item.innerHTML = `
+          <span class="inventory-item-name">${resource.name}</span>
+          <span class="inventory-item-count">${count}</span>
+        `;
+        inventoryList.appendChild(item);
+      }
+    });
+  });
+
+  panel.style.display = 'block';
+}
+
+function hideInventoryPanel(): void {
+  const panel = document.getElementById('inventory-panel');
+  if (panel) {
+    panel.style.display = 'none';
+  }
 }
 
 function updateButtonStates(activeButtonId: string): void {

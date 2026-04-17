@@ -119,6 +119,58 @@
       background: #d55;
     }
 
+    #inventory-panel {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.9);
+      padding: 20px;
+      border-radius: 8px;
+      pointer-events: auto;
+      display: none;
+      min-width: 400px;
+      max-width: 500px;
+      border: 3px solid #8b1a1a;
+      box-shadow: 0 0 20px rgba(139, 26, 26, 0.5);
+    }
+
+    #inventory-panel h3 {
+      margin: 0;
+      font-size: 16px;
+      color: #ffff00;
+    }
+
+    #inventory-panel h4 {
+      color: #ddd;
+      border-bottom: 1px solid #444;
+      padding-bottom: 5px;
+    }
+
+    #inventory-list {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .inventory-item {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 8px;
+      border-radius: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .inventory-item-name {
+      color: #ccc;
+    }
+
+    .inventory-item-count {
+      color: #ffff00;
+      font-weight: bold;
+    }
+
     #minimap {
       position: absolute;
       bottom: 10px;
@@ -165,6 +217,17 @@
         <h3 id="selection-title">Selected: Building</h3>
         <p style="font-size: 11px; margin: 5px 0; opacity: 0.8;">Click and drag to move</p>
         <button id="btn-delete" class="delete">Delete</button>
+      </div>
+      <div id="inventory-panel">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <h3 style="margin: 0;">🏕️ Base Camp</h3>
+          <button id="btn-close-inventory" style="padding: 4px 12px; margin: 0;">✕</button>
+        </div>
+        <div style="font-size: 11px; margin-bottom: 10px; opacity: 0.8;">
+          <div>Population: <span id="population-display">0/0</span></div>
+        </div>
+        <h4 style="margin: 10px 0 5px 0; font-size: 12px;">Resources</h4>
+        <div id="inventory-list" style="max-height: 400px; overflow-y: auto; font-size: 11px;"></div>
       </div>
       <div id="minimap">
         <canvas id="minimap-canvas" width="200" height="200"></canvas>

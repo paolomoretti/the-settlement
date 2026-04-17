@@ -43,6 +43,12 @@ export function createBuilding(
   let height = 50; // 3D height in pixels
 
   switch (buildingType) {
+    case 'base_camp':
+      color = '#8b1a1a'; // Dark red
+      width = 6;
+      depth = 6;
+      height = 120;
+      break;
     case 'warehouse':
       color = '#d4a574';
       width = 3;
@@ -87,6 +93,10 @@ export function createBuilding(
   entity.addComponent(new Building(buildingType, width, depth, height));
 
   return entity;
+}
+
+export function createBaseCamp(x: number, y: number): Entity {
+  return createBuilding('base_camp', x, y);
 }
 
 export function createWarehouse(x: number, y: number): Entity {

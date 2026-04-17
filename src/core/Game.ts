@@ -15,9 +15,11 @@ import { Position } from '@/components/Position';
 import { Movable } from '@/components/Movable';
 import { Worker } from '@/components/Worker';
 import { Building } from '@/components/Building';
+import { dataManager } from '@/data/DataManager';
+import { Inventory } from '@/types/GameData';
 
 // Entity factories
-import { createWorker, createBuilding, createWarehouse } from '@/entities/EntityFactory';
+import { createWorker, createBuilding, createBaseCamp, createWarehouse } from '@/entities/EntityFactory';
 
 export class Game {
   private entities: Entity[] = [];
@@ -43,6 +45,14 @@ export class Game {
   // Exploration optimization
   private lastExplorationPos: { x: number; y: number } | null = null;
   private explorationThreshold = 10; // Only explore when camera moves this many tiles
+
+  // Game economy
+  public inventory: Inventory = {};
+  public baseCampEntity: Entity | null = null;
+  public population = {
+    current: 0,
+    max: 0
+  };
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -89,14 +99,19 @@ export class Game {
   }
 
   private initializeWorld(): void {
-    // Create starting warehouse in center
+    // Load starting resources
+    this.inventory = { ...dataManager.getStartingResources() };
+    this.population.current = dataManager.getStartingPopulation();
+
+    // Create base camp in center
     const centerX = Math.floor(this.tileMap.width / 2);
     const centerY = Math.floor(this.tileMap.height / 2);
 
-    // Explore initial area around spawn (25x25 tiles)
+    // Explore initial area around spawn
     this.exploreArea(centerX, centerY, 25);
 
-    this.buildWarehouse(centerX, centerY);
+    // Build base camp
+    this.buildBaseCamp(centerX, centerY);
 
     // Spawn initial workers
     for (let i = 0; i < 3; i++) {
@@ -215,6 +230,25 @@ export class Game {
         }
       }
     }
+  }
+
+  private buildBaseCamp(x: number, y: number): void {
+    const baseCamp = createBaseCamp(x, y);
+    const building = baseCamp.getComponent(Building);
+
+    if (!building) return;
+
+    this.addEntity(baseCamp);
+    this.occupyBuildingTiles(baseCamp.id, x, y, building.width, building.height);
+    this.baseCampEntity = baseCamp;
+
+    // Update population max
+    const baseCampDef = dataManager.getBuilding('base_camp');
+    this.population.max = baseCampDef?.population?.provides || 15;
+
+    console.log(`🏕️ Base Camp (${building.width}x${building.height}) established at (${x}, ${y})`);
+    console.log(`📦 Starting inventory:`, this.inventory);
+    console.log(`👥 Population: ${this.population.current}/${this.population.max}`);
   }
 
   private buildWarehouse(x: number, y: number): void {
@@ -472,6 +506,14 @@ export class Game {
     });
 
     if (foundEntity) {
+      // Check if it's the base camp
+      if (foundEntity === this.baseCampEntity) {
+        // Show inventory panel
+        eventBus.emit('open:inventory');
+        console.log(`🏕️ Base Camp clicked - opening inventory`);
+        return;
+      }
+
       if (this.selectedEntity === foundEntity) {
         // Clicking on already selected entity - deselect it
         this.selectedEntity = null;
@@ -644,6 +686,8 @@ export class Game {
           y: pos?.y
         };
       }),
+      inventory: this.inventory,
+      population: this.population,
       timestamp: Date.now()
     };
 
@@ -682,6 +726,11 @@ export class Game {
       this.entities = [];
       this.systems.forEach(system => system.cleanup());
 
+      // Restore inventory and population
+      this.inventory = saveData.inventory || {};
+      this.population = saveData.population || { current: 0, max: 0 };
+      this.baseCampEntity = null;
+
       // Recreate buildings from save data
       console.log(`Loading ${saveData.buildings.length} buildings...`);
 
@@ -694,6 +743,10 @@ export class Game {
         let entity: Entity | null = null;
 
         switch (buildingData.type) {
+          case 'base_camp':
+            entity = createBaseCamp(buildingData.x, buildingData.y);
+            this.baseCampEntity = entity;
+            break;
           case 'warehouse':
             entity = createWarehouse(buildingData.x, buildingData.y);
             break;

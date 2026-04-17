@@ -126,11 +126,11 @@ export class DataManager {
   }
 
   getStartingResources(): { [key: string]: number } {
-    return this.gameConfig.starting.headquarters.startingResources;
+    return this.gameConfig.starting.baseCamp.startingResources;
   }
 
   getStartingPopulation(): number {
-    return this.gameConfig.starting.headquarters.startingPopulation;
+    return this.gameConfig.starting.baseCamp.startingPopulation;
   }
 
   // ========================================================================

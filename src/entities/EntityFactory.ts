@@ -79,14 +79,20 @@ export function createBuilding(
     0
   ));
 
-  entity.addComponent(new Building(
+  const buildingComp = new Building(
     buildingType,
     size.width,
     size.height,
     visual.buildingHeight,
     false,
     buildingDef.requiresRoad
-  ));
+  );
+
+  if (buildingDef.buildTime > 0) {
+    buildingComp.startConstruction(buildingDef.buildTime);
+  }
+
+  entity.addComponent(buildingComp);
 
   return entity;
 }

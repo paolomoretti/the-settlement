@@ -16,7 +16,9 @@ export type BuildingState = 'planning' | 'under_construction' | 'complete';
 
 export class Building extends Component {
   public state: BuildingState = 'complete';
-  public constructionProgress: number = 0; // 0-100
+  public constructionProgress: number = 0; // 0-1
+  public constructionStartedAt: number | null = null; // Unix timestamp
+  public buildTimeSec: number = 0; // Total build time in seconds
   public width: number; // Width in tiles
   public height: number; // Depth in tiles (for isometric footprint)
   public buildingHeight: number; // Visual 3D height in pixels
@@ -45,15 +47,21 @@ export class Building extends Component {
     return this.state === 'complete';
   }
 
-  startConstruction(): void {
+  startConstruction(buildTimeSec: number): void {
+    if (buildTimeSec <= 0) return;
     this.state = 'under_construction';
+    this.buildTimeSec = buildTimeSec;
+    this.constructionStartedAt = Date.now();
     this.constructionProgress = 0;
   }
 
-  addConstructionProgress(amount: number): void {
-    this.constructionProgress = Math.min(100, this.constructionProgress + amount);
-    if (this.constructionProgress >= 100) {
+  updateConstruction(): void {
+    if (this.state !== 'under_construction' || !this.constructionStartedAt) return;
+    const elapsed = (Date.now() - this.constructionStartedAt) / 1000;
+    this.constructionProgress = Math.min(1, elapsed / this.buildTimeSec);
+    if (this.constructionProgress >= 1) {
       this.state = 'complete';
+      this.constructionStartedAt = null;
     }
   }
 }

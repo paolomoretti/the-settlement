@@ -129,7 +129,7 @@ export class BuildingMenu {
     // Size info
     const sizeInfo = document.createElement('div');
     sizeInfo.className = 'building-info';
-    sizeInfo.textContent = `Size: ${building.size.width}×${building.size.height}`;
+    sizeInfo.textContent = `Size: ${building.size.width}×${building.size.height}  ·  Build time: ${building.buildTime}s`;
 
     // Build cost
     const costSection = document.createElement('div');

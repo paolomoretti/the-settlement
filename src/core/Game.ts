@@ -557,6 +557,9 @@ export class Game {
       this.renderSystem.hoveredEntityId = null;
     }
 
+    // Update building construction progress
+    this.updateConstruction();
+
     // Explore area around visible viewport
     this.exploreVisibleArea();
 
@@ -565,6 +568,16 @@ export class Game {
 
     requestAnimationFrame(this.gameLoop);
   };
+
+  private updateConstruction(): void {
+    for (const entity of this.entities) {
+      if (!entity.active) continue;
+      const building = entity.getComponent(Building);
+      if (building && building.state === 'under_construction') {
+        building.updateConstruction();
+      }
+    }
+  }
 
   private exploreVisibleArea(): void {
     // Get viewport bounds in grid coordinates
@@ -795,11 +808,18 @@ export class Game {
         const pos = e.getComponent(Position);
         const building = e.getComponent(Building);
 
-        return {
+        const data: any = {
           type: building?.buildingType,
           x: pos?.x,
           y: pos?.y
         };
+
+        if (building?.constructionStartedAt) {
+          data.constructionStartedAt = building.constructionStartedAt;
+          data.buildTimeSec = building.buildTimeSec;
+        }
+
+        return data;
       }),
       inventory: this.inventory,
       population: this.population,
@@ -855,39 +875,26 @@ export class Game {
           continue;
         }
 
-        let entity: Entity | null = null;
+        const entity = createBuilding(buildingData.type, buildingData.x, buildingData.y);
 
-        switch (buildingData.type) {
-          case 'base_camp':
-            entity = createBaseCamp(buildingData.x, buildingData.y);
-            this.baseCampEntity = entity;
-            break;
-          case 'warehouse':
-            entity = createWarehouse(buildingData.x, buildingData.y);
-            break;
-          case 'lumberjack':
-            entity = createBuilding('lumberjack', buildingData.x, buildingData.y);
-            break;
-          case 'sawmill':
-            entity = createBuilding('sawmill', buildingData.x, buildingData.y);
-            break;
-          case 'quarry':
-            entity = createBuilding('quarry', buildingData.x, buildingData.y);
-            break;
-          case 'farm':
-            entity = createBuilding('farm', buildingData.x, buildingData.y);
-            break;
-          default:
-            console.warn('Unknown building type:', buildingData.type);
+        if (buildingData.type === 'base_camp') {
+          this.baseCampEntity = entity;
         }
 
-        if (entity) {
-          this.addEntity(entity);
-
-          const building = entity.getComponent(Building);
-          if (building) {
-            this.occupyBuildingTiles(entity.id, buildingData.x, buildingData.y, building.width, building.height);
+        const building = entity.getComponent(Building);
+        if (building) {
+          if (buildingData.constructionStartedAt) {
+            building.constructionStartedAt = buildingData.constructionStartedAt;
+            building.buildTimeSec = buildingData.buildTimeSec;
+            building.state = 'under_construction';
+            building.updateConstruction();
+          } else {
+            building.state = 'complete';
+            building.constructionStartedAt = null;
           }
+
+          this.addEntity(entity);
+          this.occupyBuildingTiles(entity.id, buildingData.x, buildingData.y, building.width, building.height);
         }
       }
 

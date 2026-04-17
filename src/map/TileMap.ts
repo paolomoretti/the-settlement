@@ -35,6 +35,9 @@ export class TileMap {
 
     // Add rivers
     this.generateRivers(noise);
+
+    // Remove thin water bodies (< 3 tiles thick in both directions)
+    this.removeThinWater();
   }
 
   private generateTerrain(x: number, y: number, noise: NoiseGenerator): TerrainType {
@@ -73,26 +76,23 @@ export class TileMap {
   }
 
   private generateRivers(noise: NoiseGenerator): void {
-    // Create 2-3 rivers across the map
     const numRivers = Math.floor(Math.random() * 2) + 2;
 
     for (let r = 0; r < numRivers; r++) {
       const startX = Math.floor(Math.random() * this.width);
-      const startY = 0;
-
       let x = startX;
-      let y = startY;
+      let y = 0;
 
-      // River flows downward with some meandering
       while (y < this.height) {
-        // Set current position to water
-        const tile = this.getTile(x, y);
-        if (tile && tile.terrain !== 'mountain') {
-          tile.terrain = 'water';
-          tile.walkable = false;
+        // 3-tile wide river
+        for (let dx = -1; dx <= 1; dx++) {
+          const tile = this.getTile(x + dx, y);
+          if (tile && tile.terrain !== 'mountain') {
+            tile.terrain = 'water';
+            tile.walkable = false;
+          }
         }
 
-        // Meander (move left or right occasionally)
         const direction = noise.noise(x, y, 0.5);
         if (direction > 0.6) {
           x = Math.min(x + 1, this.width - 1);
@@ -102,6 +102,33 @@ export class TileMap {
 
         y++;
       }
+    }
+  }
+
+  private removeThinWater(): void {
+    for (let pass = 0; pass < 3; pass++) {
+      let changed = false;
+      for (let y = 0; y < this.height; y++) {
+        for (let x = 0; x < this.width; x++) {
+          const tile = this.tiles[y][x];
+          if (tile.terrain !== 'water') continue;
+
+          let xCount = 1;
+          for (let dx = 1; x + dx < this.width && this.tiles[y][x + dx].terrain === 'water'; dx++) xCount++;
+          for (let dx = -1; x + dx >= 0 && this.tiles[y][x + dx].terrain === 'water'; dx--) xCount++;
+
+          let yCount = 1;
+          for (let dy = 1; y + dy < this.height && this.tiles[y + dy][x].terrain === 'water'; dy++) yCount++;
+          for (let dy = -1; y + dy >= 0 && this.tiles[y + dy][x].terrain === 'water'; dy--) yCount++;
+
+          if (xCount < 3 && yCount < 3) {
+            tile.terrain = 'grass';
+            tile.walkable = true;
+            changed = true;
+          }
+        }
+      }
+      if (!changed) break;
     }
   }
 

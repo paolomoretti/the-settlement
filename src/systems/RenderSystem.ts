@@ -23,6 +23,7 @@ export class RenderSystem extends System {
   public selectedEntityId: number | null = null;
   public dragPreviewPosition: { x: number; y: number } | null = null;
   private terrainTextures: TerrainTextures;
+  private spriteCache = new Map<string, HTMLImageElement>();
 
   // Minimap
   private minimapCanvas: HTMLCanvasElement;
@@ -61,6 +62,34 @@ export class RenderSystem extends System {
 
     // Center camera on map
     this.centerCamera();
+
+    // Preload all known building sprites
+    this.preloadSprites([
+      '/assets/buildings/base_camp.png',
+      '/assets/buildings/warehouse.png',
+      '/assets/buildings/lumberjack.png',
+      '/assets/buildings/sawmill.png',
+      '/assets/buildings/quarry.png',
+      '/assets/buildings/farm.png',
+    ]);
+  }
+
+  private preloadSprites(paths: string[]): void {
+    for (const path of paths) {
+      const img = new Image();
+      img.src = path;
+      this.spriteCache.set(path, img);
+    }
+  }
+
+  private loadSprite(path: string): HTMLImageElement | null {
+    const cached = this.spriteCache.get(path);
+    if (cached) return cached.complete ? cached : null;
+
+    const img = new Image();
+    img.src = path;
+    this.spriteCache.set(path, img);
+    return null;
   }
 
   private handleMinimapClick(e: MouseEvent): void {
@@ -475,15 +504,34 @@ export class RenderSystem extends System {
     return config;
   }
 
+  private getWaterConfig(x: number, y: number): number {
+    let config = 0;
+    const nw = this.tileMap.getTile(x - 1, y);
+    if (nw?.terrain === 'water') config |= 1;
+    const ne = this.tileMap.getTile(x, y - 1);
+    if (ne?.terrain === 'water') config |= 2;
+    const se = this.tileMap.getTile(x + 1, y);
+    if (se?.terrain === 'water') config |= 4;
+    const sw = this.tileMap.getTile(x, y + 1);
+    if (sw?.terrain === 'water') config |= 8;
+    return config;
+  }
+
   private renderTile(tile: Tile): void {
     const center = this.iso.gridToScreen(tile.x, tile.y);
     if (!tile.isExplored()) {
       this.terrainTextures.drawTile(this.ctx, 'fog', tile.x, tile.y, center.x, center.y);
       return;
     }
-    // Always draw terrain first
-    this.terrainTextures.drawTile(this.ctx, tile.terrain, tile.x, tile.y, center.x, center.y);
-    // Road overlay on top
+
+    if (tile.terrain === 'water') {
+      this.terrainTextures.drawTile(this.ctx, 'grass', tile.x, tile.y, center.x, center.y);
+      const waterConfig = this.getWaterConfig(tile.x, tile.y);
+      this.terrainTextures.drawWater(this.ctx, waterConfig, tile.x, tile.y, center.x, center.y);
+    } else {
+      this.terrainTextures.drawTile(this.ctx, tile.terrain, tile.x, tile.y, center.x, center.y);
+    }
+
     if (tile.hasRoad) {
       const config = this.getRoadConfig(tile.x, tile.y);
       this.terrainTextures.drawRoad(this.ctx, config, center.x, center.y);
@@ -523,11 +571,9 @@ export class RenderSystem extends System {
       this.ctx.translate(screenPos.x, screenPos.y + offsetY);
     }
 
-    // Render buildings as isometric 3D boxes
     if (building) {
-      // Special rendering for base camp (pyramid)
-      if (building.buildingType === 'base_camp') {
-        this.renderBaseCampPyramid(building, renderable, isSelected);
+      if (renderable.spritePath) {
+        this.renderBuildingSprite(building, renderable, isSelected);
       } else {
         this.renderIsometricBuilding(building, renderable, isSelected);
       }
@@ -570,100 +616,38 @@ export class RenderSystem extends System {
     this.ctx.restore();
   }
 
-  private renderBaseCampPyramid(building: Building, renderable: Renderable, isSelected: boolean = false): void {
+  private renderBuildingSprite(building: Building, renderable: Renderable, isSelected: boolean = false): void {
+    const sprite = renderable.spritePath ? this.loadSprite(renderable.spritePath) : null;
+    if (!sprite) return;
+
     const tileW = this.iso.tileWidth;
     const tileH = this.iso.tileHeight;
-
-    // Building dimensions
     const width = building.width;
     const depth = building.height;
-    const height = building.buildingHeight;
 
-    // Calculate the center of the base
-    const baseCenter = {
-      x: (width * tileW / 2 - depth * tileW / 2) / 2,
-      y: (width * tileH / 2 + depth * tileH / 2) / 2
-    };
+    const footprintW = (width + depth) * tileW / 2;
+    const scale = footprintW / sprite.naturalWidth;
+    const drawW = sprite.naturalWidth * scale;
+    const drawH = sprite.naturalHeight * scale;
 
-    // Peak of the pyramid
-    const peak = { x: baseCenter.x, y: baseCenter.y - height };
+    const centerX = (width - depth) * tileW / 4;
+    const frontY = (width + depth) * tileH / 2;
 
-    // Base corners
-    const baseCorners = [
-      { x: 0, y: 0 },                                           // Back (top)
-      { x: width * tileW / 2, y: width * tileH / 2 },          // Right
-      { x: (width - depth) * tileW / 2, y: (width + depth) * tileH / 2 }, // Front (bottom)
-      { x: -depth * tileW / 2, y: depth * tileH / 2 }          // Left
-    ];
+    this.ctx.drawImage(sprite, centerX - drawW / 2, frontY - drawH, drawW, drawH);
 
-    // Back face (darkest - dark red)
-    this.ctx.beginPath();
-    this.ctx.moveTo(baseCorners[0].x, baseCorners[0].y); // back
-    this.ctx.lineTo(peak.x, peak.y); // peak
-    this.ctx.lineTo(baseCorners[3].x, baseCorners[3].y); // left
-    this.ctx.closePath();
-    this.ctx.fillStyle = '#5a0a0a';
-    this.ctx.fill();
-    this.ctx.strokeStyle = '#3a0000';
-    this.ctx.lineWidth = 2;
-    this.ctx.stroke();
-
-    // Right face (medium red)
-    this.ctx.beginPath();
-    this.ctx.moveTo(baseCorners[0].x, baseCorners[0].y); // back
-    this.ctx.lineTo(peak.x, peak.y); // peak
-    this.ctx.lineTo(baseCorners[1].x, baseCorners[1].y); // right
-    this.ctx.closePath();
-    this.ctx.fillStyle = '#8b1a1a';
-    this.ctx.fill();
-    this.ctx.strokeStyle = '#6b0000';
-    this.ctx.lineWidth = 2;
-    this.ctx.stroke();
-
-    // Left face (lighter red)
-    this.ctx.beginPath();
-    this.ctx.moveTo(baseCorners[3].x, baseCorners[3].y); // left
-    this.ctx.lineTo(peak.x, peak.y); // peak
-    this.ctx.lineTo(baseCorners[2].x, baseCorners[2].y); // front
-    this.ctx.closePath();
-    this.ctx.fillStyle = '#a52a2a';
-    this.ctx.fill();
-    this.ctx.strokeStyle = '#8b0000';
-    this.ctx.lineWidth = 2;
-    this.ctx.stroke();
-
-    // Front face (lightest red)
-    this.ctx.beginPath();
-    this.ctx.moveTo(baseCorners[1].x, baseCorners[1].y); // right
-    this.ctx.lineTo(peak.x, peak.y); // peak
-    this.ctx.lineTo(baseCorners[2].x, baseCorners[2].y); // front
-    this.ctx.closePath();
-    this.ctx.fillStyle = '#cd5c5c';
-    this.ctx.fill();
-    this.ctx.strokeStyle = '#a52a2a';
-    this.ctx.lineWidth = 2;
-    this.ctx.stroke();
-
-    // Cap at peak (golden)
-    this.ctx.beginPath();
-    this.ctx.arc(peak.x, peak.y, 6, 0, Math.PI * 2);
-    this.ctx.fillStyle = '#ffd700';
-    this.ctx.fill();
-    this.ctx.strokeStyle = '#daa520';
-    this.ctx.lineWidth = 2;
-    this.ctx.stroke();
-
-    // Glow effect if selected
     if (isSelected) {
+      const baseCorners = [
+        { x: 0, y: 0 },
+        { x: width * tileW / 2, y: width * tileH / 2 },
+        { x: (width - depth) * tileW / 2, y: (width + depth) * tileH / 2 },
+        { x: -depth * tileW / 2, y: depth * tileH / 2 }
+      ];
       this.ctx.strokeStyle = '#ffff00';
       this.ctx.lineWidth = 4;
       this.ctx.beginPath();
       baseCorners.forEach((corner, i) => {
-        if (i === 0) {
-          this.ctx.moveTo(corner.x, corner.y);
-        } else {
-          this.ctx.lineTo(corner.x, corner.y);
-        }
+        if (i === 0) this.ctx.moveTo(corner.x, corner.y);
+        else this.ctx.lineTo(corner.x, corner.y);
       });
       this.ctx.closePath();
       this.ctx.stroke();

@@ -61,6 +61,7 @@ const FOREST = hexToRgb('#2d5016');
 const HILL = hexToRgb('#8bb34a');
 const DESERT = hexToRgb('#d4b96a');
 const ROAD = hexToRgb('#c4a572');
+const SAND = hexToRgb('#c8b07a');
 
 function genGrass(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: Float64Array, b: Float64Array, i: number): void {
   const n1 = tileNoise(n, x, y, 0.8);
@@ -267,6 +268,140 @@ function buildRoadAtlas(noise: NoiseGenerator): HTMLCanvasElement {
   return canvas;
 }
 
+// --- Water shore overlay atlas ---
+// 16 shore configs (4x4) + 4 deep water variants (row 5) = 4x5 grid
+
+const WATER_COLS = 4;
+const WATER_ROWS = 5;
+const WATER_ATLAS_W = WATER_COLS * TILE_W;
+const WATER_ATLAS_H = WATER_ROWS * TILE_H;
+const DEEP_WATER_OFFSET = 16;
+
+function renderWaterCell(
+  data: Uint8ClampedArray, noise: NoiseGenerator,
+  cellIndex: number, config: number, noiseOx: number, noiseOy: number
+): void {
+  const col = cellIndex % WATER_COLS;
+  const row = Math.floor(cellIndex / WATER_COLS);
+
+  for (let py = 0; py < TILE_H; py++) {
+    for (let px = 0; px < TILE_W; px++) {
+      if (!DIAMOND_MASK[py * TILE_W + px]) continue;
+
+      const cpx = px + 0.5;
+      const cpy = py + 0.5;
+
+      const fNW = (cpx - 32 + 2 * cpy) / 32;
+      const fNE = (32 - cpx + 2 * cpy) / 32;
+      const fSE = (96 - cpx - 2 * cpy) / 32;
+      const fSW = (cpx + 32 - 2 * cpy) / 32;
+
+      const eFNW = (config & 1) ? 99 : fNW;
+      const eFNE = (config & 2) ? 99 : fNE;
+      const eFSE = (config & 4) ? 99 : fSE;
+      const eFSW = (config & 8) ? 99 : fSW;
+
+      const shoreNoise = noise.noise(cpx * 2.5 + noiseOx, cpy * 2.5 + noiseOy, 0.18);
+      const noiseOffset = (shoreNoise - 0.5) * 0.1;
+      const minF = Math.min(eFNW, eFNE, eFSE, eFSW) + noiseOffset;
+
+      if (minF <= 0.13) continue;
+
+      const n1 = noise.noise(cpx * 1.5 + noiseOx + 30, cpy * 1.5 + noiseOy + 30, 0.12);
+      const n2 = noise.noise(cpx * 3 + noiseOx + 80, cpy * 3 + noiseOy + 80, 0.2);
+      const stoneNoise = noise.noise(cpx * 7 + noiseOx + 150, cpy * 7 + noiseOy + 150, 0.25);
+      const variation = (n1 - 0.5) * 18;
+
+      let rv: number, gv: number, bv: number, alpha: number;
+
+      if (minF > 0.5) {
+        // Deep water
+        rv = WATER.r + variation * 0.4;
+        gv = WATER.g + variation * 0.6;
+        bv = WATER.b + variation;
+        if (n2 > 0.72) {
+          const h = (n2 - 0.72) * 150;
+          rv += h * 0.5; gv += h * 0.6; bv += h;
+        }
+        alpha = 255;
+      } else if (minF > 0.35) {
+        // Shallow water
+        const t = (minF - 0.35) / 0.15;
+        rv = WATER.r + 20 + variation * 0.3;
+        gv = WATER.g + 28 + variation * 0.4;
+        bv = WATER.b + 14 + variation * 0.5;
+        alpha = Math.round(200 + 55 * t);
+        // Foam near shore
+        if (n2 > 0.76 && minF < 0.42) {
+          const foam = (n2 - 0.76) * 250;
+          rv += foam; gv += foam; bv += foam * 0.8;
+        }
+      } else if (minF > 0.22) {
+        // Stony shore
+        const t = (minF - 0.22) / 0.13;
+        // Base: grey-brown stone
+        rv = 135 + variation * 0.3;
+        gv = 128 + variation * 0.25;
+        bv = 115 + variation * 0.2;
+        // Scatter stones
+        if (stoneNoise > 0.72) {
+          rv -= 28; gv -= 24; bv -= 18;
+        } else if (stoneNoise > 0.6) {
+          rv += 18; gv += 15; bv += 10;
+        } else if (stoneNoise < 0.3) {
+          rv -= 10; gv -= 5; bv -= 3;
+        }
+        // Wet area near water edge
+        if (minF > 0.28) {
+          const wet = (minF - 0.28) / 0.07;
+          rv -= wet * 22; gv -= wet * 16; bv += wet * 12;
+        }
+        alpha = Math.round(180 + 70 * t);
+      } else {
+        // Grassy edge transition
+        const t = (minF - 0.13) / 0.09;
+        rv = 100 + variation * 0.2;
+        gv = 125 + variation * 0.3;
+        bv = 65 + variation * 0.15;
+        if (stoneNoise > 0.75) {
+          rv += 20; gv -= 10; bv -= 5;
+        }
+        alpha = Math.round(130 * t);
+      }
+
+      const ax = col * TILE_W + px;
+      const ay = row * TILE_H + py;
+      const idx = (ay * WATER_ATLAS_W + ax) * 4;
+      data[idx] = clamp(Math.round(rv));
+      data[idx + 1] = clamp(Math.round(gv));
+      data[idx + 2] = clamp(Math.round(bv));
+      data[idx + 3] = clamp(Math.round(alpha));
+    }
+  }
+}
+
+function buildWaterAtlas(noise: NoiseGenerator): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = WATER_ATLAS_W;
+  canvas.height = WATER_ATLAS_H;
+  const ctx = canvas.getContext('2d')!;
+  const imageData = ctx.createImageData(WATER_ATLAS_W, WATER_ATLAS_H);
+  const data = imageData.data;
+
+  // 16 shore configurations
+  for (let config = 0; config < 16; config++) {
+    renderWaterCell(data, noise, config, config, config * 97, config * 53);
+  }
+
+  // 4 deep water variants (all edges connected, different noise offsets)
+  for (let v = 0; v < 4; v++) {
+    renderWaterCell(data, noise, DEEP_WATER_OFFSET + v, 15, v * 211 + 500, v * 173 + 700);
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
+}
+
 function buildAtlas(gen: GenFn, noise: NoiseGenerator): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   canvas.width = ATLAS_W;
@@ -307,6 +442,7 @@ function buildAtlas(gen: GenFn, noise: NoiseGenerator): HTMLCanvasElement {
 export class TerrainTextures {
   private atlases = new Map<string, HTMLCanvasElement>();
   private roadAtlas: HTMLCanvasElement;
+  private waterAtlas: HTMLCanvasElement;
 
   constructor(seed: number = 42) {
     const noise = new NoiseGenerator(seed);
@@ -314,6 +450,7 @@ export class TerrainTextures {
       this.atlases.set(terrain, buildAtlas(GENERATORS[terrain], noise));
     }
     this.roadAtlas = buildRoadAtlas(noise);
+    this.waterAtlas = buildWaterAtlas(noise);
   }
 
   drawTile(ctx: CanvasRenderingContext2D, terrain: string, tileX: number, tileY: number, screenCenterX: number, screenCenterY: number): void {
@@ -336,6 +473,23 @@ export class TerrainTextures {
 
     ctx.drawImage(
       this.roadAtlas,
+      col * TILE_W, row * TILE_H, TILE_W, TILE_H,
+      screenCenterX - TILE_W / 2, screenCenterY - TILE_H / 2, TILE_W, TILE_H
+    );
+  }
+
+  drawWater(ctx: CanvasRenderingContext2D, config: number, tileX: number, tileY: number, screenCenterX: number, screenCenterY: number): void {
+    let cell: number;
+    if (config === 15) {
+      cell = DEEP_WATER_OFFSET + ((tileX + tileY) & 3);
+    } else {
+      cell = config;
+    }
+    const col = cell % WATER_COLS;
+    const row = Math.floor(cell / WATER_COLS);
+
+    ctx.drawImage(
+      this.waterAtlas,
       col * TILE_W, row * TILE_H, TILE_W, TILE_H,
       screenCenterX - TILE_W / 2, screenCenterY - TILE_H / 2, TILE_W, TILE_H
     );

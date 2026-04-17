@@ -19,3 +19,9 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Assets - keep folder structure but ignore temp files
+assets/**/*.psd
+assets/**/*.ai
+assets/**/*-backup.*
+assets/**/*-temp.*

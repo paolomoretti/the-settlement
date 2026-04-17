@@ -1,0 +1,102 @@
+================================================================================
+AI PROMPT TEMPLATE - The Settlement Asset Generation
+================================================================================
+
+Use this template for generating assets. Copy and customize the [BRACKETED] sections.
+
+================================================================================
+QUICK REFERENCE
+================================================================================
+
+Terrain Tile:     64×32px, PNG with transparency
+Road Tile:        64×32px, PNG with transparency
+Warehouse:        192×180px (3×3 tiles + 80px height)
+Lumberjack:       128×120px (2×2 tiles + 60px height)
+Worker Sprite:    256×192px spritesheet (32×48 per frame)
+
+Color Palette:
+  Grass:   #7cb342, #689f38
+  Dirt:    #c4a572, #a68a5a
+  Water:   #2196f3
+  Stone:   #9e9e9e
+  Wood:    #8b4513, #d4a574
+
+================================================================================
+FULL PROMPT TEMPLATE
+================================================================================
+
+Create an isometric [ASSET_TYPE] sprite in the style of The Settlers II (1996).
+
+Style requirements:
+- Isometric perspective, 2:1 ratio, viewed from 45° angle
+- Hand-painted medieval fantasy aesthetic
+- Warm, earthy color palette with visible brush strokes
+- Lighting from top-left, shadows bottom-right
+- Cheerful and inviting mood
+- Clear, readable silhouette
+- Slightly cartoonish but detailed
+
+Technical specs:
+- Dimensions: [WIDTH]×[HEIGHT] pixels
+- Transparent background (PNG)
+- [ADDITIONAL_SPECS]
+
+The asset is: [DETAILED_DESCRIPTION]
+
+Reference style: The Settlers II (1996), Anno 1602, classic isometric RTS games
+
+================================================================================
+EXAMPLE: GRASS TILE
+================================================================================
+
+Create an isometric grass terrain tile in the style of The Settlers II (1996).
+
+Style requirements:
+- Isometric perspective, 2:1 ratio, viewed from 45° angle
+- Hand-painted medieval fantasy aesthetic
+- Rich green colors (#7cb342, #689f38)
+- Lighting from top-left, subtle shading bottom-right
+- Slightly varied grass texture with small detail
+- Cheerful and vibrant
+
+Technical specs:
+- Dimensions: 64×32 pixels
+- Transparent background (PNG)
+- Isometric diamond/rhombus shape
+- Should tile seamlessly
+
+The grass tile should show:
+- Short grass texture
+- Subtle color variation for natural look
+- Maybe small flowers or clover details
+- Matches medieval European countryside
+
+Reference style: The Settlers II grass tiles
+
+================================================================================
+SAVE AS
+================================================================================
+
+Terrain:    /assets/terrain/[name].png
+Buildings:  /assets/buildings/[name].png
+Roads:      /assets/roads/[type].png
+Units:      /assets/units/[name]_[action].png
+UI:         /assets/ui/[element].png
+
+Naming: lowercase, underscores, descriptive
+Examples: terrain_grass.png, building_warehouse.png, road_corner_ne.png
+
+================================================================================
+CHECKLIST BEFORE SAVING
+================================================================================
+
+□ Correct dimensions
+□ PNG with transparency
+□ Isometric perspective (2:1 ratio)
+□ Lighting from top-left
+□ Matches Settlers II style
+□ Proper naming convention
+□ Saved in correct folder
+□ No white edges/artifacts
+
+================================================================================

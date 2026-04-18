@@ -33,45 +33,35 @@ export class TileMap {
       }
     }
 
-    // Add rivers
     this.generateRivers(noise);
-
-    // Remove thin water bodies (< 3 tiles thick in both directions)
-    this.removeThinWater();
+    this.removeIsolatedWater();
+    this.clearBaseCampArea();
   }
 
   private generateTerrain(x: number, y: number, noise: NoiseGenerator): TerrainType {
-    // Multiple noise layers for different features
     const elevation = noise.fractalNoise(x, y, 4);
     const moisture = noise.fractalNoise(x + 1000, y + 1000, 3);
     const treeNoise = noise.fractalNoise(x + 2000, y + 2000, 2);
 
-    // Water (small lakes only) - very low elevation
+    // Large water bodies from low elevation
     if (elevation < 0.15) {
       return 'water';
     }
 
-    // Mountains - high elevation
-    if (elevation > 0.75) {
-      return 'mountain';
+    // Small scattered lakes and ponds (higher frequency noise)
+    const lakeNoise = noise.noise(x + 3000, y + 3000, 0.08) * 0.6
+                    + noise.noise(x + 3500, y + 3500, 0.15) * 0.4;
+    // Regional wetness: some areas have more lakes than others
+    const wetness = noise.noise(x + 4000, y + 4000, 0.004);
+    const lakeThreshold = 0.08 + Math.max(0, wetness - 0.4) * 0.2;
+    if (lakeNoise < lakeThreshold && elevation < 0.40) {
+      return 'water';
     }
 
-    // Hills - medium-high elevation
-    if (elevation > 0.6) {
-      return 'hill';
-    }
-
-    // Forests - cluster based on moisture and tree noise
-    if (moisture > 0.6 && treeNoise > 0.5) {
-      return 'forest';
-    }
-
-    // Scattered trees
-    if (treeNoise > 0.75) {
-      return 'tree';
-    }
-
-    // Default to grass
+    if (elevation > 0.75) return 'mountain';
+    if (elevation > 0.6) return 'hill';
+    if (moisture > 0.6 && treeNoise > 0.5) return 'forest';
+    if (treeNoise > 0.75) return 'tree';
     return 'grass';
   }
 
@@ -84,7 +74,6 @@ export class TileMap {
       let y = 0;
 
       while (y < this.height) {
-        // 3-tile wide river
         for (let dx = -1; dx <= 1; dx++) {
           const tile = this.getTile(x + dx, y);
           if (tile && tile.terrain !== 'mountain') {
@@ -105,30 +94,40 @@ export class TileMap {
     }
   }
 
-  private removeThinWater(): void {
-    for (let pass = 0; pass < 3; pass++) {
-      let changed = false;
-      for (let y = 0; y < this.height; y++) {
-        for (let x = 0; x < this.width; x++) {
-          const tile = this.tiles[y][x];
-          if (tile.terrain !== 'water') continue;
+  private removeIsolatedWater(): void {
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        const tile = this.tiles[y][x];
+        if (tile.terrain !== 'water') continue;
 
-          let xCount = 1;
-          for (let dx = 1; x + dx < this.width && this.tiles[y][x + dx].terrain === 'water'; dx++) xCount++;
-          for (let dx = -1; x + dx >= 0 && this.tiles[y][x + dx].terrain === 'water'; dx--) xCount++;
+        let waterNeighbors = 0;
+        const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+        for (const [dx, dy] of dirs) {
+          const n = this.getTile(x + dx, y + dy);
+          if (n && n.terrain === 'water') waterNeighbors++;
+        }
 
-          let yCount = 1;
-          for (let dy = 1; y + dy < this.height && this.tiles[y + dy][x].terrain === 'water'; dy++) yCount++;
-          for (let dy = -1; y + dy >= 0 && this.tiles[y + dy][x].terrain === 'water'; dy--) yCount++;
-
-          if (xCount < 3 && yCount < 3) {
-            tile.terrain = 'grass';
-            tile.walkable = true;
-            changed = true;
-          }
+        if (waterNeighbors < 2) {
+          tile.terrain = 'grass';
+          tile.walkable = true;
         }
       }
-      if (!changed) break;
+    }
+  }
+
+  private clearBaseCampArea(): void {
+    const cx = Math.floor(this.width / 2);
+    const cy = Math.floor(this.height / 2);
+    const radius = 20;
+
+    for (let y = cy - radius; y <= cy + radius; y++) {
+      for (let x = cx - radius; x <= cx + radius; x++) {
+        const tile = this.getTile(x, y);
+        if (tile && tile.terrain === 'water') {
+          tile.terrain = 'grass';
+          tile.walkable = true;
+        }
+      }
     }
   }
 

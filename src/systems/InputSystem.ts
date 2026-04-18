@@ -1,5 +1,7 @@
 /**
  * Input System - handles mouse and touch input
+ *
+ * Keyboard shortcuts are managed centrally in src/input/KeyboardShortcuts.ts
  */
 
 import { eventBus } from '@/core/EventBus';
@@ -31,6 +33,11 @@ export class InputSystem {
     });
   }
 
+  setSpacebarPressed(pressed: boolean): void {
+    this.spacebarPressed = pressed;
+    this.canvas.style.cursor = pressed ? 'grab' : 'default';
+  }
+
   private setupEventListeners(): void {
     // Mouse events
     this.canvas.addEventListener('mousedown', (e) => this.handlePointerDown(e.clientX, e.clientY));
@@ -50,33 +57,6 @@ export class InputSystem {
 
     // Prevent context menu
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-
-    // Keyboard events for spacebar panning
-    window.addEventListener('keydown', (e) => this.handleKeyDown(e));
-    window.addEventListener('keyup', (e) => this.handleKeyUp(e));
-  }
-
-  private handleKeyDown(e: KeyboardEvent): void {
-    if (e.code === 'Space' && !this.spacebarPressed) {
-      this.spacebarPressed = true;
-      e.preventDefault(); // Prevent page scroll
-      // Change cursor to indicate panning mode
-      this.canvas.style.cursor = 'grab';
-    }
-
-    // Escape key always returns to view mode
-    if (e.code === 'Escape') {
-      this.setMode('view');
-      e.preventDefault();
-    }
-  }
-
-  private handleKeyUp(e: KeyboardEvent): void {
-    if (e.code === 'Space') {
-      this.spacebarPressed = false;
-      // Reset cursor
-      this.canvas.style.cursor = 'default';
-    }
   }
 
   private handlePointerDown(clientX: number, clientY: number): void {

@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@floating-ui/dom": "^1.7.6",
+    "hotkeys-js": "^4.0.3",
     "howler": "^2.2.4",
     "pathfinding": "^0.4.18"
   }

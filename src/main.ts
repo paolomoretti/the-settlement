@@ -3,6 +3,7 @@ import { eventBus } from './core/EventBus';
 import { dataManager } from './data/DataManager';
 import { BuildingMenu } from './ui/BuildingMenu';
 import { BuildingPopover } from './ui/BuildingPopover';
+import { setupKeyboardShortcuts } from './input/KeyboardShortcuts';
 
 let game: Game | null = null;
 let buildingMenu: BuildingMenu | null = null;
@@ -162,20 +163,6 @@ function setupDialogs(): void {
   exitDialog.addEventListener('click', (e) => {
     if (e.target === exitDialog) exitDialog.style.display = 'none';
   });
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
-
-    if (saveLoadDialog.style.display !== 'none') {
-      if (!saveLoadDialog.querySelector('.editing')) {
-        saveLoadDialog.style.display = 'none';
-        e.stopPropagation();
-      }
-    } else if (exitDialog.style.display !== 'none') {
-      exitDialog.style.display = 'none';
-      e.stopPropagation();
-    }
-  });
 }
 
 function openSaveDialog(onComplete?: () => void): void {
@@ -294,6 +281,7 @@ function escapeAttr(str: string): string {
 // --- Game UI ---
 
 function setupGameUI(game: Game): void {
+  setupKeyboardShortcuts(game);
   buildingMenu = new BuildingMenu(game);
 
   eventBus.on('input:mode_changed', (mode) => {

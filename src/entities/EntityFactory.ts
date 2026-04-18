@@ -6,27 +6,28 @@ import { Entity } from '@/core/Entity';
 import { Position } from '@/components/Position';
 import { Renderable } from '@/components/Renderable';
 import { Movable } from '@/components/Movable';
-import { Worker } from '@/components/Worker';
+import { Worker, WorkerRole, WORKER_DEFS } from '@/components/Worker';
 import { Building, BuildingType } from '@/components/Building';
 import { Production } from '@/components/Production';
 import { Storage } from '@/components/Storage';
 import { dataManager } from '@/data/DataManager';
 import { ResourceType } from '@/types/GameData';
 
-export function createWorker(x: number, y: number): Entity {
+export function createWorker(x: number, y: number, role: WorkerRole = 'peasant'): Entity {
   const entity = new Entity();
+  const def = WORKER_DEFS[role];
 
   entity.addComponent(new Position(x, y));
   entity.addComponent(new Renderable(
-    'circle',
-    '#ff6b6b',
-    { width: 16, height: 16 },
+    'worker',
+    '#8b7355',
+    { width: 12, height: 20 },
     0,
     undefined,
-    0 // No layers - using isometric sorting
+    0
   ));
-  entity.addComponent(new Movable(3)); // 3 tiles per second
-  entity.addComponent(new Worker('Settler'));
+  entity.addComponent(new Movable(def.speed));
+  entity.addComponent(new Worker(def.role, role));
 
   return entity;
 }

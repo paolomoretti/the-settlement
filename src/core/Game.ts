@@ -20,10 +20,11 @@ import { Production } from '@/components/Production';
 import { Storage } from '@/components/Storage';
 import { dataManager } from '@/data/DataManager';
 import { resourceManager } from '@/economics/ResourceManager';
+import { roadSegmentManager, RoadSegment } from '@/economics/RoadSegmentManager';
 import { Inventory, BuildingType } from '@/types/GameData';
 
 // Entity factories
-import { createWorker, createBuilding, createBaseCamp, createWarehouse } from '@/entities/EntityFactory';
+import { createWorker, createBuilding, createBaseCamp } from '@/entities/EntityFactory';
 
 export class Game {
   private entities: Entity[] = [];
@@ -78,6 +79,13 @@ export class Game {
     // Give ResourceManager access to entities
     resourceManager.setEntityGetter(() => this.entities);
 
+    // Setup road segment callbacks
+    roadSegmentManager.setCallbacks({
+      spawnWorker: (seg) => this.spawnSegmentWorker(seg),
+      freeWorker: (id) => this.freeSegmentWorker(id),
+      moveWorker: (id, seg) => this.moveSegmentWorker(id, seg),
+    });
+
     // Setup event listeners
     this.setupEventListeners();
 
@@ -102,8 +110,6 @@ export class Game {
     buildingTypes.forEach(type => {
       eventBus.on(`build:${type}`, (data) => this.buildGeneric(type as any, data.x, data.y));
     });
-
-    eventBus.on('spawn:worker', () => this.spawnWorker());
 
     // Selection events
     eventBus.on('select:entity', (data) => this.selectEntityAt(data.x, data.y));
@@ -142,32 +148,8 @@ export class Game {
     // Explore initial area around spawn
     this.exploreArea(centerX, centerY, 25);
 
-    // Build base camp
+    // Build base camp — no roads, no workers. Roads are built by the player.
     this.buildBaseCamp(centerX, centerY);
-
-    // Spawn initial workers
-    for (let i = 0; i < 3; i++) {
-      this.spawnWorker();
-    }
-
-    // Build initial road network (cardinal directions only)
-    // Main horizontal road (grid X axis)
-    for (let i = -15; i <= 15; i++) {
-      this.buildRoad(centerX + i, centerY);
-    }
-
-    // Main vertical road (grid Y axis)
-    for (let i = -15; i <= 15; i++) {
-      this.buildRoad(centerX, centerY + i);
-    }
-
-    // Connecting roads forming a grid
-    for (let i = -10; i <= 10; i++) {
-      this.buildRoad(centerX + i, centerY + 8);
-      this.buildRoad(centerX + i, centerY - 8);
-      this.buildRoad(centerX + 8, centerY + i);
-      this.buildRoad(centerX - 8, centerY + i);
-    }
 
     console.log(`World initialized at (${centerX}, ${centerY}) - Map size: ${this.tileMap.width}x${this.tileMap.height}`);
   }
@@ -210,10 +192,30 @@ export class Game {
       return;
     }
 
+    if (!this.isRoadPlacementValid(x, y)) {
+      eventBus.emit('build:failed', { reason: 'Must connect to existing road or base camp' });
+      return;
+    }
+
     if (this.tileMap.buildRoad(x, y)) {
       audioManager.playSound('build_placed');
+      roadSegmentManager.addRoad(x, y);
+      roadSegmentManager.recalculate(this.tileMap);
       this.updateBuildingRoadConnections();
     }
+  }
+
+  private isRoadPlacementValid(x: number, y: number): boolean {
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (const [dx, dy] of dirs) {
+      const tile = this.tileMap.getTile(x + dx, y + dy);
+      if (!tile) continue;
+      if (tile.hasRoad) return true;
+      if (tile.isOccupied() && this.baseCampEntity && tile.occupiedBy === this.baseCampEntity.id) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private getBaseCampConnectedRoads(): Set<string> {
@@ -310,19 +312,22 @@ export class Game {
   }
 
   private occupyBuildingTiles(entityId: number, x: number, y: number, width: number, height: number): void {
-    // Occupy all tiles the building uses and clear roads underneath
+    let roadsRemoved = false;
     for (let dy = 0; dy < height; dy++) {
       for (let dx = 0; dx < width; dx++) {
         const tile = this.tileMap.getTile(x + dx, y + dy);
         if (tile) {
           tile.occupy(entityId);
-          // Remove road when building is placed on top
-          // Workers can't walk through buildings
           if (tile.hasRoad) {
             tile.hasRoad = false;
+            roadSegmentManager.removeRoad(x + dx, y + dy);
+            roadsRemoved = true;
           }
         }
       }
+    }
+    if (roadsRemoved) {
+      roadSegmentManager.recalculate(this.tileMap);
     }
   }
 
@@ -406,99 +411,99 @@ export class Game {
     console.log(`✅ ${buildingDef.name} (${building.width}x${building.height}) built at (${x}, ${y})`);
   }
 
-  private buildWarehouse(x: number, y: number): void {
-    this.buildGeneric('warehouse', x, y);
+  private getAvailablePopulation(): number {
+    return this.population.current - roadSegmentManager.getWorkerCount();
   }
 
-  private spawnWorker(): void {
-    // Spawn near warehouse (but not on it - warehouse is 3x3)
-    const centerX = Math.floor(this.tileMap.width / 2);
-    const centerY = Math.floor(this.tileMap.height / 2);
+  private findBaseCampSpawnTile(): { x: number; y: number } | null {
+    if (!this.baseCampEntity) return null;
+    const pos = this.baseCampEntity.getComponent(Position);
+    const building = this.baseCampEntity.getComponent(Building);
+    if (!pos || !building) return null;
 
-    // Spawn on the roads around the warehouse (further away to avoid warehouse footprint)
-    const spawnOffsets = [
-      { x: -5, y: 0 }, { x: 5, y: 0 },  // West/East on road
-      { x: 0, y: -5 }, { x: 0, y: 5 },  // North/South on road
-    ];
+    for (let dy = -1; dy <= building.height; dy++) {
+      for (let dx = -1; dx <= building.width; dx++) {
+        const isInside = dx >= 0 && dx < building.width && dy >= 0 && dy < building.height;
+        if (isInside) continue;
+        const tile = this.tileMap.getTile(pos.x + dx, pos.y + dy);
+        if (tile && tile.hasRoad) {
+          return { x: pos.x + dx, y: pos.y + dy };
+        }
+      }
+    }
+    return null;
+  }
 
-    const offset = spawnOffsets[Math.floor(Math.random() * spawnOffsets.length)];
-    const spawnX = centerX + offset.x;
-    const spawnY = centerY + offset.y;
+  private spawnSegmentWorker(segment: RoadSegment): number | null {
+    if (this.getAvailablePopulation() <= 0) {
+      console.warn('No available population for road worker');
+      return null;
+    }
+
+    const spawnTile = this.findBaseCampSpawnTile();
+    const center = roadSegmentManager.getCenterTile(segment);
+
+    // Spawn at base camp road tile, or directly at center if no spawn tile
+    const spawnX = spawnTile?.x ?? center.x;
+    const spawnY = spawnTile?.y ?? center.y;
 
     const worker = createWorker(spawnX, spawnY);
-
     this.addEntity(worker);
-    audioManager.playSound('worker_spawn');
-    console.log(`Worker spawned at (${spawnX}, ${spawnY})`);
 
-    // Give worker a random path for testing
-    setTimeout(() => this.giveWorkerRandomTask(worker), 1000);
-  }
-
-  private getRandomRoadTile(): { x: number; y: number } | null {
-    // Find a random road tile
-    const roadTiles: { x: number; y: number }[] = [];
-
-    for (let y = 0; y < this.tileMap.height; y++) {
-      for (let x = 0; x < this.tileMap.width; x++) {
-        const tile = this.tileMap.getTile(x, y);
-        if (tile && tile.hasRoad) {
-          roadTiles.push({ x, y });
+    // Pathfind to segment center if not already there
+    if (spawnTile && (spawnX !== center.x || spawnY !== center.y)) {
+      const path = this.pathFinder.findPath(
+        new Position(spawnX, spawnY),
+        new Position(center.x, center.y),
+        this.tileMap
+      );
+      if (path.length > 0) {
+        const movable = worker.getComponent(Movable);
+        const workerComp = worker.getComponent(Worker);
+        if (movable && workerComp) {
+          movable.setPath(path);
+          workerComp.setState('walking');
         }
       }
     }
 
-    if (roadTiles.length === 0) return null;
-    return roadTiles[Math.floor(Math.random() * roadTiles.length)];
+    console.log(`Road worker spawned for segment #${segment.id} at (${spawnX},${spawnY}) → center (${center.x},${center.y})`);
+    return worker.id;
   }
 
-  private giveWorkerRandomTask(worker: Entity): void {
-    const pos = worker.getComponent(Position);
-    if (!pos) {
-      console.warn('Worker has no position component');
-      return;
+  private freeSegmentWorker(workerId: number): void {
+    const entity = this.entities.find(e => e.id === workerId && e.active);
+    if (entity) {
+      this.removeEntity(entity);
+      console.log(`Road worker #${workerId} freed`);
     }
+  }
 
-    // Find a random destination on a road
-    const target = this.getRandomRoadTile();
-    if (!target) {
-      console.warn('No road tiles found!');
-      return;
-    }
+  private moveSegmentWorker(workerId: number, segment: RoadSegment): void {
+    const entity = this.entities.find(e => e.id === workerId && e.active);
+    if (!entity) return;
 
-    const startX = Math.floor(pos.x);
-    const startY = Math.floor(pos.y);
-    const targetX = target.x;
-    const targetY = target.y;
+    const pos = entity.getComponent(Position);
+    if (!pos) return;
+
+    const center = roadSegmentManager.getCenterTile(segment);
+    if (Math.floor(pos.x) === center.x && Math.floor(pos.y) === center.y) return;
 
     const path = this.pathFinder.findPath(
-      new Position(startX, startY),
-      new Position(targetX, targetY),
+      new Position(Math.floor(pos.x), Math.floor(pos.y)),
+      new Position(center.x, center.y),
       this.tileMap
     );
 
     if (path.length > 0) {
-      const movable = worker.getComponent(Movable);
-      const workerComp = worker.getComponent(Worker);
-
+      const movable = entity.getComponent(Movable);
+      const workerComp = entity.getComponent(Worker);
       if (movable && workerComp) {
         movable.setPath(path);
         workerComp.setState('walking');
-
-        // Give another task when done
-        setTimeout(() => {
-          if (worker.active) {
-            this.giveWorkerRandomTask(worker);
-          }
-        }, path.length * 1000);
       }
     } else {
-      console.warn('No path found, retrying with different destination...');
-      setTimeout(() => {
-        if (worker.active) {
-          this.giveWorkerRandomTask(worker);
-        }
-      }, 2000);
+      pos.set(center.x, center.y);
     }
   }
 
@@ -850,6 +855,7 @@ export class Game {
         return data;
       }),
       transportQueue: resourceManager.serialize(),
+      roadSegments: roadSegmentManager.serialize(),
       inventory: this.inventory,
       population: this.population,
       timestamp: Date.now()
@@ -861,6 +867,7 @@ export class Game {
     this.entities = [];
     this.systems.forEach(system => system.cleanup());
     resourceManager.reset();
+    roadSegmentManager.reset();
 
     this.tileMap = new TileMap(1000, 1000);
     this.renderSystem.updateTileMap(this.tileMap);
@@ -887,6 +894,7 @@ export class Game {
       this.entities = [];
       this.systems.forEach(system => system.cleanup());
       resourceManager.reset();
+      roadSegmentManager.reset();
 
       this.selectedEntity = null;
       this.isDraggingEntity = false;
@@ -946,8 +954,22 @@ export class Game {
 
       this.syncInventory();
 
-      for (let i = 0; i < 3; i++) {
-        this.spawnWorker();
+      // Rebuild road segments and spawn workers
+      roadSegmentManager.rebuildRoadTileSet(this.tileMap);
+      if (saveData.roadSegments) {
+        roadSegmentManager.deserialize(saveData.roadSegments);
+        // Re-spawn workers for segments that had them
+        for (const seg of roadSegmentManager.getSegments()) {
+          if (seg.assignedWorkerId !== null) {
+            const center = roadSegmentManager.getCenterTile(seg);
+            const worker = createWorker(center.x, center.y);
+            this.addEntity(worker);
+            seg.assignedWorkerId = worker.id;
+          }
+        }
+      } else {
+        // Old save without segments — recalculate from roads
+        roadSegmentManager.recalculate(this.tileMap);
       }
 
       this.updateBuildingRoadConnections();

@@ -46,13 +46,14 @@ npm run preview  # Preview production build
 
 ## Current State
 
-Working: terrain generation, isometric rendering, camera pan/zoom, building placement/selection/deletion/drag, road building, worker spawning, A* pathfinding on roads, fog of war, minimap, save/load, touch support, resource production system (buildings produce into output buffers), storage system (inventory lives in Storage components on warehouses/base camp), transport request queue (data layer for pickup/delivery).
+Working: terrain generation, isometric rendering, camera pan/zoom, building placement/selection/deletion/drag, road building (must connect to base camp), road segment computation with automatic worker assignment (one worker per segment, walks to center), A* pathfinding on roads, fog of war, minimap, save/load, touch support, resource production system (buildings produce into output buffers), storage system (inventory lives in Storage components on warehouses/base camp), transport request queue (data layer for pickup/delivery).
 
-Not yet implemented: sprite assets (all visuals are colored shapes), road workers (people on each road stretch who carry items between buildings and storage), production UX indicators (stop/pickup icons, progress bars), worker job assignment, resource consumption (food), trading, military, audio, building upgrades, weather/seasons.
+Not yet implemented: sprite assets (all visuals are colored shapes), item carrying by road workers (data layer ready, behavior not wired), production UX indicators (stop/pickup icons, progress bars), worker job assignment to buildings, resource consumption (food), trading, military, audio, building upgrades, weather/seasons.
 
 ## Documentation
 
 - [Economics Runtime](.claude/ECONOMICS_RUNTIME.md) - **How production, storage, and transport work** — the core game economics system
+- [Transport & Road Workers](.claude/TRANSPORT.md) - **Road segments, worker assignment, item carrying** — how roads are split into segments and workers assigned
 - [Economy Design](.claude/ECONOMY_DESIGN.md) - Game design goals, balance theory, production chains, tech progression
 - [Data System](.claude/DATA_SYSTEM.md) - JSON config layer: resources.json, buildings.json, game-config.json, DataManager
 - [Asset Guide](.claude/ASSET_GUIDE.md) - Comprehensive guide for creating game sprites

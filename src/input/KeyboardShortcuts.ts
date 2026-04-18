@@ -1,5 +1,6 @@
 import hotkeys from 'hotkeys-js';
 import { Game } from '@/core/Game';
+import { eventBus } from '@/core/EventBus';
 import { Position } from '@/components/Position';
 import { Building } from '@/components/Building';
 
@@ -13,6 +14,8 @@ export interface ShortcutBinding {
 
 export const SHORTCUT_BINDINGS: ShortcutBinding[] = [
   { key: 'H', description: 'Center on base camp', category: 'navigation' },
+  { key: 'R', description: 'Build road mode', category: 'building' },
+  { key: 'B', description: 'Open building menu', category: 'building' },
   { key: 'Arrow Up', description: 'Pan up', category: 'navigation' },
   { key: 'Arrow Down', description: 'Pan down', category: 'navigation' },
   { key: 'Arrow Left', description: 'Pan left', category: 'navigation' },
@@ -47,6 +50,22 @@ export function setupKeyboardShortcuts(game: Game): void {
       pos.x + building.width / 2,
       pos.y + building.height / 2,
     );
+  });
+
+  // R — Build road mode
+  hotkeys('r', (e) => {
+    if (isModalOpen()) return;
+    if (inputSystem.getMode() !== 'view') return;
+    e.preventDefault();
+    inputSystem.setMode('build_road');
+  });
+
+  // B — Open building menu
+  hotkeys('b', (e) => {
+    if (isModalOpen()) return;
+    if (inputSystem.getMode() !== 'view') return;
+    e.preventDefault();
+    eventBus.emit('toggle:building_menu');
   });
 
   // Arrow keys — Pan camera

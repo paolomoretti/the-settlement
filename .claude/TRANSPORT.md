@@ -73,9 +73,41 @@ availablePopulation = population.current - roadSegmentManager.getWorkerCount()
 
 ---
 
+## Building Entrances
+
+Every building ≥ 2×2 has an **entrance tile** — a road tile automatically placed inside the building footprint.
+
+### Entrance Position
+
+```
+entranceX = pos.x + width - 1     (rightmost column)
+entranceY = pos.y + floor((height - 1) / 2)  (middle row, rounds down)
+```
+
+Examples: 2×2 → (x+1, y+0), 3×3 → (x+2, y+1), 6×6 base_camp → (x+5, y+2).
+
+### Entrance Tile State
+
+- **Occupied** by the building entity (prevents other buildings from overlapping)
+- **hasRoad = true** (workers can walk through, road renders visually)
+- **Registered** in `RoadSegmentManager.roadTiles` (participates in segment graph as a building node)
+- Pathfinder allows walking on occupied road tiles (`hasRoad && walkable`)
+
+### Building Connectivity
+
+A building with an entrance is **connected** only when its entrance tile appears in the base-camp-connected road set (BFS flood-fill from base camp). Previously any adjacent road counted; now only the entrance matters.
+
+1×1 buildings (well) have no entrance and fall back to the old any-adjacent-road check.
+
+### Road Rendering
+
+Entrance roads are drawn **on top of** building sprites so the entrance is always visible, even when the building graphic covers the footprint.
+
+---
+
 ## Road Placement Rules
 
-Roads must be placed **adjacent (4-directional) to an existing road or the base camp footprint**. This enforces that all roads grow outward from the base camp — no disconnected roads.
+Roads must be placed **adjacent (4-directional) to an existing road or the base camp footprint**. This enforces that all roads grow outward from the base camp — no disconnected roads. Building entrance tiles also count as existing roads for adjacency.
 
 New games start with **zero roads**. The player builds the first road from the base camp.
 
@@ -110,6 +142,8 @@ New games start with **zero roads**. The player builds the first road from the b
 | `moveSegmentWorker(workerId, segment)` | Pathfind existing worker to new center |
 | `isRoadPlacementValid(x, y)` | Check adjacency to existing road or base camp |
 | `getAvailablePopulation()` | Population minus road workers |
+| `occupyBuildingTiles(...)` | Occupy footprint tiles, create entrance road |
+| `hasBuildingConnectedRoad(...)` | Check entrance tile connectivity (or adjacent for 1×1) |
 
 ---
 

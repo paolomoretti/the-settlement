@@ -196,6 +196,18 @@ export class Game {
       return;
     }
 
+    const tile = this.tileMap.getTile(x, y);
+    if (!tile) return;
+
+    // Toggle: remove existing road (but not entrance roads inside buildings)
+    if (tile.hasRoad && !tile.isOccupied()) {
+      tile.hasRoad = false;
+      roadSegmentManager.removeRoad(x, y);
+      this.scheduleSegmentRecalc();
+      this.updateBuildingRoadConnections();
+      return;
+    }
+
     if (!this.isRoadPlacementValid(x, y)) {
       return;
     }
@@ -270,6 +282,13 @@ export class Game {
   }
 
   private hasBuildingConnectedRoad(pos: Position, building: Building, connectedRoads: Set<string>): boolean {
+    const entrance = building.getEntranceOffset();
+    if (entrance) {
+      const key = `${pos.x + entrance.dx},${pos.y + entrance.dy}`;
+      return connectedRoads.has(key);
+    }
+
+    // Fallback for 1x1 buildings: any adjacent connected road
     const bx = pos.x;
     const by = pos.y;
     const bw = building.width;
@@ -314,22 +333,29 @@ export class Game {
     return true;
   }
 
-  private occupyBuildingTiles(entityId: number, x: number, y: number, width: number, height: number): void {
+  private occupyBuildingTiles(entityId: number, x: number, y: number, width: number, height: number, building?: Building): void {
+    const entrance = building?.getEntranceOffset();
     let roadsRemoved = false;
     for (let dy = 0; dy < height; dy++) {
       for (let dx = 0; dx < width; dx++) {
         const tile = this.tileMap.getTile(x + dx, y + dy);
-        if (tile) {
+        if (!tile) continue;
+
+        if (entrance && dx === entrance.dx && dy === entrance.dy) {
           tile.occupy(entityId);
-          if (tile.hasRoad) {
-            tile.hasRoad = false;
-            roadSegmentManager.removeRoad(x + dx, y + dy);
-            roadsRemoved = true;
-          }
+          tile.hasRoad = true;
+          continue;
+        }
+
+        tile.occupy(entityId);
+        if (tile.hasRoad) {
+          tile.hasRoad = false;
+          roadSegmentManager.removeRoad(x + dx, y + dy);
+          roadsRemoved = true;
         }
       }
     }
-    if (roadsRemoved) {
+    if (roadsRemoved || entrance) {
       roadSegmentManager.recalculate(this.tileMap);
     }
   }
@@ -341,7 +367,7 @@ export class Game {
     if (!building) return;
 
     this.addEntity(baseCamp);
-    this.occupyBuildingTiles(baseCamp.id, x, y, building.width, building.height);
+    this.occupyBuildingTiles(baseCamp.id, x, y, building.width, building.height, building);
     this.baseCampEntity = baseCamp;
 
     // Update population max
@@ -401,7 +427,7 @@ export class Game {
     if (!building) return;
 
     this.addEntity(entity);
-    this.occupyBuildingTiles(entity.id, x, y, building.width, building.height);
+    this.occupyBuildingTiles(entity.id, x, y, building.width, building.height, building);
 
     // Update population if residential
     if (buildingDef.population?.provides) {
@@ -414,7 +440,7 @@ export class Game {
     console.log(`✅ ${buildingDef.name} (${building.width}x${building.height}) built at (${x}, ${y})`);
   }
 
-  private getAvailablePopulation(): number {
+  public getAvailablePopulation(): number {
     return this.population.current - roadSegmentManager.getWorkerCount();
   }
 
@@ -719,6 +745,8 @@ export class Game {
     const building = this.selectedEntity.getComponent(Building);
 
     if (pos && building) {
+      const entrance = building.getEntranceOffset();
+
       // Release occupied tiles
       for (let dy = 0; dy < building.height; dy++) {
         for (let dx = 0; dx < building.width; dx++) {
@@ -729,12 +757,19 @@ export class Game {
         }
       }
 
+      // Remove entrance road tile
+      if (entrance) {
+        const tile = this.tileMap.getTile(pos.x + entrance.dx, pos.y + entrance.dy);
+        if (tile) tile.hasRoad = false;
+      }
+
       resourceManager.onBuildingDestroyed(this.selectedEntity.id);
       console.log(`Deleted entity #${this.selectedEntity.id}`);
       this.removeEntity(this.selectedEntity);
       this.selectedEntity = null;
       this.syncInventory();
       this.updateSelectionUI();
+      roadSegmentManager.recalculate(this.tileMap);
       this.updateBuildingRoadConnections();
     }
   }
@@ -755,6 +790,8 @@ export class Game {
       const building = this.selectedEntity.getComponent(Building);
 
       if (pos && building) {
+        const entrance = building.getEntranceOffset();
+
         for (let dy = 0; dy < building.height; dy++) {
           for (let dx = 0; dx < building.width; dx++) {
             const tile = this.tileMap.getTile(pos.x + dx, pos.y + dy);
@@ -762,6 +799,12 @@ export class Game {
               tile.release();
             }
           }
+        }
+
+        // Remove entrance road tile
+        if (entrance) {
+          const tile = this.tileMap.getTile(pos.x + entrance.dx, pos.y + entrance.dy);
+          if (tile) tile.hasRoad = false;
         }
       }
     }
@@ -787,7 +830,7 @@ export class Game {
       if (this.canPlaceBuilding(x, y, building.width, building.height, this.selectedEntity.id)) {
         // Update the actual position now
         pos.set(x, y);
-        this.occupyBuildingTiles(this.selectedEntity.id, x, y, building.width, building.height);
+        this.occupyBuildingTiles(this.selectedEntity.id, x, y, building.width, building.height, building);
         console.log(`✅ Successfully moved entity from (${this.originalDragPosition?.x}, ${this.originalDragPosition?.y}) to (${x}, ${y})`);
       } else {
         console.warn(`❌ Cannot place building at (${x}, ${y}), reverting to original position`);
@@ -798,7 +841,8 @@ export class Game {
             this.originalDragPosition.x,
             this.originalDragPosition.y,
             building.width,
-            building.height
+            building.height,
+            building
           );
         }
       }
@@ -947,7 +991,7 @@ export class Game {
           }
 
           this.addEntity(entity);
-          this.occupyBuildingTiles(entity.id, buildingData.x, buildingData.y, building.width, building.height);
+          this.occupyBuildingTiles(entity.id, buildingData.x, buildingData.y, building.width, building.height, building);
         }
       }
 

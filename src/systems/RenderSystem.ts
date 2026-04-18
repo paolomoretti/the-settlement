@@ -363,6 +363,14 @@ export class RenderSystem extends System {
     if (!canPlace) this.ctx.filter = 'saturate(0.3) brightness(0.8)';
     this.ctx.translate(screenPos.x, screenPos.y - this.iso.tileHeight / 2);
 
+    if (width > 1 || depth > 1) {
+      const cx = (width - depth) * tileW / 4;
+      const cy = (width + depth) * tileH / 4;
+      this.ctx.translate(cx, cy);
+      this.ctx.scale(0.85, 0.85);
+      this.ctx.translate(-cx, -cy);
+    }
+
     const footprintW = (width + depth) * tileW / 2;
     const scale = footprintW / sprite.naturalWidth;
     const drawW = sprite.naturalWidth * scale;
@@ -376,6 +384,7 @@ export class RenderSystem extends System {
 
   private renderRoadPreview(gridX: number, gridY: number): void {
     const tile = this.tileMap.getTile(gridX, gridY);
+    const isExistingRoad = tile && tile.hasRoad && !tile.isOccupied();
     const canBuild = tile && tile.walkable && !tile.isOccupied() && !tile.hasRoad;
     const corners = this.iso.getTileCorners(gridX, gridY);
 
@@ -384,9 +393,19 @@ export class RenderSystem extends System {
     corners.forEach(corner => this.ctx.lineTo(corner.x, corner.y));
     this.ctx.closePath();
 
-    this.ctx.fillStyle = canBuild ? 'rgba(196, 165, 114, 0.7)' : 'rgba(200, 50, 50, 0.5)';
-    this.ctx.fill();
-    this.ctx.strokeStyle = canBuild ? 'rgba(166, 138, 90, 0.9)' : 'rgba(200, 50, 50, 0.9)';
+    if (isExistingRoad) {
+      this.ctx.fillStyle = 'rgba(200, 50, 50, 0.35)';
+      this.ctx.fill();
+      this.ctx.strokeStyle = 'rgba(200, 50, 50, 0.9)';
+    } else if (canBuild) {
+      this.ctx.fillStyle = 'rgba(196, 165, 114, 0.7)';
+      this.ctx.fill();
+      this.ctx.strokeStyle = 'rgba(166, 138, 90, 0.9)';
+    } else {
+      this.ctx.fillStyle = 'rgba(200, 50, 50, 0.5)';
+      this.ctx.fill();
+      this.ctx.strokeStyle = 'rgba(200, 50, 50, 0.9)';
+    }
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
   }
@@ -419,6 +438,14 @@ export class RenderSystem extends System {
     this.ctx.save();
     this.ctx.globalAlpha = canPlace ? 0.6 : 0.5;
     this.ctx.translate(screenPos.x, screenPos.y - this.iso.tileHeight / 2);
+
+    if (width > 1 || depth > 1) {
+      const cx = (width - depth) * tileW / 4;
+      const cy = (width + depth) * tileH / 4;
+      this.ctx.translate(cx, cy);
+      this.ctx.scale(0.85, 0.85);
+      this.ctx.translate(-cx, -cy);
+    }
 
     // Calculate base corners (bottom face)
     const baseCorners = [
@@ -671,10 +698,26 @@ export class RenderSystem extends System {
     }
 
     if (building) {
+      const entrance = building.getEntranceOffset();
+      if (entrance) {
+        const tileW = this.iso.tileWidth;
+        const tileH = this.iso.tileHeight;
+        const cx = (building.width - building.height) * tileW / 4;
+        const cy = (building.width + building.height) * tileH / 4;
+        this.ctx.save();
+        this.ctx.translate(cx, cy);
+        this.ctx.scale(0.85, 0.85);
+        this.ctx.translate(-cx, -cy);
+      }
+
       if (renderable.spritePath) {
         this.renderBuildingSprite(building, renderable, isSelected);
       } else {
         this.renderIsometricBuilding(building, renderable, isSelected);
+      }
+
+      if (entrance) {
+        this.ctx.restore();
       }
     } else if (entity.hasComponent(Worker)) {
       const movable = entity.getComponent(Movable) ?? null;

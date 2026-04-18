@@ -29,8 +29,7 @@ export class PathFinder {
     for (let y = 0; y < tileMap.height; y++) {
       for (let x = 0; x < tileMap.width; x++) {
         const tile = tileMap.getTile(x, y);
-        // Workers can ONLY walk on roads that are not occupied by buildings
-        const walkable = tile ? (tile.hasRoad && !tile.isOccupied()) : false;
+        const walkable = tile ? (tile.hasRoad && tile.walkable) : false;
         grid.setWalkableAt(x, y, walkable);
       }
     }

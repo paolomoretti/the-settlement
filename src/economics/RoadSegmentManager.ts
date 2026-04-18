@@ -73,7 +73,7 @@ export class RoadSegmentManager {
     for (let y = 0; y < tileMap.height; y++) {
       for (let x = 0; x < tileMap.width; x++) {
         const tile = tileMap.getTile(x, y);
-        if (tile && tile.hasRoad) {
+        if (tile && tile.hasRoad && !tile.isOccupied()) {
           this.roadTiles.add(`${x},${y}`);
         }
       }
@@ -92,10 +92,10 @@ export class RoadSegmentManager {
   }
 
   private isAdjacentToBuilding(x: number, y: number, tileMap: TileMap): number | undefined {
-    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [-1, 1], [1, -1], [1, 1]];
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
     for (const [dx, dy] of dirs) {
       const tile = tileMap.getTile(x + dx, y + dy);
-      if (tile && tile.isOccupied()) {
+      if (tile && tile.isOccupied() && tile.hasRoad) {
         return tile.occupiedBy;
       }
     }

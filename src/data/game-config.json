@@ -18,7 +18,7 @@
         "pickaxe": 1,
         "scythe": 1
       },
-      "startingPopulation": 10
+      "startingPopulation": 100
     },
     "exploration": {
       "initialRadius": 25

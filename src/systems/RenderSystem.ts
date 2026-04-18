@@ -215,10 +215,7 @@ export class RenderSystem extends System {
       return 0;
     });
 
-    // Render entities
-    sortedEntities.forEach(entity => this.renderEntity(entity));
-
-    // Render entrance indicators for disconnected buildings
+    // Render road stub for disconnected buildings (before entities so it's behind sprites)
     for (const entity of visibleEntities) {
       const building = entity.getComponent(Building);
       if (!building || building.isActive) continue;
@@ -227,19 +224,32 @@ export class RenderSystem extends System {
       const pos = entity.getComponent(Position)!;
       const ex = pos.x + entrance.dx;
       const ey = pos.y + entrance.dy;
-      const corners = this.iso.getTileCorners(ex, ey);
+      const outX = ex + 1;
+      const outY = ey;
+      // Draw road on entrance tile (will be hidden under sprite)
+      const entranceCenter = this.iso.gridToScreen(ex, ey);
+      this.terrainTextures.drawRoad(this.ctx, 4, entranceCenter.x, entranceCenter.y);
+      // Draw scaled-down road on out tile so it doesn't extend too far
+      const outCenter = this.iso.gridToScreen(outX, outY);
+      this.ctx.save();
+      this.ctx.translate(outCenter.x, outCenter.y);
+      this.ctx.scale(0.6, 0.6);
+      this.terrainTextures.drawRoad(this.ctx, 1, 0, 0);
+      this.ctx.restore();
+      // Subtle highlight on the out tile
+      const corners = this.iso.getTileCorners(outX, outY);
       this.ctx.beginPath();
       this.ctx.moveTo(corners[0].x, corners[0].y);
       for (let i = 1; i < corners.length; i++) {
         this.ctx.lineTo(corners[i].x, corners[i].y);
       }
       this.ctx.closePath();
-      this.ctx.fillStyle = 'rgba(200, 40, 40, 0.5)';
+      this.ctx.fillStyle = 'rgba(200, 60, 60, 0.2)';
       this.ctx.fill();
-      this.ctx.strokeStyle = 'rgba(220, 50, 50, 0.9)';
-      this.ctx.lineWidth = 2;
-      this.ctx.stroke();
     }
+
+    // Render entities
+    sortedEntities.forEach(entity => this.renderEntity(entity));
 
     // Render selection outline for selected entity
     if (this.selectedEntityId !== null) {

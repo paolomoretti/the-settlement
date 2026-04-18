@@ -42,6 +42,11 @@ const CONSTRUCTION_SPRITES: Record<string, string[]> = {
     '/assets/buildings/quarry_build_1.png',
     '/assets/buildings/quarry_build_2.png',
   ],
+  hut: [
+    '/assets/buildings/hut_build_0.png',
+    '/assets/buildings/hut_build_1.png',
+    '/assets/buildings/hut_build_2.png',
+  ],
 };
 
 export class RenderSystem extends System {

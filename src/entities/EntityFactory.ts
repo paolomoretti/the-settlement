@@ -75,6 +75,7 @@ export function createBuilding(
     sawmill: '/assets/buildings/sawmill.png',
     forester: '/assets/buildings/forester.png',
     quarry: '/assets/buildings/quarry.png',
+    hut: '/assets/buildings/hut.png',
   };
   const spritePath = SPRITE_PATHS[buildingType];
 

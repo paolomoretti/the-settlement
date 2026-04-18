@@ -48,6 +48,8 @@ export const WORKER_DEFS: Record<WorkerRole, WorkerDef> = {
   },
 };
 
+export type IdleAnim = 'none' | 'look_around' | 'scratch_head' | 'read' | 'stretch' | 'hands_on_hips';
+
 export class Worker extends Component {
   public state: WorkerState = 'idle';
   public carryingResource?: string;
@@ -55,11 +57,19 @@ export class Worker extends Component {
   public role: WorkerRole;
   public appearance: WorkerAppearance;
 
+  public idleAnim: IdleAnim = 'none';
+  public idleAnimStart = 0;
+  public idleAnimDuration = 0;
+  public nextIdleCheck = 0;
+  public idleFacing = 0;
+
   constructor(public name: string = 'Peasant', role: WorkerRole = 'peasant') {
     super();
     this.role = role;
     const variants = WORKER_DEFS[role].variants;
     this.appearance = { ...variants[Math.floor(Math.random() * variants.length)] };
+    this.nextIdleCheck = Date.now() + 2000 + Math.random() * 5000;
+    this.idleFacing = Math.floor(Math.random() * 4);
   }
 
   setState(state: WorkerState): void {

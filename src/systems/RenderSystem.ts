@@ -7,7 +7,7 @@ import { Entity } from '@/core/Entity';
 import { Position } from '@/components/Position';
 import { Renderable } from '@/components/Renderable';
 import { Building } from '@/components/Building';
-import { Worker } from '@/components/Worker';
+import { Worker, IdleAnim } from '@/components/Worker';
 import { Movable } from '@/components/Movable';
 import { TileMap } from '@/map/TileMap';
 import { Isometric } from '@/utils/Isometric';
@@ -1030,6 +1030,40 @@ export class RenderSystem extends System {
     return `rgb(${r}, ${g}, ${b})`;
   }
 
+  private updateIdleAnimation(worker: Worker): void {
+    const now = Date.now();
+    if (worker.idleAnim !== 'none') {
+      if (now > worker.idleAnimStart + worker.idleAnimDuration) {
+        worker.idleAnim = 'none';
+        worker.nextIdleCheck = now + 3000 + Math.random() * 6000;
+      }
+      return;
+    }
+    if (now < worker.nextIdleCheck) return;
+
+    const anims: { anim: IdleAnim; duration: number; weight: number }[] = [
+      { anim: 'look_around', duration: 1800 + Math.random() * 1200, weight: 4 },
+      { anim: 'scratch_head', duration: 1500 + Math.random() * 800, weight: 2 },
+      { anim: 'hands_on_hips', duration: 2500 + Math.random() * 2000, weight: 2 },
+      { anim: 'stretch', duration: 1200 + Math.random() * 600, weight: 1 },
+      { anim: 'read', duration: 3000 + Math.random() * 2000, weight: 1 },
+    ];
+    const totalWeight = anims.reduce((s, a) => s + a.weight, 0);
+    let r = Math.random() * totalWeight;
+    for (const entry of anims) {
+      r -= entry.weight;
+      if (r <= 0) {
+        worker.idleAnim = entry.anim;
+        worker.idleAnimStart = now;
+        worker.idleAnimDuration = entry.duration;
+        if (entry.anim === 'look_around') {
+          worker.idleFacing = (worker.idleFacing + 1 + Math.floor(Math.random() * 3)) % 4;
+        }
+        return;
+      }
+    }
+  }
+
   private renderWorkerSprite(movable: Movable | null, worker: Worker): void {
     let dirX = 0;
     let dirY = 1;
@@ -1044,17 +1078,26 @@ export class RenderSystem extends System {
       }
     }
 
-    let facing = 0;
-    if (dirX > 0 && dirY >= 0) facing = 0;
-    else if (dirX <= 0 && dirY > 0) facing = 1;
-    else if (dirX < 0 && dirY <= 0) facing = 2;
-    else if (dirX >= 0 && dirY < 0) facing = 3;
+    let facing: number;
+    if (isMoving) {
+      if (dirX > 0 && dirY >= 0) facing = 0;
+      else if (dirX <= 0 && dirY > 0) facing = 1;
+      else if (dirX < 0 && dirY <= 0) facing = 2;
+      else facing = 3;
+      worker.idleAnim = 'none';
+      worker.nextIdleCheck = Date.now() + 2000 + Math.random() * 4000;
+    } else {
+      this.updateIdleAnimation(worker);
+      facing = worker.idleFacing;
+    }
 
-    const frame = isMoving ? Math.floor(Date.now() / 200) % 4 : 0;
+    const now = Date.now();
+    const frame = isMoving ? Math.floor(now / 200) % 4 : 0;
     const s = 2;
     const a = worker.appearance;
+    const anim = worker.idleAnim;
+    const animT = anim !== 'none' ? (now - worker.idleAnimStart) / worker.idleAnimDuration : 0;
 
-    // Anchor so feet sit at tile center (y=0 = ground level)
     this.ctx.save();
 
     const px = (x: number, y: number, w: number, h: number, color: string) => {
@@ -1068,7 +1111,7 @@ export class RenderSystem extends System {
 
     const legOffsets = [[0, 0], [-1, 1], [0, 0], [1, -1]];
     const [leftLeg, rightLeg] = legOffsets[frame];
-    const armSwing = isMoving ? (frame === 1 ? 1 : frame === 3 ? -1 : 0) : 0;
+    const walkArmSwing = isMoving ? (frame === 1 ? 1 : frame === 3 ? -1 : 0) : 0;
 
     // Shadow
     this.ctx.globalAlpha = 0.2;
@@ -1081,81 +1124,116 @@ export class RenderSystem extends System {
     const isDress = a.variant === 'dress';
 
     if (isDress) {
-      // Dress variant: long skirt covers legs, only boot tips peek out
-      // Boot tips peeking below dress
       px(-1 + leftLeg, -1, 1, 1, a.boots);
       px(1 + rightLeg, -1, 1, 1, a.boots);
-
-      // Long dress (covers from waist to feet)
       px(-3, -9, 7, 8, a.tunic);
-      // Dress hem — slightly flared
       px(-3, -2, 7, 1, this.darkenColor(a.tunic, 0.8));
-
-      // Apron (front only)
       if (!showBack) {
         px(-1, -7, 4, 5, '#d8cbb8');
       }
     } else {
-      // Boots
       px(-2 + leftLeg, -2, 2, 2, a.boots);
       px(1 + rightLeg, -2, 2, 2, a.boots);
-
-      // Legs
       px(-2 + leftLeg, -4, 2, 2, a.pants);
       px(1 + rightLeg, -4, 2, 2, a.pants);
-
-      // Tunic body
       px(-2, -9, 5, 5, a.tunic);
-
-      // Belt
       px(-2, -5, 5, 1, '#2a1f14');
     }
 
-    // Arms
-    px(-4, -8 + armSwing, 2, 3, a.tunic);
-    px(3, -8 - armSwing, 2, 3, a.tunic);
-    px(-4, -5 + armSwing, 2, 1, a.skin);
-    px(3, -5 - armSwing, 2, 1, a.skin);
+    // Arms — vary by idle animation
+    let leftArmY = -8 + walkArmSwing;
+    let rightArmY = -8 - walkArmSwing;
+    let leftHandY = -5 + walkArmSwing;
+    let rightHandY = -5 - walkArmSwing;
+    let leftArmX = -4;
+    let rightArmX = 3;
+    let extraDraw: (() => void) | null = null;
 
-    // Head
+    if (!isMoving) {
+      if (anim === 'scratch_head') {
+        // Right arm raised to head
+        rightArmY = -13;
+        rightHandY = -14;
+        rightArmX = 2;
+        // Slight hand wiggle
+        const wiggle = Math.sin(animT * Math.PI * 6) > 0 ? 1 : 0;
+        rightHandY += wiggle;
+      } else if (anim === 'hands_on_hips') {
+        leftArmX = -3;
+        rightArmX = 2;
+        leftArmY = -7;
+        rightArmY = -7;
+        leftHandY = -5;
+        rightHandY = -5;
+      } else if (anim === 'stretch') {
+        // Both arms up
+        const lift = Math.sin(animT * Math.PI);
+        leftArmY = -8 - Math.floor(lift * 5);
+        rightArmY = -8 - Math.floor(lift * 5);
+        leftHandY = leftArmY - 1;
+        rightHandY = rightArmY - 1;
+      } else if (anim === 'read') {
+        // Both arms in front holding something
+        leftArmX = -2;
+        rightArmX = 1;
+        leftArmY = -7;
+        rightArmY = -7;
+        leftHandY = -5;
+        rightHandY = -5;
+        if (!showBack) {
+          extraDraw = () => {
+            // Little paper/scroll
+            px(-1, -8, 4, 3, '#e8dcc8');
+            px(-1, -8, 4, 1, '#c8b898');
+          };
+        }
+      }
+    }
+
+    // Draw arms
+    px(leftArmX, leftArmY, 2, 3, a.tunic);
+    px(rightArmX, rightArmY, 2, 3, a.tunic);
+    px(leftArmX, leftHandY, 2, 1, a.skin);
+    px(rightArmX, rightHandY, 2, 1, a.skin);
+
+    if (extraDraw) extraDraw();
+
+    // Head — look_around shifts head position
+    let headShift = 0;
+    if (anim === 'look_around') {
+      headShift = Math.round(Math.sin(animT * Math.PI * 2) * 1.5);
+    }
+
     if (showBack) {
       if (a.variant === 'hat') {
-        px(-2, -14, 5, 5, a.hair);
-        // Wide straw hat brim
-        px(-4, -14, 9, 1, '#c8a868');
-        px(-3, -15, 7, 1, '#c8a868');
-        px(-1, -16, 3, 1, '#b89858');
+        px(-2 + headShift, -14, 5, 5, a.hair);
+        px(-4 + headShift, -14, 9, 1, '#c8a868');
+        px(-3 + headShift, -15, 7, 1, '#c8a868');
+        px(-1 + headShift, -16, 3, 1, '#b89858');
       } else if (isDress) {
-        // Long hair / headscarf
-        px(-2, -14, 5, 5, a.hair);
-        px(-1, -9, 3, 2, a.hair);
+        px(-2 + headShift, -14, 5, 5, a.hair);
+        px(-1 + headShift, -9, 3, 2, a.hair);
       } else {
-        px(-2, -14, 5, 5, a.hair);
-        px(0, -15, 1, 1, a.hair);
+        px(-2 + headShift, -14, 5, 5, a.hair);
+        px(0 + headShift, -15, 1, 1, a.hair);
       }
     } else {
-      // Face
-      px(-2, -13, 5, 4, a.skin);
+      px(-2 + headShift, -13, 5, 4, a.skin);
 
       if (a.variant === 'hat') {
-        // Wide straw hat
-        px(-4, -14, 9, 1, '#c8a868');
-        px(-3, -15, 7, 1, '#c8a868');
-        px(-1, -16, 3, 1, '#b89858');
-        // Hat band
-        px(-3, -14, 7, 1, '#7a5a30');
+        px(-4 + headShift, -14, 9, 1, '#c8a868');
+        px(-3 + headShift, -15, 7, 1, '#c8a868');
+        px(-1 + headShift, -16, 3, 1, '#b89858');
+        px(-3 + headShift, -14, 7, 1, '#7a5a30');
       } else if (isDress) {
-        // Headscarf / long hair
-        px(-2, -15, 5, 3, a.hair);
-        px(-3, -13, 1, 3, a.hair);
-        px(3, -13, 1, 3, a.hair);
+        px(-2 + headShift, -15, 5, 3, a.hair);
+        px(-3 + headShift, -13, 1, 3, a.hair);
+        px(3 + headShift, -13, 1, 3, a.hair);
       } else {
-        // Cap/coif
-        px(-2, -15, 5, 3, a.hair);
-        px(-2, -13, 5, 1, '#3a2a1a');
+        px(-2 + headShift, -15, 5, 3, a.hair);
+        px(-2 + headShift, -13, 5, 1, '#3a2a1a');
       }
-      // Eye
-      px(1, -12, 1, 1, '#1a1008');
+      px(1 + headShift, -12, 1, 1, '#1a1008');
     }
 
     this.ctx.restore();
@@ -1234,10 +1312,6 @@ export class RenderSystem extends System {
     const worldX = (screenX - this.camera.x) / this.camera.zoom;
     const worldY = (screenY - this.camera.y) / this.camera.zoom;
     return this.iso.screenToGrid(worldX, worldY);
-  }
-
-  getZoom(): number {
-    return this.camera.zoom;
   }
 
   gridToScreen(gridX: number, gridY: number): { x: number; y: number } {

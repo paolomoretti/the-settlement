@@ -122,6 +122,8 @@ export interface ProductionRule {
   productionTime: number;
   // Can it produce continuously or one-time?
   continuous: boolean;
+  // Max items the building can buffer before pickup (default 10)
+  maxOutputBuffer?: number;
 }
 
 export interface BuildingDefinition {

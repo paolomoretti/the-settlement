@@ -1,6 +1,7 @@
 import { Game } from '@/core/Game';
 import { GamePopover } from './GamePopover';
 import { Building } from '@/components/Building';
+import { Production } from '@/components/Production';
 import { Position } from '@/components/Position';
 import { Entity } from '@/core/Entity';
 import { dataManager } from '@/data/DataManager';
@@ -13,6 +14,7 @@ export class BuildingPopover {
   private currentEntity: Entity | null = null;
   private progressBarFill: HTMLElement | null = null;
   private progressBarLabel: HTMLElement | null = null;
+  private bufferContainer: HTMLElement | null = null;
   private productionTimeSec: number = 0;
 
   constructor(game: Game) {
@@ -28,6 +30,7 @@ export class BuildingPopover {
       this.currentEntity = null;
       this.progressBarFill = null;
       this.progressBarLabel = null;
+      this.bufferContainer = null;
     };
   }
 
@@ -52,6 +55,7 @@ export class BuildingPopover {
     const getAnchor = () => {
       this.popover.setTemporaryHidden(this.game.isDraggingEntity);
       this.updateProgressBar();
+      this.updateBufferDisplay();
 
       const p = entity.getComponent(Position);
       if (!p) return { x: 0, y: 0 };
@@ -69,6 +73,7 @@ export class BuildingPopover {
     this.currentEntity = null;
     this.progressBarFill = null;
     this.progressBarLabel = null;
+    this.bufferContainer = null;
     this.popover.hide();
   }
 
@@ -86,6 +91,35 @@ export class BuildingPopover {
 
     const remaining = Math.ceil(this.productionTimeSec * (1 - progress));
     this.progressBarLabel.textContent = `${remaining}s`;
+  }
+
+  private updateBufferDisplay(): void {
+    if (!this.bufferContainer || !this.currentEntity) return;
+    const production = this.currentEntity.getComponent(Production);
+    if (!production) return;
+
+    const totalBuffered = production.getTotalBuffered();
+    if (totalBuffered === 0) {
+      this.bufferContainer.style.display = 'none';
+      return;
+    }
+
+    this.bufferContainer.style.display = '';
+    const isFull = production.status === 'stopped_full';
+
+    const items = Object.entries(production.outputBuffer)
+      .filter(([, amt]) => amt > 0)
+      .map(([id, amt]) => {
+        const res = dataManager.getResource(id as any);
+        return `${amt} ${res?.name || id}`;
+      })
+      .join(', ');
+
+    this.bufferContainer.innerHTML =
+      `<span class="popover-label">Buffer:</span> ` +
+      `<span style="color:${isFull ? '#f44336' : '#4caf50'}">${totalBuffered}/${production.maxOutputBuffer}</span>` +
+      `<span style="color:#aaa;margin-left:4px">(${items})</span>` +
+      (isFull ? `<span style="color:#f44336;margin-left:4px">⚠ Full</span>` : '');
   }
 
   private buildContent(building: Building, def?: BuildingDefinition): HTMLElement {
@@ -164,6 +198,12 @@ export class BuildingPopover {
       }
 
       el.appendChild(prod);
+
+      const bufferRow = document.createElement('div');
+      bufferRow.className = 'popover-row';
+      bufferRow.style.display = 'none';
+      this.bufferContainer = bufferRow;
+      el.appendChild(bufferRow);
     }
 
     if (def?.population) {

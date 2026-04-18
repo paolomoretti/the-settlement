@@ -110,7 +110,7 @@ export function createBuilding(
       buildingDef.production.productionTime,
       buildingDef.production.outputs,
       buildingDef.production.inputs || {},
-      10,
+      buildingDef.production.maxOutputBuffer || 10,
       buildingDef.production.continuous
     ));
   }

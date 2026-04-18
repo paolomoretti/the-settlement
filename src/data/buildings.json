@@ -155,7 +155,8 @@
         "wood_log": 1
       },
       "productionTime": 20,
-      "continuous": true
+      "continuous": true,
+      "maxOutputBuffer": 6
     },
     "population": {
       "requires": 1
@@ -191,7 +192,8 @@
         "wood_log": 1
       },
       "productionTime": 15,
-      "continuous": true
+      "continuous": true,
+      "maxOutputBuffer": 6
     },
     "population": {
       "requires": 1
@@ -222,7 +224,8 @@
     "production": {
       "outputs": {},
       "productionTime": 60,
-      "continuous": true
+      "continuous": true,
+      "maxOutputBuffer": 6
     },
     "population": {
       "requires": 1
@@ -255,7 +258,8 @@
         "stone": 1
       },
       "productionTime": 25,
-      "continuous": true
+      "continuous": true,
+      "maxOutputBuffer": 6
     },
     "population": {
       "requires": 1
@@ -288,7 +292,8 @@
         "coal": 1
       },
       "productionTime": 30,
-      "continuous": true
+      "continuous": true,
+      "maxOutputBuffer": 4
     },
     "population": {
       "requires": 2
@@ -321,7 +326,8 @@
         "iron_ore": 1
       },
       "productionTime": 35,
-      "continuous": true
+      "continuous": true,
+      "maxOutputBuffer": 4
     },
     "population": {
       "requires": 2
@@ -358,7 +364,8 @@
         "coal": 1
       },
       "productionTime": 25,
-      "continuous": true
+      "continuous": true,
+      "maxOutputBuffer": 4
     },
     "population": {
       "requires": 1
@@ -391,7 +398,8 @@
         "grain": 2
       },
       "productionTime": 45,
-      "continuous": true
+      "continuous": true,
+      "maxOutputBuffer": 6
     },
     "population": {
       "requires": 1
@@ -427,7 +435,8 @@
         "grain": 1
       },
       "productionTime": 20,
-      "continuous": true
+      "continuous": true,
+      "maxOutputBuffer": 6
     },
     "population": {
       "requires": 1
@@ -464,7 +473,8 @@
         "water": 1
       },
       "productionTime": 25,
-      "continuous": true
+      "continuous": true,
+      "maxOutputBuffer": 6
     },
     "population": {
       "requires": 1
@@ -496,7 +506,8 @@
         "water": 2
       },
       "productionTime": 15,
-      "continuous": true
+      "continuous": true,
+      "maxOutputBuffer": 6
     },
     "population": {
       "requires": 1
@@ -529,7 +540,8 @@
         "fish": 1
       },
       "productionTime": 30,
-      "continuous": true
+      "continuous": true,
+      "maxOutputBuffer": 4
     },
     "population": {
       "requires": 1
@@ -565,7 +577,8 @@
         "iron_bar": 1
       },
       "productionTime": 30,
-      "continuous": true
+      "continuous": true,
+      "maxOutputBuffer": 4
     },
     "population": {
       "requires": 1

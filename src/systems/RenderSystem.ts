@@ -1200,6 +1200,10 @@ export class RenderSystem extends System {
     this.camera.y += dy;
   }
 
+  getZoom(): number {
+    return this.camera.zoom;
+  }
+
   setZoom(zoom: number): void {
     this.camera.zoom = Math.max(0.5, Math.min(2, zoom));
   }

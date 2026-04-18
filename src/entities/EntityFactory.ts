@@ -99,6 +99,8 @@ export function createBuilding(
 
   if (buildingDef.buildTime > 0) {
     buildingComp.startConstruction(buildingDef.buildTime);
+  } else {
+    buildingComp.completedAt = Date.now();
   }
 
   entity.addComponent(buildingComp);

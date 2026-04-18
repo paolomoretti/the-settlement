@@ -961,6 +961,10 @@ export class Game {
           data.buildTimeSec = building.buildTimeSec;
         }
 
+        if (building?.completedAt) {
+          data.completedAt = building.completedAt;
+        }
+
         if (production) {
           data.production = production.serialize();
         }
@@ -1042,6 +1046,7 @@ export class Game {
           } else {
             building.state = 'complete';
             building.constructionStartedAt = null;
+            building.completedAt = buildingData.completedAt || Date.now();
           }
 
           // Restore production state

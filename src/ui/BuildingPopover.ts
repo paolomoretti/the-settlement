@@ -11,6 +11,9 @@ export class BuildingPopover {
   private game: Game;
   private popover: GamePopover;
   private currentEntity: Entity | null = null;
+  private progressBarFill: HTMLElement | null = null;
+  private progressBarLabel: HTMLElement | null = null;
+  private productionTimeSec: number = 0;
 
   constructor(game: Game) {
     this.game = game;
@@ -23,6 +26,8 @@ export class BuildingPopover {
         this.game.selectedEntity = null;
       }
       this.currentEntity = null;
+      this.progressBarFill = null;
+      this.progressBarLabel = null;
     };
   }
 
@@ -40,11 +45,13 @@ export class BuildingPopover {
 
     this.currentEntity = entity;
     const def = dataManager.getBuilding(building.buildingType as BuildingType);
+    this.productionTimeSec = def?.production?.productionTime || 0;
     const content = this.buildContent(building, def);
     const name = def?.name || building.buildingType;
 
     const getAnchor = () => {
       this.popover.setTemporaryHidden(this.game.isDraggingEntity);
+      this.updateProgressBar();
 
       const p = entity.getComponent(Position);
       if (!p) return { x: 0, y: 0 };
@@ -60,11 +67,25 @@ export class BuildingPopover {
 
   hide(): void {
     this.currentEntity = null;
+    this.progressBarFill = null;
+    this.progressBarLabel = null;
     this.popover.hide();
   }
 
   isVisible(): boolean {
     return this.popover.isVisible();
+  }
+
+  private updateProgressBar(): void {
+    if (!this.progressBarFill || !this.progressBarLabel || !this.currentEntity) return;
+    const building = this.currentEntity.getComponent(Building);
+    if (!building || this.productionTimeSec <= 0) return;
+
+    const progress = building.getProductionProgress(this.productionTimeSec);
+    this.progressBarFill.style.width = `${progress * 100}%`;
+
+    const remaining = Math.ceil(this.productionTimeSec * (1 - progress));
+    this.progressBarLabel.textContent = `${remaining}s`;
   }
 
   private buildContent(building: Building, def?: BuildingDefinition): HTMLElement {
@@ -120,6 +141,28 @@ export class BuildingPopover {
         }).join(', ');
         prod.innerHTML = `<span class="popover-label">Produces:</span> ${outputStr}<br><span class="popover-label">Every:</span> ${def.production.productionTime}s`;
       }
+
+      if (building.state === 'complete') {
+        const barContainer = document.createElement('div');
+        barContainer.className = 'popover-progress';
+
+        const barTrack = document.createElement('div');
+        barTrack.className = 'popover-progress-track';
+
+        const barFill = document.createElement('div');
+        barFill.className = 'popover-progress-fill';
+        this.progressBarFill = barFill;
+
+        const barLabel = document.createElement('span');
+        barLabel.className = 'popover-progress-label';
+        this.progressBarLabel = barLabel;
+
+        barTrack.appendChild(barFill);
+        barContainer.appendChild(barTrack);
+        barContainer.appendChild(barLabel);
+        prod.appendChild(barContainer);
+      }
+
       el.appendChild(prod);
     }
 

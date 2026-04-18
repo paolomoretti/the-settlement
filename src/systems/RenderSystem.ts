@@ -229,13 +229,9 @@ export class RenderSystem extends System {
       // Draw road on entrance tile (will be hidden under sprite)
       const entranceCenter = this.iso.gridToScreen(ex, ey);
       this.terrainTextures.drawRoad(this.ctx, 4, entranceCenter.x, entranceCenter.y);
-      // Draw scaled-down road on out tile so it doesn't extend too far
+      // Draw road on out tile connecting back to entrance
       const outCenter = this.iso.gridToScreen(outX, outY);
-      this.ctx.save();
-      this.ctx.translate(outCenter.x, outCenter.y);
-      this.ctx.scale(0.6, 0.6);
-      this.terrainTextures.drawRoad(this.ctx, 1, 0, 0);
-      this.ctx.restore();
+      this.terrainTextures.drawRoad(this.ctx, 1, outCenter.x, outCenter.y);
       // Subtle highlight on the out tile
       const corners = this.iso.getTileCorners(outX, outY);
       this.ctx.beginPath();

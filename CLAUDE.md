@@ -47,9 +47,9 @@ npm run preview  # Preview production build
 
 ## Current State
 
-Working: terrain generation, isometric rendering, camera pan/zoom, building placement/selection/deletion/drag, road building (must connect to base camp), road segment computation with automatic worker assignment (one worker per segment, walks to center), A* pathfinding on roads, fog of war, minimap, save/load, touch support, resource production system (buildings produce into output buffers), storage system (inventory lives in Storage components on warehouses/base camp), transport request queue (data layer for pickup/delivery).
+Working: terrain generation, isometric rendering, camera pan/zoom, building placement/selection/deletion/drag, road building with toggle (click to place or remove), building entrance system (≥2×2 buildings get auto-placed entrance on front/bottom-right side), road segment computation with automatic worker assignment (one worker per segment, walks to center), freed workers walk back to base camp on road deletion, A* pathfinding on roads, fog of war, minimap, save/load, touch support, resource production system (buildings produce into output buffers), storage system (inventory lives in Storage components on warehouses/base camp), transport request queue (data layer for pickup/delivery), disconnected building indicator (road stub at entrance).
 
-Not yet implemented: sprite assets (all visuals are colored shapes), item carrying by road workers (data layer ready, behavior not wired), production UX indicators (stop/pickup icons, progress bars), worker job assignment to buildings, resource consumption (food), trading, military, audio, building upgrades, weather/seasons.
+Not yet implemented: item carrying by road workers (data layer ready, behavior not wired), production UX indicators (stop/pickup icons, progress bars), worker job assignment to buildings, resource consumption (food), trading, military, audio, building upgrades, weather/seasons.
 
 ## Documentation
 

@@ -115,7 +115,7 @@ In isometric view, a building's **front** is the **bottom-right side**. The entr
 
 ### Disconnected Indicator
 
-When a building requires a road connection but isn't connected, its entrance tile is highlighted with a **red diamond overlay** drawn on top of the building sprite. This clearly shows the player where to connect a road. The indicator disappears once the entrance is connected to the road network.
+When a building requires a road connection but isn't connected, a **road stub** is rendered behind the building sprite: it extends from the entrance tile (under the sprite) out to the adjacent tile where the player should connect. The out tile gets a subtle red highlight. This is drawn before entities so it appears behind building sprites. The indicator disappears once the entrance is connected to the road network.
 
 ---
 
@@ -152,10 +152,11 @@ New games start with **zero roads**. The player builds the first road from the b
 | Method | Purpose |
 |--------|---------|
 | `spawnSegmentWorker(segment)` | Create worker entity, pathfind to center |
-| `freeSegmentWorker(workerId)` | Remove worker entity |
+| `freeSegmentWorker(workerId)` | Pathfind worker back to base camp, remove on arrival |
+| `rerouteReturningWorkers()` | Re-pathfind all returning workers (called on road deletion) |
 | `moveSegmentWorker(workerId, segment)` | Pathfind existing worker to new center |
 | `isRoadPlacementValid(x, y)` | Check adjacency to existing road or base camp |
-| `getAvailablePopulation()` | Population minus road workers |
+| `getAvailablePopulation()` | Population minus road workers and returning workers |
 | `occupyBuildingTiles(...)` | Occupy footprint tiles, create entrance road |
 | `hasBuildingConnectedRoad(...)` | Check entrance tile connectivity (or adjacent for 1×1) |
 

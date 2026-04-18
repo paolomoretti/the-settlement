@@ -178,6 +178,10 @@ export class RenderSystem extends System {
     // Render tiles
     this.renderTiles();
 
+    // Render mountains with 3D elevation, then trees
+    this.renderMountainsOnTiles();
+    this.renderTreesOnTiles();
+
     // Get viewport bounds for entity culling
     const viewportBounds = this.getViewportBounds();
 
@@ -601,6 +605,209 @@ export class RenderSystem extends System {
           this.ctx.stroke();
         }
       }
+    }
+  }
+
+  private tileHash(x: number, y: number, salt: number = 0): number {
+    let h = x * 374761393 + y * 668265263 + salt * 1274126177;
+    h = ((h ^ (h >> 13)) * 1274126177) >>> 0;
+    return h / 4294967296;
+  }
+
+  private renderMountainsOnTiles(): void {
+    const viewportBounds = this.getViewportBounds();
+
+    for (let y = viewportBounds.minY; y <= viewportBounds.maxY; y++) {
+      for (let x = viewportBounds.minX; x <= viewportBounds.maxX; x++) {
+        const tile = this.tileMap.getTile(x, y);
+        if (!tile || !tile.isExplored()) continue;
+        if (tile.terrain !== 'mountain') continue;
+
+        this.renderMountainTile(x, y);
+      }
+    }
+  }
+
+  private getMountainHeight(tileX: number, tileY: number): number {
+    const neighbors = this.tileMap.getNeighbors(tileX, tileY);
+    const mountainNeighbors = neighbors.filter(t => t.terrain === 'mountain').length;
+    if (mountainNeighbors <= 1) return 10;
+    if (mountainNeighbors <= 3) return 16;
+    return 22 + mountainNeighbors * 2;
+  }
+
+  private renderMountainTile(tileX: number, tileY: number): void {
+    const ctx = this.ctx;
+    const tileW = this.iso.tileWidth;
+    const tileH = this.iso.tileHeight;
+    const center = this.iso.gridToScreen(tileX, tileY);
+    const cx = center.x;
+    const cy = center.y;
+    const h = this.getMountainHeight(tileX, tileY);
+    const shade = this.tileHash(tileX, tileY, 100);
+
+    const sprite = this.loadSprite('/assets/terrain/rock.png');
+    if (sprite && sprite.naturalWidth > 0) {
+      const drawW = tileW * 1.1;
+      const drawH = (sprite.naturalHeight / sprite.naturalWidth) * drawW;
+      ctx.drawImage(sprite, cx - drawW / 2, cy - drawH + tileH * 0.4, drawW, drawH);
+      return;
+    }
+
+    const radiusX = tileW * 0.4 + shade * 4;
+    const radiusY = tileH * 0.35;
+
+    // Shadow at base
+    ctx.globalAlpha = 0.2;
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(cx + 2, cy + 2, radiusX, radiusY, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Base color
+    const baseR = 120 + shade * 30;
+    const baseG = 115 + shade * 25;
+    const baseB = 105 + shade * 20;
+
+    // Bottom half (darker, the underside visible part)
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, radiusX, radiusY, 0, 0, Math.PI);
+    ctx.closePath();
+    ctx.fillStyle = `rgb(${baseR * 0.65}, ${baseG * 0.62}, ${baseB * 0.58})`;
+    ctx.fill();
+
+    // Main boulder body — full ellipse shifted up for dome effect
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - h * 0.25, radiusX, radiusY + h * 0.5, 0, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.fillStyle = `rgb(${baseR * 0.78}, ${baseG * 0.75}, ${baseB * 0.7})`;
+    ctx.fill();
+
+    // Upper dome highlight (lighter, top-left lit)
+    ctx.beginPath();
+    ctx.ellipse(cx - radiusX * 0.1, cy - h * 0.45, radiusX * 0.85, radiusY + h * 0.3, 0, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.fillStyle = `rgb(${baseR * 0.88}, ${baseG * 0.85}, ${baseB * 0.82})`;
+    ctx.fill();
+
+    // Top highlight (bright spot, top-left lighting)
+    ctx.beginPath();
+    ctx.ellipse(cx - radiusX * 0.2, cy - h * 0.55, radiusX * 0.5, (radiusY + h * 0.15) * 0.6, 0, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.fillStyle = `rgb(${Math.min(255, baseR + 25)}, ${Math.min(255, baseG + 22)}, ${Math.min(255, baseB + 18)})`;
+    ctx.fill();
+
+    // Cracks / rocky texture details
+    const detailCount = h > 14 ? 4 : 2;
+    for (let i = 0; i < detailCount; i++) {
+      const dx = (this.tileHash(tileX, tileY, 110 + i) - 0.5) * radiusX * 1.2;
+      const dy = (this.tileHash(tileX, tileY, 120 + i) - 0.5) * radiusY * 0.8;
+      const dSize = 1.5 + this.tileHash(tileX, tileY, 130 + i) * 3;
+      ctx.fillStyle = `rgba(60, 55, 48, ${0.15 + this.tileHash(tileX, tileY, 140 + i) * 0.2})`;
+      ctx.beginPath();
+      ctx.ellipse(cx + dx, cy - h * 0.3 + dy, dSize, dSize * 0.5, this.tileHash(tileX, tileY, 150 + i) * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  private renderTreesOnTiles(): void {
+    const viewportBounds = this.getViewportBounds();
+
+    for (let y = viewportBounds.minY; y <= viewportBounds.maxY; y++) {
+      for (let x = viewportBounds.minX; x <= viewportBounds.maxX; x++) {
+        const tile = this.tileMap.getTile(x, y);
+        if (!tile || !tile.isExplored()) continue;
+        if (tile.terrain !== 'tree' && tile.terrain !== 'forest') continue;
+        if (tile.isOccupied() || tile.hasRoad) continue;
+
+        const center = this.iso.gridToScreen(x, y);
+
+        if (tile.terrain === 'tree') {
+          this.renderSingleTree(center.x, center.y, x, y);
+        } else {
+          this.renderForestCluster(center.x, center.y, x, y);
+        }
+      }
+    }
+  }
+
+  private renderSingleTree(cx: number, cy: number, tileX: number, tileY: number): void {
+    const sprite = this.loadSprite('/assets/terrain/tree_single.png');
+    if (sprite && sprite.naturalWidth > 0) {
+      this.renderTreeSprite(cx, cy, sprite, 1.0);
+      return;
+    }
+
+    const h = this.tileHash(tileX, tileY, 1);
+    const scale = 1.8 + h * 0.6;
+    const offsetX = (this.tileHash(tileX, tileY, 2) - 0.5) * 6;
+    const offsetY = (this.tileHash(tileX, tileY, 3) - 0.5) * 3;
+    this.renderTreePlaceholder(cx + offsetX, cy + offsetY, scale, h);
+  }
+
+  private renderForestCluster(cx: number, cy: number, tileX: number, tileY: number): void {
+    const sprite = this.loadSprite('/assets/terrain/tree_forest.png');
+    if (sprite && sprite.naturalWidth > 0) {
+      this.renderTreeSprite(cx, cy, sprite, 1.0);
+      return;
+    }
+
+    const count = 2 + Math.floor(this.tileHash(tileX, tileY, 10) * 3);
+    const tileW = this.iso.tileWidth;
+    const tileH = this.iso.tileHeight;
+
+    for (let i = 0; i < count; i++) {
+      const fx = this.tileHash(tileX, tileY, 20 + i) - 0.5;
+      const fy = this.tileHash(tileX, tileY, 30 + i) - 0.5;
+      const r = 0.35;
+      const ox = fx * tileW * r;
+      const oy = fy * tileH * r;
+      const scale = 1.1 + this.tileHash(tileX, tileY, 40 + i) * 0.7;
+      const shade = this.tileHash(tileX, tileY, 50 + i);
+      this.renderTreePlaceholder(cx + ox, cy + oy, scale, shade);
+    }
+  }
+
+  private renderTreeSprite(cx: number, cy: number, sprite: HTMLImageElement, scale: number): void {
+    const drawW = this.iso.tileWidth * scale;
+    const drawH = (sprite.naturalHeight / sprite.naturalWidth) * drawW;
+    this.ctx.drawImage(sprite, cx - drawW / 2, cy - drawH + this.iso.tileHeight / 2, drawW, drawH);
+  }
+
+  private renderTreePlaceholder(x: number, y: number, scale: number, shade: number): void {
+    const ctx = this.ctx;
+    const s = scale;
+
+    // Shadow
+    ctx.globalAlpha = 0.15;
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(x, y, 5 * s, 2.5 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Trunk
+    ctx.fillStyle = shade > 0.5 ? '#5d4037' : '#4e342e';
+    ctx.fillRect(x - 1.5 * s, y - 10 * s, 3 * s, 10 * s);
+
+    // Canopy: three stacked triangle layers
+    const greens = shade > 0.5
+      ? ['#1b5e20', '#2e7d32', '#388e3c']
+      : ['#194d19', '#256b25', '#2e8b2e'];
+
+    for (let i = 0; i < 3; i++) {
+      const layerBottom = y - (8 + i * 6) * s;
+      const layerTop = layerBottom - 10 * s;
+      const layerW = (14 - i * 3) * s;
+
+      ctx.fillStyle = greens[i];
+      ctx.beginPath();
+      ctx.moveTo(x, layerTop);
+      ctx.lineTo(x - layerW / 2, layerBottom);
+      ctx.lineTo(x + layerW / 2, layerBottom);
+      ctx.closePath();
+      ctx.fill();
     }
   }
 

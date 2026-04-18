@@ -9,7 +9,7 @@ export class TileMap {
   private tiles: Tile[][] = [];
   public readonly width: number;
   public readonly height: number;
-  private seed: number; // Store seed for save/load
+  private seed: number;
 
   constructor(width: number, height: number, seed?: number) {
     this.width = width;
@@ -33,45 +33,42 @@ export class TileMap {
       }
     }
 
-    // Add rivers
     this.generateRivers(noise);
-
-    // Remove thin water bodies (< 3 tiles thick in both directions)
-    this.removeThinWater();
+    this.generateMountainRanges(noise);
+    this.generateRockFormations(noise);
+    this.removeIsolatedWater();
+    this.clearBaseCampArea();
+    this.removeIslands();
   }
 
   private generateTerrain(x: number, y: number, noise: NoiseGenerator): TerrainType {
-    // Multiple noise layers for different features
     const elevation = noise.fractalNoise(x, y, 4);
-    const moisture = noise.fractalNoise(x + 1000, y + 1000, 3);
-    const treeNoise = noise.fractalNoise(x + 2000, y + 2000, 2);
 
-    // Water (small lakes only) - very low elevation
-    if (elevation < 0.15) {
+    if (elevation < 0.17) {
       return 'water';
     }
 
-    // Mountains - high elevation
-    if (elevation > 0.75) {
-      return 'mountain';
+    const lakeNoise = noise.noise(x + 3000, y + 3000, 0.12) * 0.5
+                    + noise.noise(x + 3500, y + 3500, 0.25) * 0.3
+                    + noise.noise(x + 3800, y + 3800, 0.4) * 0.2;
+    const wetness = noise.noise(x + 4000, y + 4000, 0.005);
+    const lakeThreshold = 0.12 + Math.max(0, wetness - 0.35) * 0.25;
+    if (lakeNoise < lakeThreshold && elevation < 0.45) {
+      return 'water';
     }
 
-    // Hills - medium-high elevation
-    if (elevation > 0.6) {
-      return 'hill';
-    }
+    const forestDensity = noise.noise(x + 5000, y + 5000, 0.008);
+    const treePlacement = noise.noise(x + 6000, y + 6000, 0.1) * 0.5
+                        + noise.noise(x + 6500, y + 6500, 0.2) * 0.3
+                        + noise.noise(x + 7000, y + 7000, 0.4) * 0.2;
 
-    // Forests - cluster based on moisture and tree noise
-    if (moisture > 0.6 && treeNoise > 0.5) {
+    if (forestDensity > 0.27 && treePlacement > 0.17) {
       return 'forest';
     }
-
-    // Scattered trees
-    if (treeNoise > 0.75) {
+    if (treePlacement > 0.32) {
       return 'tree';
     }
 
-    // Default to grass
     return 'grass';
   }
 
@@ -84,7 +81,6 @@ export class TileMap {
       let y = 0;
 
       while (y < this.height) {
-        // 3-tile wide river
         for (let dx = -1; dx <= 1; dx++) {
           const tile = this.getTile(x + dx, y);
           if (tile && tile.terrain !== 'mountain') {
@@ -105,30 +101,138 @@ export class TileMap {
     }
   }
 
-  private removeThinWater(): void {
-    for (let pass = 0; pass < 3; pass++) {
-      let changed = false;
-      for (let y = 0; y < this.height; y++) {
-        for (let x = 0; x < this.width; x++) {
-          const tile = this.tiles[y][x];
-          if (tile.terrain !== 'water') continue;
+  private generateMountainRanges(noise: NoiseGenerator): void {
+    const numRanges = 8 + Math.floor(noise.noise(100, 100, 0.1) * 8);
 
-          let xCount = 1;
-          for (let dx = 1; x + dx < this.width && this.tiles[y][x + dx].terrain === 'water'; dx++) xCount++;
-          for (let dx = -1; x + dx >= 0 && this.tiles[y][x + dx].terrain === 'water'; dx--) xCount++;
+    for (let r = 0; r < numRanges; r++) {
+      const startX = Math.floor(noise.noise(r * 137, 7919, 0.1) * this.width * 0.8 + this.width * 0.1);
+      const startY = Math.floor(noise.noise(7919, r * 137, 0.1) * this.height * 0.8 + this.height * 0.1);
+      const rangeWidth = 60 + Math.floor(noise.noise(r * 53, 3571, 0.1) * 200);
+      const baseHeight = 6 + Math.floor(noise.noise(r * 53, 4571, 0.1) * 12);
 
-          let yCount = 1;
-          for (let dy = 1; y + dy < this.height && this.tiles[y + dy][x].terrain === 'water'; dy++) yCount++;
-          for (let dy = -1; y + dy >= 0 && this.tiles[y + dy][x].terrain === 'water'; dy--) yCount++;
+      for (let dx = 0; dx < rangeWidth; dx++) {
+        const localHeight = Math.max(2, Math.floor(baseHeight * (0.4 + noise.noise(startX + dx, startY + 1000, 0.04) * 0.8)));
+        const yOffset = Math.floor((noise.noise(startX + dx, startY + 2000, 0.025) - 0.5) * 8);
 
-          if (xCount < 3 && yCount < 3) {
-            tile.terrain = 'grass';
-            tile.walkable = true;
-            changed = true;
+        for (let dy = -Math.floor(localHeight / 2); dy <= Math.floor(localHeight / 2); dy++) {
+          const tx = startX + dx;
+          const ty = startY + dy + yOffset;
+          const tile = this.getTile(tx, ty);
+          if (tile) {
+            tile.terrain = 'mountain';
+            tile.walkable = false;
           }
         }
       }
-      if (!changed) break;
+    }
+  }
+
+  private generateRockFormations(noise: NoiseGenerator): void {
+    const numRocks = 300 + Math.floor(noise.noise(200, 200, 0.1) * 200);
+    const cx = Math.floor(this.width / 2);
+    const cy = Math.floor(this.height / 2);
+
+    for (let r = 0; r < numRocks; r++) {
+      let rx: number, ry: number;
+
+      // First 30 rocks guaranteed within 80 tiles of base camp
+      if (r < 30) {
+        const angle = noise.noise(r * 97 + 777, 6001, 0.1) * Math.PI * 2;
+        const dist = 20 + noise.noise(6001, r * 97 + 777, 0.1) * 60;
+        rx = Math.floor(cx + Math.cos(angle) * dist);
+        ry = Math.floor(cy + Math.sin(angle) * dist);
+      } else {
+        rx = Math.floor(noise.noise(r * 73 + 111, 3001, 0.1) * this.width);
+        ry = Math.floor(noise.noise(3001, r * 73 + 111, 0.1) * this.height);
+      }
+
+      const size = 1 + Math.floor(noise.noise(r * 37 + 222, 4001, 0.1) * 5);
+
+      for (let i = 0; i < size; i++) {
+        const dx = Math.floor((noise.noise(r * 11 + i + 333, 5001, 0.1) - 0.5) * 4);
+        const dy = Math.floor((noise.noise(5001, r * 11 + i + 333, 0.1) - 0.5) * 4);
+        const tile = this.getTile(rx + dx, ry + dy);
+        if (tile && tile.terrain !== 'water') {
+          tile.terrain = 'mountain';
+          tile.walkable = false;
+        }
+      }
+    }
+  }
+
+  private removeIsolatedWater(): void {
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        const tile = this.tiles[y][x];
+        if (tile.terrain !== 'water') continue;
+
+        let waterNeighbors = 0;
+        const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+        for (const [dx, dy] of dirs) {
+          const n = this.getTile(x + dx, y + dy);
+          if (n && n.terrain === 'water') waterNeighbors++;
+        }
+
+        if (waterNeighbors < 2) {
+          tile.terrain = 'grass';
+          tile.walkable = true;
+        }
+      }
+    }
+  }
+
+  private clearBaseCampArea(): void {
+    const cx = Math.floor(this.width / 2);
+    const cy = Math.floor(this.height / 2);
+    const margin = 4;
+
+    for (let y = cy - margin; y < cy + 6 + margin; y++) {
+      for (let x = cx - margin; x < cx + 6 + margin; x++) {
+        const tile = this.getTile(x, y);
+        if (tile && (tile.terrain === 'water' || tile.terrain === 'mountain')) {
+          tile.terrain = 'grass';
+          tile.walkable = true;
+        }
+      }
+    }
+  }
+
+  private removeIslands(): void {
+    const cx = Math.floor(this.width / 2);
+    const cy = Math.floor(this.height / 2);
+    const visited = new Uint8Array(this.width * this.height);
+
+    const queue: number[] = [cx, cy];
+    visited[cy * this.width + cx] = 1;
+    let head = 0;
+
+    while (head < queue.length) {
+      const x = queue[head++];
+      const y = queue[head++];
+
+      const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+      for (const [dx, dy] of dirs) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || nx >= this.width || ny < 0 || ny >= this.height) continue;
+        const idx = ny * this.width + nx;
+        if (visited[idx]) continue;
+        const tile = this.tiles[ny][nx];
+        if (tile.terrain === 'water' || tile.terrain === 'mountain') continue;
+        visited[idx] = 1;
+        queue.push(nx, ny);
+      }
+    }
+
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        if (visited[y * this.width + x]) continue;
+        const tile = this.tiles[y][x];
+        if (tile.walkable) {
+          tile.terrain = 'water';
+          tile.walkable = false;
+        }
+      }
     }
   }
 
@@ -150,7 +254,6 @@ export class TileMap {
 
   buildRoad(x: number, y: number): boolean {
     const tile = this.getTile(x, y);
-    // Don't build roads on water, mountains, or occupied tiles
     if (tile &&
         !tile.hasRoad &&
         tile.terrain !== 'water' &&
@@ -165,8 +268,8 @@ export class TileMap {
   getNeighbors(x: number, y: number): Tile[] {
     const neighbors: Tile[] = [];
     const directions = [
-      [-1, 0], [1, 0], [0, -1], [0, 1], // Cardinal
-      [-1, -1], [-1, 1], [1, -1], [1, 1] // Diagonal
+      [-1, 0], [1, 0], [0, -1], [0, 1],
+      [-1, -1], [-1, 1], [1, -1], [1, 1]
     ];
 
     for (const [dx, dy] of directions) {
@@ -181,7 +284,6 @@ export class TileMap {
 
   // Serialize for saving - COMPRESSED FORMAT
   serialize(): any {
-    // Only save: seed, dimensions, roads, explored tiles, occupied tiles
     const roads: string[] = [];
     const explored: string[] = [];
     const occupied: { x: number; y: number; id: number }[] = [];
@@ -214,12 +316,9 @@ export class TileMap {
     };
   }
 
-  // Deserialize from saved data - regenerate terrain from seed
   static deserialize(data: any): TileMap {
-    // Recreate map with same seed (regenerates same terrain)
     const map = new TileMap(data.width, data.height, data.seed);
 
-    // Restore roads
     if (data.roads) {
       const roadCoords = data.roads.split(';').filter((s: string) => s);
       roadCoords.forEach((coord: string) => {
@@ -231,7 +330,6 @@ export class TileMap {
       });
     }
 
-    // Restore explored state
     if (data.explored) {
       const exploredCoords = data.explored.split(';').filter((s: string) => s);
       exploredCoords.forEach((coord: string) => {
@@ -243,7 +341,6 @@ export class TileMap {
       });
     }
 
-    // Restore occupied tiles
     if (data.occupied) {
       data.occupied.forEach((occ: { x: number; y: number; id: number }) => {
         const tile = map.getTile(occ.x, occ.y);

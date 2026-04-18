@@ -540,6 +540,79 @@ When generating a building sprite with AI, include this in the prompt:
 
 ---
 
+## Integration Guide — Terrain Object Sprites (Trees & Rocks)
+
+Trees and rocks are rendered per-tile during the terrain pass. The renderer checks for sprite files first and falls back to procedural placeholders if none are found.
+
+### Sprite Paths
+
+| Terrain type | Sprite path | Placeholder |
+|---|---|---|
+| Single tree (`tree` terrain) | `assets/terrain/tree_single.png` | Pine tree (stacked green triangles) |
+| Forest cluster (`forest` terrain) | `assets/terrain/tree_forest.png` | 2-4 smaller pine trees per tile |
+| Rock / mountain (`mountain` terrain) | `assets/terrain/rock.png` | Rounded grey boulder dome |
+
+### How it works
+
+1. **Automatic detection:** `RenderSystem` calls `loadSprite()` for each sprite path. If the file exists and loads successfully (`naturalWidth > 0`), it's used. Otherwise the procedural placeholder renders.
+2. **Lazy loading & caching:** Same sprite cache as buildings — loaded on first access, cached forever.
+3. **No code changes needed:** Just drop the PNG file at the correct path and reload.
+
+### Sprite specifications
+
+#### Tree sprites (`tree_single.png`, `tree_forest.png`)
+
+- **Dimensions:** Any size — auto-scaled to tile width (64px)
+- **Aspect ratio:** Preserve natural aspect ratio; height scales proportionally
+- **Anchor:** Bottom-center of the image aligns with tile center, shifted up by half tile height
+- **Transparency:** PNG with transparent background
+- **Style:** Isometric perspective, hand-painted, Settlers II aesthetic
+- **`tree_single.png`:** One tree, centered in frame. Should look natural on a single tile
+- **`tree_forest.png`:** Dense cluster of 2-4 trees filling the tile. Used for forest terrain where tiles are adjacent — design so edges blend when tiled
+
+#### Rock sprite (`rock.png`)
+
+- **Dimensions:** Any size — auto-scaled to ~110% of tile width for slight overlap
+- **Anchor:** Bottom-center aligns with tile center, shifted up by 40% of tile height
+- **Transparency:** PNG with transparent background
+- **Style:** Rocky boulder, rounded/dome shape, grey-brown tones
+- **Height variation:** Isolated rocks appear small; clustered rocks (mountain ranges) appear as connected elevated terrain. The sprite is used for ALL mountain tiles regardless of cluster size — consider making the sprite work as a repeating boulder that looks natural when adjacent tiles also show the same sprite
+- **Lighting:** Top-left light source, darker bottom-right shadow
+
+### AI prompt for tree sprite
+
+```
+Create an isometric tree sprite in the style of The Settlers II (1996).
+
+Style: Hand-painted medieval fantasy, warm earthy palette, isometric 2:1 ratio.
+The tree should be a deciduous/conifer mix, cheerful and lush.
+Lighting from top-left, shadow to bottom-right.
+Transparent background (PNG).
+The tree should fit within a 64x32 pixel isometric tile base,
+with the trunk centered on the tile and canopy extending upward.
+The bottom of the trunk should align with the center of the tile diamond.
+```
+
+### AI prompt for rock sprite
+
+```
+Create an isometric rock/boulder sprite in the style of The Settlers II (1996).
+
+Style: Hand-painted medieval fantasy, grey-brown rocky tones.
+The rock should be a rounded boulder with a dome/half-sphere shape.
+Lighter on top-left (lit side), darker on bottom-right (shadow).
+Some cracks and surface texture for detail.
+Transparent background (PNG).
+The boulder should sit within a 64x32 pixel isometric tile diamond,
+slightly overflowing the edges for a natural look.
+```
+
+### Per-tile variation
+
+The procedural placeholders use seeded hash values per tile for size, position offset, color shade, and tree count (in forests). When providing sprites, a single image is used for all tiles of that type. To add variation in the future, the system could be extended to support numbered variants (e.g., `tree_single_1.png`, `tree_single_2.png`) selected by tile hash.
+
+---
+
 ## Future Expansion
 
 As the project grows, add:

@@ -8,6 +8,7 @@ import { setupKeyboardShortcuts } from './input/KeyboardShortcuts';
 let game: Game | null = null;
 let buildingMenu: BuildingMenu | null = null;
 let buildingPopover: BuildingPopover | null = null;
+let currentSaveSlot: number | null = null;
 
 const SAVE_SLOT_PREFIX = 'settler_save_';
 const LAST_SAVE_KEY = 'settler_last_save_slot';
@@ -22,6 +23,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setupDialogs();
 
   document.getElementById('btn-start-game')?.addEventListener('click', () => {
+    currentSaveSlot = null;
     launchGame(canvas);
   });
 
@@ -29,6 +31,7 @@ window.addEventListener('DOMContentLoaded', () => {
     openLoadDialog((slotIndex) => {
       const slotData = getFullSlotData(slotIndex);
       if (slotData) {
+        currentSaveSlot = slotIndex;
         localStorage.setItem(LAST_SAVE_KEY, slotIndex.toString());
         launchGame(canvas, slotData.data);
       }
@@ -37,8 +40,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
   const lastSlot = localStorage.getItem(LAST_SAVE_KEY);
   if (lastSlot !== null) {
-    const slotData = getFullSlotData(parseInt(lastSlot));
+    const slotIndex = parseInt(lastSlot);
+    const slotData = getFullSlotData(slotIndex);
     if (slotData) {
+      currentSaveSlot = slotIndex;
       launchGame(canvas, slotData.data);
       return;
     }
@@ -99,6 +104,7 @@ function launchGame(canvas: HTMLCanvasElement, saveData?: any): void {
 
 function exitToWelcome(): void {
   localStorage.removeItem(LAST_SAVE_KEY);
+  currentSaveSlot = null;
   if (game) {
     game.stop();
   }
@@ -129,6 +135,7 @@ function saveToSlot(index: number, name: string): void {
   const slotData = { name, timestamp: Date.now(), data: gameData };
   localStorage.setItem(`${SAVE_SLOT_PREFIX}${index}`, JSON.stringify(slotData));
   localStorage.setItem(LAST_SAVE_KEY, index.toString());
+  currentSaveSlot = index;
 }
 
 // --- Dialogs ---
@@ -315,6 +322,18 @@ function setupGameUI(game: Game): void {
   });
 
   document.getElementById('btn-save')?.addEventListener('click', () => {
+    if (currentSaveSlot !== null) {
+      const meta = getSlotMeta(currentSaveSlot);
+      if (meta) {
+        saveToSlot(currentSaveSlot, meta.name);
+        showMessage('Game saved!');
+        return;
+      }
+    }
+    openSaveDialog();
+  });
+
+  document.getElementById('btn-save-as')?.addEventListener('click', () => {
     openSaveDialog();
   });
 

@@ -424,19 +424,40 @@ Valid building type ids (see `src/types/GameData.ts` for the full list):
 
 ### Step 2: Set `spritePath` in `EntityFactory.ts`
 
-In `src/entities/EntityFactory.ts`, find the building's `case` in the `switch (buildingType)` block and add a `spritePath` line:
+In `src/entities/EntityFactory.ts`, find the `SPRITE_PATHS` map and add the building type:
 
 ```typescript
-case 'warehouse':
-  color = '#d4a574';
-  width = 3;
-  depth = 3;
-  height = 80;
-  spritePath = '/assets/buildings/warehouse.png';  // <-- add this
-  break;
+const SPRITE_PATHS: Record<string, string> = {
+  base_camp: '/assets/buildings/base_camp.png',
+  warehouse: '/assets/buildings/warehouse.png',
+  lumberjack: '/assets/buildings/lumberjack.png',  // <-- add new entries here
+};
 ```
 
-That's it. The `spritePath` variable is already declared above the switch. The Renderable component will automatically be created with type `'sprite'` when spritePath is set, and the RenderSystem will lazy-load and cache the image on first render.
+The Renderable component will automatically be created with type `'sprite'` when a spritePath is found, and the RenderSystem will lazy-load and cache the image on first render.
+
+### Step 3 (optional): Add construction phase sprites
+
+Buildings have build times. You can provide multiple sprites showing construction progress. Save them as:
+
+```
+assets/buildings/<type>_build_0.png   ← construction start (foundation, materials)
+assets/buildings/<type>_build_1.png   ← mid-construction (framing, walls)
+assets/buildings/<type>.png           ← completed building (already exists)
+```
+
+Then register them in `src/systems/RenderSystem.ts` in the `CONSTRUCTION_SPRITES` map:
+
+```typescript
+const CONSTRUCTION_SPRITES: Record<string, string[]> = {
+  warehouse: [
+    '/assets/buildings/warehouse_build_0.png',
+    '/assets/buildings/warehouse_build_1.png',
+  ],
+};
+```
+
+**How it works:** The build sprites + the completed sprite = total frames. The build time is divided equally among all frames. For a 60s warehouse with 2 build sprites + 1 completed = 3 frames → each shown for 20s. You can provide any number of build sprites per building. Buildings without construction sprites keep the existing opacity fade effect.
 
 ### How the sprite system works
 
@@ -524,7 +545,7 @@ When generating a building sprite with AI, include this in the prompt:
 As the project grows, add:
 - Animation frames for units
 - Seasonal variations (winter grass, autumn trees)
-- Building construction stages
+- More building construction stage sprites
 - Resource icons
 - UI theme assets
 - Particle effects (smoke, sparkles)

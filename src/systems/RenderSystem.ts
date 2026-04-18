@@ -14,6 +14,15 @@ import { Tile } from '@/map/Tile';
 import { dataManager } from '@/data/DataManager';
 import { TerrainTextures } from '@/rendering/TerrainTextures';
 
+// Construction phase sprites per building type (excluding the completed sprite).
+// During build, total frames = stages.length + 1 (the completed sprite is the last frame).
+const CONSTRUCTION_SPRITES: Record<string, string[]> = {
+  warehouse: [
+    '/assets/buildings/warehouse_build_0.png',
+    '/assets/buildings/warehouse_build_1.png',
+  ],
+};
+
 export class RenderSystem extends System {
   private ctx: CanvasRenderingContext2D;
   private canvas: HTMLCanvasElement;
@@ -65,15 +74,19 @@ export class RenderSystem extends System {
     // Center camera on map
     this.centerCamera();
 
-    // Preload all known building sprites
-    this.preloadSprites([
+    // Preload all known building sprites (completed + construction phases)
+    const allSprites = [
       '/assets/buildings/base_camp.png',
       '/assets/buildings/warehouse.png',
       '/assets/buildings/lumberjack.png',
       '/assets/buildings/sawmill.png',
       '/assets/buildings/quarry.png',
       '/assets/buildings/farm.png',
-    ]);
+    ];
+    for (const stages of Object.values(CONSTRUCTION_SPRITES)) {
+      allSprites.push(...stages);
+    }
+    this.preloadSprites(allSprites);
   }
 
   private preloadSprites(paths: string[]): void {
@@ -293,21 +306,45 @@ export class RenderSystem extends System {
       return;
     }
 
-    // Extract building type from mode (e.g., "build_warehouse" -> "warehouse")
     const buildingType = mode.replace('build_', '');
-
-    // Get building definition
     const buildingDef = dataManager.getBuilding(buildingType as any);
-    if (buildingDef) {
-      this.renderBuildingPreview(
-        gridX,
-        gridY,
-        buildingDef.size.width,
-        buildingDef.size.height,
-        buildingDef.visual.buildingHeight,
-        buildingDef.visual.color
-      );
+    if (!buildingDef) return;
+
+    const { size, visual } = buildingDef;
+    const spritePath = `/assets/buildings/${buildingType}.png`;
+    const sprite = this.loadSprite(spritePath);
+
+    if (sprite) {
+      this.renderSpritePreview(gridX, gridY, size.width, size.height, sprite);
+    } else {
+      this.renderBuildingPreview(gridX, gridY, size.width, size.height, visual.buildingHeight, visual.color);
     }
+  }
+
+  private renderSpritePreview(gridX: number, gridY: number, width: number, depth: number, sprite: HTMLImageElement): void {
+    const canPlace = this.canPlacePreview(gridX, gridY, width, depth);
+    const tileHighlight = canPlace ? 'rgba(255, 255, 255, 0.2)' : 'rgba(200, 50, 50, 0.35)';
+
+    this.highlightTiles(gridX, gridY, width, depth, tileHighlight);
+
+    const screenPos = this.iso.gridToScreen(gridX, gridY);
+    const tileW = this.iso.tileWidth;
+    const tileH = this.iso.tileHeight;
+
+    this.ctx.save();
+    this.ctx.globalAlpha = canPlace ? 0.6 : 0.4;
+    if (!canPlace) this.ctx.filter = 'saturate(0.3) brightness(0.8)';
+    this.ctx.translate(screenPos.x, screenPos.y - this.iso.tileHeight / 2);
+
+    const footprintW = (width + depth) * tileW / 2;
+    const scale = footprintW / sprite.naturalWidth;
+    const drawW = sprite.naturalWidth * scale;
+    const drawH = sprite.naturalHeight * scale;
+    const centerX = (width - depth) * tileW / 4;
+    const frontY = (width + depth) * tileH / 2;
+
+    this.ctx.drawImage(sprite, centerX - drawW / 2, frontY - drawH, drawW, drawH);
+    this.ctx.restore();
   }
 
   private renderRoadPreview(gridX: number, gridY: number): void {
@@ -586,8 +623,8 @@ export class RenderSystem extends System {
       this.ctx.globalAlpha = 0.7;
     }
 
-    // Apply visual treatment for under-construction buildings
-    if (isUnderConstruction) {
+    // Apply opacity fade for under-construction buildings without construction sprites
+    if (isUnderConstruction && !CONSTRUCTION_SPRITES[building!.buildingType]) {
       this.ctx.globalAlpha = 0.4 + 0.6 * building!.constructionProgress;
     }
 
@@ -672,8 +709,18 @@ export class RenderSystem extends System {
     this.ctx.restore();
   }
 
+  private getConstructionSpritePath(building: Building, renderable: Renderable): string | undefined {
+    if (building.state !== 'under_construction' || !renderable.spritePath) return renderable.spritePath;
+    const stages = CONSTRUCTION_SPRITES[building.buildingType];
+    if (!stages || stages.length === 0) return renderable.spritePath;
+    const totalFrames = stages.length + 1;
+    const frameIndex = Math.min(Math.floor(building.constructionProgress * totalFrames), stages.length);
+    return frameIndex < stages.length ? stages[frameIndex] : renderable.spritePath;
+  }
+
   private renderBuildingSprite(building: Building, renderable: Renderable, isSelected: boolean = false): void {
-    const sprite = renderable.spritePath ? this.loadSprite(renderable.spritePath) : null;
+    const spritePath = this.getConstructionSpritePath(building, renderable);
+    const sprite = spritePath ? this.loadSprite(spritePath) : null;
     if (!sprite) return;
 
     const tileW = this.iso.tileWidth;

@@ -56,7 +56,6 @@ export function setupKeyboardShortcuts(game: Game): void {
   // R — Build road mode
   hotkeys('r', (e) => {
     if (isModalOpen()) return;
-    if (inputSystem.getMode() !== 'view') return;
     e.preventDefault();
     inputSystem.setMode('build_road');
   });
@@ -64,7 +63,6 @@ export function setupKeyboardShortcuts(game: Game): void {
   // B — Open building menu
   hotkeys('b', (e) => {
     if (isModalOpen()) return;
-    if (inputSystem.getMode() !== 'view') return;
     e.preventDefault();
     eventBus.emit('toggle:building_menu');
   });

@@ -778,20 +778,13 @@ export class Game {
   }
 
   private updateSelectionUI(): void {
-    const selectionPanel = document.getElementById('selection-panel');
-    if (!selectionPanel) return;
-
     if (this.selectedEntity) {
       const building = this.selectedEntity.getComponent(Building);
       if (building) {
-        selectionPanel.style.display = 'block';
-        const titleEl = document.getElementById('selection-title');
-        if (titleEl) {
-          titleEl.textContent = `Selected: ${building.buildingType}`;
-        }
+        eventBus.emit('building:selected', { entity: this.selectedEntity });
       }
     } else {
-      selectionPanel.style.display = 'none';
+      eventBus.emit('building:deselected');
     }
   }
 

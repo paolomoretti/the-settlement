@@ -2,9 +2,11 @@ import { Game } from './core/Game';
 import { eventBus } from './core/EventBus';
 import { dataManager } from './data/DataManager';
 import { BuildingMenu } from './ui/BuildingMenu';
+import { BuildingPopover } from './ui/BuildingPopover';
 
 let game: Game | null = null;
 let buildingMenu: BuildingMenu | null = null;
+let buildingPopover: BuildingPopover | null = null;
 
 const SAVE_SLOT_PREFIX = 'settler_save_';
 const LAST_SAVE_KEY = 'settler_last_save_slot';
@@ -341,8 +343,17 @@ function setupGameUI(game: Game): void {
     document.getElementById('exit-dialog')!.style.display = 'flex';
   });
 
-  document.getElementById('btn-delete')?.addEventListener('click', () => {
-    eventBus.emit('delete:selected');
+  buildingPopover = new BuildingPopover(game);
+
+  eventBus.on('building:selected', (data) => {
+    buildingPopover!.show(data.entity);
+  });
+
+  eventBus.on('building:deselected', () => {
+    buildingPopover!.hide();
+  });
+
+  eventBus.on('delete:selected', () => {
     showMessage('Building deleted');
   });
 

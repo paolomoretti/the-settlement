@@ -61,6 +61,7 @@ export class Game {
   };
 
   private returningWorkers = new Set<number>();
+  private roadDragMode: 'create' | 'delete' | null = null;
 
   constructor(canvas: HTMLCanvasElement, skipInit = false) {
     this.canvas = canvas;
@@ -100,6 +101,7 @@ export class Game {
   private setupEventListeners(): void {
     // Building events
     eventBus.on('build:road', (data) => this.buildRoad(data.x, data.y));
+    eventBus.on('road:drag_end', () => { this.roadDragMode = null; });
 
     // Generic building handler for all building types (derived from data)
     for (const building of dataManager.getAllBuildings()) {
@@ -201,37 +203,30 @@ export class Game {
     const tile = this.tileMap.getTile(x, y);
     if (!tile) return;
 
-    // Toggle: remove existing road (but not entrance roads inside buildings)
-    if (tile.hasRoad && !tile.isOccupied()) {
+    const isExistingRoad = tile.hasRoad && !tile.isOccupied();
+
+    // On first tile of a drag, lock the mode based on what's under the cursor
+    if (this.roadDragMode === null) {
+      this.roadDragMode = isExistingRoad ? 'delete' : 'create';
+    }
+
+    if (this.roadDragMode === 'delete') {
+      if (!isExistingRoad) return;
       tile.hasRoad = false;
       roadSegmentManager.removeRoad(x, y);
       this.scheduleSegmentRecalc();
       this.updateBuildingRoadConnections();
       this.rerouteReturningWorkers();
-      return;
-    }
-
-    if (!this.isRoadPlacementValid(x, y)) {
-      return;
-    }
-
-    if (this.tileMap.buildRoad(x, y)) {
-      audioManager.playSound('build_placed');
-      roadSegmentManager.addRoad(x, y);
-      this.scheduleSegmentRecalc();
-      this.updateBuildingRoadConnections();
+    } else {
+      if (this.tileMap.buildRoad(x, y)) {
+        audioManager.playSound('build_placed');
+        roadSegmentManager.addRoad(x, y);
+        this.scheduleSegmentRecalc();
+        this.updateBuildingRoadConnections();
+      }
     }
   }
 
-  private isRoadPlacementValid(x: number, y: number): boolean {
-    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-    for (const [dx, dy] of dirs) {
-      const tile = this.tileMap.getTile(x + dx, y + dy);
-      if (!tile) continue;
-      if (tile.hasRoad) return true;
-    }
-    return false;
-  }
 
   private getBaseCampConnectedRoads(): Set<string> {
     const connected = new Set<string>();

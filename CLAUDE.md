@@ -8,7 +8,7 @@ A browser-based city-building game heavily inspired by Settlers of Catan / The S
 - **Rendering:** HTML5 Canvas 2D, isometric projection (2:1 ratio, 64x32 tiles)
 - **Build:** Vite 5.0 (dev server on port 3000)
 - **Architecture:** Entity-Component-System (ECS) with EventBus
-- **Dependencies:** `pathfinding` (A*), `howler.js` (audio)
+- **Dependencies:** `pathfinding` (A*), `howler.js` (audio), `hotkeys-js` (keyboard shortcuts)
 
 ## Project Structure
 
@@ -19,6 +19,7 @@ src/
   systems/      - ECS logic: RenderSystem, InputSystem, MovementSystem, ProductionSystem
   economics/    - ResourceManager (global inventory), TransportRequest (pickup queue)
   entities/     - EntityFactory for creating game objects
+  input/        - KeyboardShortcuts (centralized hotkey bindings via hotkeys-js)
   map/          - Tile and TileMap (1000x1000 procedural grid)
   pathfinding/  - A* pathfinding wrapper
   audio/        - AudioManager (Howler.js wrapper)
@@ -59,6 +60,7 @@ Not yet implemented: sprite assets (all visuals are colored shapes), item carryi
 - [Asset Guide](.claude/ASSET_GUIDE.md) - Comprehensive guide for creating game sprites
 - [AI Prompt Template](.claude/AI_PROMPT_TEMPLATE.txt) - Quick-reference template for AI image generation
 - [Performance Guidelines](.claude/PERFORMANCE.md) - Mandatory rules for rendering, textures, and canvas performance
+- [Keyboard Shortcuts](.claude/KEYBOARD_SHORTCUTS.md) - Centralized shortcut system using hotkeys-js, all bindings and how to add more
 
 **Convention**: Every time new logic is added to the game, document it in `.claude/` and reference it here. Future agents and chats rely on these docs to understand how systems work without re-explanation.
 

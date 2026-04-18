@@ -1287,6 +1287,12 @@ export class RenderSystem extends System {
     this.camera.y += dy;
   }
 
+  centerOnGrid(gridX: number, gridY: number): void {
+    const worldPos = this.iso.gridToScreen(gridX, gridY);
+    this.camera.x = this.canvas.width / 2 - worldPos.x * this.camera.zoom;
+    this.camera.y = this.canvas.height / 2 - worldPos.y * this.camera.zoom;
+  }
+
   getZoom(): number {
     return this.camera.zoom;
   }

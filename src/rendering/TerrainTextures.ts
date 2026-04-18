@@ -61,7 +61,6 @@ const FOREST = hexToRgb('#2d5016');
 const HILL = hexToRgb('#8bb34a');
 const DESERT = hexToRgb('#d4b96a');
 const ROAD = hexToRgb('#c4a572');
-const SAND = hexToRgb('#c8b07a');
 
 function genGrass(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: Float64Array, b: Float64Array, i: number): void {
   const n1 = tileNoise(n, x, y, 0.8);

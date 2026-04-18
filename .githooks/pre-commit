@@ -1,0 +1,8 @@
+#!/bin/sh
+echo "Running TypeScript type check..."
+npx tsc --noEmit
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "Type check failed. Fix the errors above before committing."
+  exit 1
+fi

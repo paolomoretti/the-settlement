@@ -99,17 +99,11 @@ export class Game {
     // Building events
     eventBus.on('build:road', (data) => this.buildRoad(data.x, data.y));
 
-    // Generic building handler for all building types
-    const buildingTypes = [
-      'warehouse', 'storehouse', 'hut', 'house',
-      'lumberjack', 'sawmill', 'quarry', 'farm', 'mill', 'bakery', 'well', 'fisher',
-      'coal_mine', 'iron_mine', 'iron_smelter', 'tool_smithy',
-      'barracks'
-    ];
-
-    buildingTypes.forEach(type => {
-      eventBus.on(`build:${type}`, (data) => this.buildGeneric(type as any, data.x, data.y));
-    });
+    // Generic building handler for all building types (derived from data)
+    for (const building of dataManager.getAllBuildings()) {
+      const type = building.id;
+      eventBus.on(`build:${type}`, (data: { x: number; y: number }) => this.buildGeneric(type, data.x, data.y));
+    }
 
     // Selection events
     eventBus.on('select:entity', (data) => this.selectEntityAt(data.x, data.y));

@@ -3,14 +3,9 @@
  */
 
 import { Component } from '@/core/Component';
+import { BuildingType } from '@/types/GameData';
 
-export type BuildingType =
-  | 'warehouse'
-  | 'lumberjack'
-  | 'sawmill'
-  | 'quarry'
-  | 'farm'
-  | 'road';
+export type { BuildingType };
 
 export type BuildingState = 'planning' | 'under_construction' | 'complete';
 

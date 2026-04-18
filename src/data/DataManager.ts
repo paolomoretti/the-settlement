@@ -20,7 +20,7 @@ export class DataManager {
 
   private resources: Map<ResourceType, ResourceDefinition> = new Map();
   private buildings: Map<BuildingType, BuildingDefinition> = new Map();
-  private gameConfig: GameConfig;
+  private gameConfig!: GameConfig;
 
   private constructor() {
     this.loadData();

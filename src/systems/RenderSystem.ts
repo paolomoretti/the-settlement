@@ -32,6 +32,11 @@ const CONSTRUCTION_SPRITES: Record<string, string[]> = {
     '/assets/buildings/sawmill_build_1.png',
     '/assets/buildings/sawmill_build_2.png',
   ],
+  forester: [
+    '/assets/buildings/forester_build_0.png',
+    '/assets/buildings/forester_build_1.png',
+    '/assets/buildings/forester_build_2.png',
+  ],
 };
 
 export class RenderSystem extends System {
@@ -53,7 +58,6 @@ export class RenderSystem extends System {
   private minimapOffscreen: HTMLCanvasElement;
   private minimapOffscreenCtx: CanvasRenderingContext2D;
   private minimapScale: number;
-  private minimapNeedsRedraw = true;
 
   constructor(canvas: HTMLCanvasElement, private tileMap: TileMap) {
     super();
@@ -153,7 +157,7 @@ export class RenderSystem extends System {
     return entity.hasComponent(Position) && entity.hasComponent(Renderable);
   }
 
-  update(deltaTime: number): void {
+  update(_deltaTime: number): void {
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
     this.ctx.save();
@@ -663,7 +667,7 @@ export class RenderSystem extends System {
         this.renderIsometricBuilding(building, renderable, isSelected);
       }
     } else if (entity.hasComponent(Worker)) {
-      const movable = entity.getComponent(Movable);
+      const movable = entity.getComponent(Movable) ?? null;
       const worker = entity.getComponent(Worker)!;
       this.renderWorkerSprite(movable, worker);
     } else {

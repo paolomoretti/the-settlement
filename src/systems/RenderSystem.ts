@@ -8,6 +8,7 @@ import { Position } from '@/components/Position';
 import { Renderable } from '@/components/Renderable';
 import { Building } from '@/components/Building';
 import { Worker } from '@/components/Worker';
+import { Movable } from '@/components/Movable';
 import { TileMap } from '@/map/TileMap';
 import { Isometric } from '@/utils/Isometric';
 import { Tile } from '@/map/Tile';
@@ -181,19 +182,23 @@ export class RenderSystem extends System {
              pos.y <= viewportBounds.maxY;
     });
 
-    // Sort only visible entities for proper isometric depth sorting
-    // Entities further "back" (lower Y+X) draw first, so they appear behind
+    // Sort for isometric depth: higher x+y = closer to camera = drawn later.
+    // Buildings sort by their front tile edge. Workers at the same depth draw
+    // on top of buildings so they remain visible on roads in front of structures.
     const sortedEntities = visibleEntities.sort((a, b) => {
       const posA = a.getComponent(Position)!;
       const posB = b.getComponent(Position)!;
       const buildingA = a.getComponent(Building);
       const buildingB = b.getComponent(Building);
 
-      // For buildings, use the FRONT corner for sorting (back position + size)
-      const sortKeyA = posA.y + posA.x + (buildingA ? buildingA.width + buildingA.height : 0);
-      const sortKeyB = posB.y + posB.x + (buildingB ? buildingB.width + buildingB.height : 0);
+      const depthA = posA.y + posA.x + (buildingA ? buildingA.width + buildingA.height - 2 : 0);
+      const depthB = posB.y + posB.x + (buildingB ? buildingB.width + buildingB.height - 2 : 0);
 
-      return sortKeyA - sortKeyB;
+      if (depthA !== depthB) return depthA - depthB;
+      // At same depth, workers draw on top of buildings
+      if (buildingA && !buildingB) return -1;
+      if (!buildingA && buildingB) return 1;
+      return 0;
     });
 
     // Render entities
@@ -657,8 +662,11 @@ export class RenderSystem extends System {
       } else {
         this.renderIsometricBuilding(building, renderable, isSelected);
       }
+    } else if (entity.hasComponent(Worker)) {
+      const movable = entity.getComponent(Movable);
+      const worker = entity.getComponent(Worker)!;
+      this.renderWorkerSprite(movable, worker);
     } else {
-      // Render non-building entities with their normal shapes
       switch (renderable.type) {
         case 'circle':
           this.renderCircle(renderable);
@@ -669,19 +677,6 @@ export class RenderSystem extends System {
         case 'triangle':
           this.renderTriangle(renderable);
           break;
-      }
-    }
-
-    // Debug: render worker state
-    if (entity.hasComponent(Worker)) {
-      const worker = entity.getComponent(Worker)!;
-      this.ctx.fillStyle = 'white';
-      this.ctx.font = '10px monospace';
-      this.ctx.textAlign = 'center';
-      this.ctx.fillText(worker.state, 0, -40);
-
-      if (worker.carryingResource) {
-        this.ctx.fillText(`[${worker.carryingResource}]`, 0, -30);
       }
     }
 
@@ -1029,6 +1024,137 @@ export class RenderSystem extends System {
     const g = Math.floor(parseInt(hex.substr(2, 2), 16) * factor);
     const b = Math.floor(parseInt(hex.substr(4, 2), 16) * factor);
     return `rgb(${r}, ${g}, ${b})`;
+  }
+
+  private renderWorkerSprite(movable: Movable | null, worker: Worker): void {
+    let dirX = 0;
+    let dirY = 1;
+    let isMoving = false;
+
+    if (movable && movable.isMoving) {
+      const target = movable.getCurrentTarget();
+      if (target) {
+        dirX = target.x - movable.segmentStartX;
+        dirY = target.y - movable.segmentStartY;
+        isMoving = true;
+      }
+    }
+
+    let facing = 0;
+    if (dirX > 0 && dirY >= 0) facing = 0;
+    else if (dirX <= 0 && dirY > 0) facing = 1;
+    else if (dirX < 0 && dirY <= 0) facing = 2;
+    else if (dirX >= 0 && dirY < 0) facing = 3;
+
+    const frame = isMoving ? Math.floor(Date.now() / 200) % 4 : 0;
+    const s = 2;
+    const a = worker.appearance;
+
+    // Anchor so feet sit at tile center (y=0 = ground level)
+    this.ctx.save();
+
+    const px = (x: number, y: number, w: number, h: number, color: string) => {
+      this.ctx.fillStyle = color;
+      this.ctx.fillRect(x * s, y * s, w * s, h * s);
+    };
+
+    const mirror = facing === 1 || facing === 2;
+    const showBack = facing === 2 || facing === 3;
+    if (mirror) this.ctx.scale(-1, 1);
+
+    const legOffsets = [[0, 0], [-1, 1], [0, 0], [1, -1]];
+    const [leftLeg, rightLeg] = legOffsets[frame];
+    const armSwing = isMoving ? (frame === 1 ? 1 : frame === 3 ? -1 : 0) : 0;
+
+    // Shadow
+    this.ctx.globalAlpha = 0.2;
+    this.ctx.fillStyle = '#000';
+    this.ctx.beginPath();
+    this.ctx.ellipse(0, 0, 4 * s, 1.5 * s, 0, 0, Math.PI * 2);
+    this.ctx.fill();
+    this.ctx.globalAlpha = 1;
+
+    const isDress = a.variant === 'dress';
+
+    if (isDress) {
+      // Dress variant: long skirt covers legs, only boot tips peek out
+      // Boot tips peeking below dress
+      px(-1 + leftLeg, -1, 1, 1, a.boots);
+      px(1 + rightLeg, -1, 1, 1, a.boots);
+
+      // Long dress (covers from waist to feet)
+      px(-3, -9, 7, 8, a.tunic);
+      // Dress hem — slightly flared
+      px(-3, -2, 7, 1, this.darkenColor(a.tunic, 0.8));
+
+      // Apron (front only)
+      if (!showBack) {
+        px(-1, -7, 4, 5, '#d8cbb8');
+      }
+    } else {
+      // Boots
+      px(-2 + leftLeg, -2, 2, 2, a.boots);
+      px(1 + rightLeg, -2, 2, 2, a.boots);
+
+      // Legs
+      px(-2 + leftLeg, -4, 2, 2, a.pants);
+      px(1 + rightLeg, -4, 2, 2, a.pants);
+
+      // Tunic body
+      px(-2, -9, 5, 5, a.tunic);
+
+      // Belt
+      px(-2, -5, 5, 1, '#2a1f14');
+    }
+
+    // Arms
+    px(-4, -8 + armSwing, 2, 3, a.tunic);
+    px(3, -8 - armSwing, 2, 3, a.tunic);
+    px(-4, -5 + armSwing, 2, 1, a.skin);
+    px(3, -5 - armSwing, 2, 1, a.skin);
+
+    // Head
+    if (showBack) {
+      if (a.variant === 'hat') {
+        px(-2, -14, 5, 5, a.hair);
+        // Wide straw hat brim
+        px(-4, -14, 9, 1, '#c8a868');
+        px(-3, -15, 7, 1, '#c8a868');
+        px(-1, -16, 3, 1, '#b89858');
+      } else if (isDress) {
+        // Long hair / headscarf
+        px(-2, -14, 5, 5, a.hair);
+        px(-1, -9, 3, 2, a.hair);
+      } else {
+        px(-2, -14, 5, 5, a.hair);
+        px(0, -15, 1, 1, a.hair);
+      }
+    } else {
+      // Face
+      px(-2, -13, 5, 4, a.skin);
+
+      if (a.variant === 'hat') {
+        // Wide straw hat
+        px(-4, -14, 9, 1, '#c8a868');
+        px(-3, -15, 7, 1, '#c8a868');
+        px(-1, -16, 3, 1, '#b89858');
+        // Hat band
+        px(-3, -14, 7, 1, '#7a5a30');
+      } else if (isDress) {
+        // Headscarf / long hair
+        px(-2, -15, 5, 3, a.hair);
+        px(-3, -13, 1, 3, a.hair);
+        px(3, -13, 1, 3, a.hair);
+      } else {
+        // Cap/coif
+        px(-2, -15, 5, 3, a.hair);
+        px(-2, -13, 5, 1, '#3a2a1a');
+      }
+      // Eye
+      px(1, -12, 1, 1, '#1a1008');
+    }
+
+    this.ctx.restore();
   }
 
   private renderCircle(renderable: Renderable): void {

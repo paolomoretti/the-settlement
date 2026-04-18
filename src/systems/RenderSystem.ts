@@ -1376,6 +1376,16 @@ export class RenderSystem extends System {
     this.camera.y = this.canvas.height / 2 - worldPos.y * this.camera.zoom;
   }
 
+  getCamera(): { x: number; y: number; zoom: number } {
+    return { ...this.camera };
+  }
+
+  setCamera(cam: { x: number; y: number; zoom: number }): void {
+    this.camera.x = cam.x;
+    this.camera.y = cam.y;
+    this.camera.zoom = Math.max(0.5, Math.min(2, cam.zoom));
+  }
+
   getZoom(): number {
     return this.camera.zoom;
   }

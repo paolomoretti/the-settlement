@@ -60,6 +60,8 @@ export class Game {
     max: 0
   };
 
+  private returningWorkers = new Set<number>();
+
   constructor(canvas: HTMLCanvasElement, skipInit = false) {
     this.canvas = canvas;
 
@@ -196,6 +198,19 @@ export class Game {
       return;
     }
 
+    const tile = this.tileMap.getTile(x, y);
+    if (!tile) return;
+
+    // Toggle: remove existing road (but not entrance roads inside buildings)
+    if (tile.hasRoad && !tile.isOccupied()) {
+      tile.hasRoad = false;
+      roadSegmentManager.removeRoad(x, y);
+      this.scheduleSegmentRecalc();
+      this.updateBuildingRoadConnections();
+      this.rerouteReturningWorkers();
+      return;
+    }
+
     if (!this.isRoadPlacementValid(x, y)) {
       return;
     }
@@ -214,9 +229,6 @@ export class Game {
       const tile = this.tileMap.getTile(x + dx, y + dy);
       if (!tile) continue;
       if (tile.hasRoad) return true;
-      if (tile.isOccupied() && this.baseCampEntity && tile.occupiedBy === this.baseCampEntity.id) {
-        return true;
-      }
     }
     return false;
   }
@@ -229,34 +241,35 @@ export class Game {
     const baseCampBuilding = this.baseCampEntity.getComponent(Building);
     if (!baseCampPos || !baseCampBuilding) return connected;
 
-    const bx = baseCampPos.x;
-    const by = baseCampPos.y;
-    const bw = baseCampBuilding.width;
-    const bh = baseCampBuilding.height;
+    const entrance = baseCampBuilding.getEntranceOffset();
+    if (!entrance) return connected;
 
-    // Find road tiles adjacent to the base camp as BFS seeds
+    const entranceX = baseCampPos.x + entrance.dx;
+    const entranceY = baseCampPos.y + entrance.dy;
+    const entranceKey = `${entranceX},${entranceY}`;
+    connected.add(entranceKey);
+
+    // Seed BFS from road tiles adjacent to the entrance
     const queue: { x: number; y: number }[] = [];
-    for (let dy = -1; dy <= bh; dy++) {
-      for (let dx = -1; dx <= bw; dx++) {
-        const isInside = dx >= 0 && dx < bw && dy >= 0 && dy < bh;
-        if (isInside) continue;
-        const tile = this.tileMap.getTile(bx + dx, by + dy);
-        if (tile && tile.hasRoad) {
-          const key = `${bx + dx},${by + dy}`;
-          if (!connected.has(key)) {
-            connected.add(key);
-            queue.push({ x: bx + dx, y: by + dy });
-          }
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (const [dx, dy] of dirs) {
+      const tile = this.tileMap.getTile(entranceX + dx, entranceY + dy);
+      if (tile && tile.hasRoad && !tile.isOccupied()) {
+        const key = `${entranceX + dx},${entranceY + dy}`;
+        if (!connected.has(key)) {
+          connected.add(key);
+          queue.push({ x: entranceX + dx, y: entranceY + dy });
         }
       }
     }
 
-    // BFS flood-fill through connected road tiles
+    // BFS flood-fill through connected road tiles (cardinal only, skip occupied/entrance tiles)
+    const cardinalDirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
     while (queue.length > 0) {
       const { x, y } = queue.shift()!;
-      const neighbors = this.tileMap.getNeighbors(x, y);
-      for (const neighbor of neighbors) {
-        if (neighbor.hasRoad) {
+      for (const [dx, dy] of cardinalDirs) {
+        const neighbor = this.tileMap.getTile(x + dx, y + dy);
+        if (neighbor && neighbor.hasRoad && !neighbor.isOccupied()) {
           const key = `${neighbor.x},${neighbor.y}`;
           if (!connected.has(key)) {
             connected.add(key);
@@ -270,19 +283,23 @@ export class Game {
   }
 
   private hasBuildingConnectedRoad(pos: Position, building: Building, connectedRoads: Set<string>): boolean {
-    const bx = pos.x;
-    const by = pos.y;
-    const bw = building.width;
-    const bh = building.height;
-
-    for (let dy = -1; dy <= bh; dy++) {
-      for (let dx = -1; dx <= bw; dx++) {
-        const isInsideFootprint = dx >= 0 && dx < bw && dy >= 0 && dy < bh;
-        if (isInsideFootprint) continue;
-
-        const key = `${bx + dx},${by + dy}`;
+    const entrance = building.getEntranceOffset();
+    if (entrance) {
+      const ex = pos.x + entrance.dx;
+      const ey = pos.y + entrance.dy;
+      const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+      for (const [dx, dy] of dirs) {
+        const key = `${ex + dx},${ey + dy}`;
         if (connectedRoads.has(key)) return true;
       }
+      return false;
+    }
+
+    // Fallback for 1x1 buildings: any cardinal adjacent connected road
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (const [dx, dy] of dirs) {
+      const key = `${pos.x + dx},${pos.y + dy}`;
+      if (connectedRoads.has(key)) return true;
     }
     return false;
   }
@@ -314,22 +331,29 @@ export class Game {
     return true;
   }
 
-  private occupyBuildingTiles(entityId: number, x: number, y: number, width: number, height: number): void {
+  private occupyBuildingTiles(entityId: number, x: number, y: number, width: number, height: number, building?: Building): void {
+    const entrance = building?.getEntranceOffset();
     let roadsRemoved = false;
     for (let dy = 0; dy < height; dy++) {
       for (let dx = 0; dx < width; dx++) {
         const tile = this.tileMap.getTile(x + dx, y + dy);
-        if (tile) {
+        if (!tile) continue;
+
+        if (entrance && dx === entrance.dx && dy === entrance.dy) {
           tile.occupy(entityId);
-          if (tile.hasRoad) {
-            tile.hasRoad = false;
-            roadSegmentManager.removeRoad(x + dx, y + dy);
-            roadsRemoved = true;
-          }
+          tile.hasRoad = true;
+          continue;
+        }
+
+        tile.occupy(entityId);
+        if (tile.hasRoad) {
+          tile.hasRoad = false;
+          roadSegmentManager.removeRoad(x + dx, y + dy);
+          roadsRemoved = true;
         }
       }
     }
-    if (roadsRemoved) {
+    if (roadsRemoved || entrance) {
       roadSegmentManager.recalculate(this.tileMap);
     }
   }
@@ -341,7 +365,7 @@ export class Game {
     if (!building) return;
 
     this.addEntity(baseCamp);
-    this.occupyBuildingTiles(baseCamp.id, x, y, building.width, building.height);
+    this.occupyBuildingTiles(baseCamp.id, x, y, building.width, building.height, building);
     this.baseCampEntity = baseCamp;
 
     // Update population max
@@ -401,7 +425,7 @@ export class Game {
     if (!building) return;
 
     this.addEntity(entity);
-    this.occupyBuildingTiles(entity.id, x, y, building.width, building.height);
+    this.occupyBuildingTiles(entity.id, x, y, building.width, building.height, building);
 
     // Update population if residential
     if (buildingDef.population?.provides) {
@@ -414,8 +438,8 @@ export class Game {
     console.log(`✅ ${buildingDef.name} (${building.width}x${building.height}) built at (${x}, ${y})`);
   }
 
-  private getAvailablePopulation(): number {
-    return this.population.current - roadSegmentManager.getWorkerCount();
+  public getAvailablePopulation(): number {
+    return this.population.current - roadSegmentManager.getWorkerCount() - this.returningWorkers.size;
   }
 
   private findBaseCampSpawnTile(): { x: number; y: number } | null {
@@ -424,17 +448,23 @@ export class Game {
     const building = this.baseCampEntity.getComponent(Building);
     if (!pos || !building) return null;
 
-    for (let dy = -1; dy <= building.height; dy++) {
-      for (let dx = -1; dx <= building.width; dx++) {
-        const isInside = dx >= 0 && dx < building.width && dy >= 0 && dy < building.height;
-        if (isInside) continue;
-        const tile = this.tileMap.getTile(pos.x + dx, pos.y + dy);
-        if (tile && tile.hasRoad) {
-          return { x: pos.x + dx, y: pos.y + dy };
-        }
+    const entrance = building.getEntranceOffset();
+    if (!entrance) return null;
+
+    const ex = pos.x + entrance.dx;
+    const ey = pos.y + entrance.dy;
+
+    // Find the first road tile cardinally adjacent to the entrance
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (const [dx, dy] of dirs) {
+      const tile = this.tileMap.getTile(ex + dx, ey + dy);
+      if (tile && tile.hasRoad && !tile.isOccupied()) {
+        return { x: ex + dx, y: ey + dy };
       }
     }
-    return null;
+
+    // Fall back to the entrance tile itself
+    return { x: ex, y: ey };
   }
 
   private spawnSegmentWorker(segment: RoadSegment): number | null {
@@ -476,9 +506,62 @@ export class Game {
 
   private freeSegmentWorker(workerId: number): void {
     const entity = this.entities.find(e => e.id === workerId && e.active);
-    if (entity) {
-      this.removeEntity(entity);
-      console.log(`Road worker #${workerId} freed`);
+    if (!entity) return;
+
+    const pos = entity.getComponent(Position);
+    if (!pos) { this.removeEntity(entity); return; }
+
+    const spawnTile = this.findBaseCampSpawnTile();
+    if (!spawnTile) { this.removeEntity(entity); return; }
+
+    const path = this.pathFinder.findPath(
+      new Position(Math.floor(pos.x), Math.floor(pos.y)),
+      new Position(spawnTile.x, spawnTile.y),
+      this.tileMap
+    );
+
+    if (path.length > 0) {
+      const movable = entity.getComponent(Movable);
+      const worker = entity.getComponent(Worker);
+      if (movable && worker) {
+        movable.setPath(path);
+        worker.setState('walking');
+        this.returningWorkers.add(workerId);
+        return;
+      }
+    }
+
+    this.removeEntity(entity);
+  }
+
+  private rerouteReturningWorkers(): void {
+    if (this.returningWorkers.size === 0) return;
+    const spawnTile = this.findBaseCampSpawnTile();
+
+    for (const workerId of this.returningWorkers) {
+      const entity = this.entities.find(e => e.id === workerId && e.active);
+      if (!entity) { this.returningWorkers.delete(workerId); continue; }
+
+      const pos = entity.getComponent(Position);
+      const movable = entity.getComponent(Movable);
+      const worker = entity.getComponent(Worker);
+      if (!pos || !movable || !worker) { this.removeEntity(entity); this.returningWorkers.delete(workerId); continue; }
+
+      if (!spawnTile) { this.removeEntity(entity); this.returningWorkers.delete(workerId); continue; }
+
+      const path = this.pathFinder.findPath(
+        new Position(Math.floor(pos.x), Math.floor(pos.y)),
+        new Position(spawnTile.x, spawnTile.y),
+        this.tileMap
+      );
+
+      if (path.length > 0) {
+        movable.setPath(path);
+        worker.setState('walking');
+      } else {
+        this.removeEntity(entity);
+        this.returningWorkers.delete(workerId);
+      }
     }
   }
 
@@ -581,6 +664,19 @@ export class Game {
       this.renderSystem.hoveredEntityId = hoveredEntity?.id ?? null;
     } else {
       this.renderSystem.hoveredEntityId = null;
+    }
+
+    // Remove returning workers that reached base camp
+    if (this.returningWorkers.size > 0) {
+      for (const workerId of this.returningWorkers) {
+        const entity = this.entities.find(e => e.id === workerId && e.active);
+        if (!entity) { this.returningWorkers.delete(workerId); continue; }
+        const movable = entity.getComponent(Movable);
+        if (movable && !movable.isMoving) {
+          this.removeEntity(entity);
+          this.returningWorkers.delete(workerId);
+        }
+      }
     }
 
     // Update building construction progress
@@ -719,6 +815,8 @@ export class Game {
     const building = this.selectedEntity.getComponent(Building);
 
     if (pos && building) {
+      const entrance = building.getEntranceOffset();
+
       // Release occupied tiles
       for (let dy = 0; dy < building.height; dy++) {
         for (let dx = 0; dx < building.width; dx++) {
@@ -729,12 +827,19 @@ export class Game {
         }
       }
 
+      // Remove entrance road tile
+      if (entrance) {
+        const tile = this.tileMap.getTile(pos.x + entrance.dx, pos.y + entrance.dy);
+        if (tile) tile.hasRoad = false;
+      }
+
       resourceManager.onBuildingDestroyed(this.selectedEntity.id);
       console.log(`Deleted entity #${this.selectedEntity.id}`);
       this.removeEntity(this.selectedEntity);
       this.selectedEntity = null;
       this.syncInventory();
       this.updateSelectionUI();
+      roadSegmentManager.recalculate(this.tileMap);
       this.updateBuildingRoadConnections();
     }
   }
@@ -755,6 +860,8 @@ export class Game {
       const building = this.selectedEntity.getComponent(Building);
 
       if (pos && building) {
+        const entrance = building.getEntranceOffset();
+
         for (let dy = 0; dy < building.height; dy++) {
           for (let dx = 0; dx < building.width; dx++) {
             const tile = this.tileMap.getTile(pos.x + dx, pos.y + dy);
@@ -762,6 +869,12 @@ export class Game {
               tile.release();
             }
           }
+        }
+
+        // Remove entrance road tile
+        if (entrance) {
+          const tile = this.tileMap.getTile(pos.x + entrance.dx, pos.y + entrance.dy);
+          if (tile) tile.hasRoad = false;
         }
       }
     }
@@ -787,7 +900,7 @@ export class Game {
       if (this.canPlaceBuilding(x, y, building.width, building.height, this.selectedEntity.id)) {
         // Update the actual position now
         pos.set(x, y);
-        this.occupyBuildingTiles(this.selectedEntity.id, x, y, building.width, building.height);
+        this.occupyBuildingTiles(this.selectedEntity.id, x, y, building.width, building.height, building);
         console.log(`✅ Successfully moved entity from (${this.originalDragPosition?.x}, ${this.originalDragPosition?.y}) to (${x}, ${y})`);
       } else {
         console.warn(`❌ Cannot place building at (${x}, ${y}), reverting to original position`);
@@ -798,7 +911,8 @@ export class Game {
             this.originalDragPosition.x,
             this.originalDragPosition.y,
             building.width,
-            building.height
+            building.height,
+            building
           );
         }
       }
@@ -883,6 +997,7 @@ export class Game {
     this.lastExplorationPos = null;
     this.inventory = {};
     this.population = { current: 0, max: 0 };
+    this.returningWorkers.clear();
 
     this.initializeWorld();
     this.rebuildMinimapFromLoadedMap();
@@ -947,7 +1062,7 @@ export class Game {
           }
 
           this.addEntity(entity);
-          this.occupyBuildingTiles(entity.id, buildingData.x, buildingData.y, building.width, building.height);
+          this.occupyBuildingTiles(entity.id, buildingData.x, buildingData.y, building.width, building.height, building);
         }
       }
 

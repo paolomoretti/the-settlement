@@ -215,6 +215,35 @@ export class RenderSystem extends System {
       return 0;
     });
 
+    // Render road stub for disconnected buildings (before entities so it's behind sprites)
+    for (const entity of visibleEntities) {
+      const building = entity.getComponent(Building);
+      if (!building || building.isActive) continue;
+      const entrance = building.getEntranceOffset();
+      if (!entrance) continue;
+      const pos = entity.getComponent(Position)!;
+      const ex = pos.x + entrance.dx;
+      const ey = pos.y + entrance.dy;
+      const outX = ex + 1;
+      const outY = ey;
+      // Draw road on entrance tile (will be hidden under sprite)
+      const entranceCenter = this.iso.gridToScreen(ex, ey);
+      this.terrainTextures.drawRoad(this.ctx, 4, entranceCenter.x, entranceCenter.y);
+      // Draw road on out tile connecting back to entrance
+      const outCenter = this.iso.gridToScreen(outX, outY);
+      this.terrainTextures.drawRoad(this.ctx, 1, outCenter.x, outCenter.y);
+      // Subtle highlight on the out tile
+      const corners = this.iso.getTileCorners(outX, outY);
+      this.ctx.beginPath();
+      this.ctx.moveTo(corners[0].x, corners[0].y);
+      for (let i = 1; i < corners.length; i++) {
+        this.ctx.lineTo(corners[i].x, corners[i].y);
+      }
+      this.ctx.closePath();
+      this.ctx.fillStyle = 'rgba(200, 60, 60, 0.2)';
+      this.ctx.fill();
+    }
+
     // Render entities
     sortedEntities.forEach(entity => this.renderEntity(entity));
 
@@ -363,6 +392,16 @@ export class RenderSystem extends System {
     if (!canPlace) this.ctx.filter = 'saturate(0.3) brightness(0.8)';
     this.ctx.translate(screenPos.x, screenPos.y - this.iso.tileHeight / 2);
 
+    if (width > 1 || depth > 1) {
+      const cx = (width - depth) * tileW / 4;
+      const cy = (width + depth) * tileH / 4;
+      const maxDim = Math.max(width, depth);
+      const spriteScale = maxDim >= 5 ? 0.72 : 0.85;
+      this.ctx.translate(cx, cy);
+      this.ctx.scale(spriteScale, spriteScale);
+      this.ctx.translate(-cx, -cy);
+    }
+
     const footprintW = (width + depth) * tileW / 2;
     const scale = footprintW / sprite.naturalWidth;
     const drawW = sprite.naturalWidth * scale;
@@ -376,6 +415,7 @@ export class RenderSystem extends System {
 
   private renderRoadPreview(gridX: number, gridY: number): void {
     const tile = this.tileMap.getTile(gridX, gridY);
+    const isExistingRoad = tile && tile.hasRoad && !tile.isOccupied();
     const canBuild = tile && tile.walkable && !tile.isOccupied() && !tile.hasRoad;
     const corners = this.iso.getTileCorners(gridX, gridY);
 
@@ -384,9 +424,19 @@ export class RenderSystem extends System {
     corners.forEach(corner => this.ctx.lineTo(corner.x, corner.y));
     this.ctx.closePath();
 
-    this.ctx.fillStyle = canBuild ? 'rgba(196, 165, 114, 0.7)' : 'rgba(200, 50, 50, 0.5)';
-    this.ctx.fill();
-    this.ctx.strokeStyle = canBuild ? 'rgba(166, 138, 90, 0.9)' : 'rgba(200, 50, 50, 0.9)';
+    if (isExistingRoad) {
+      this.ctx.fillStyle = 'rgba(200, 50, 50, 0.35)';
+      this.ctx.fill();
+      this.ctx.strokeStyle = 'rgba(200, 50, 50, 0.9)';
+    } else if (canBuild) {
+      this.ctx.fillStyle = 'rgba(196, 165, 114, 0.7)';
+      this.ctx.fill();
+      this.ctx.strokeStyle = 'rgba(166, 138, 90, 0.9)';
+    } else {
+      this.ctx.fillStyle = 'rgba(200, 50, 50, 0.5)';
+      this.ctx.fill();
+      this.ctx.strokeStyle = 'rgba(200, 50, 50, 0.9)';
+    }
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
   }
@@ -419,6 +469,16 @@ export class RenderSystem extends System {
     this.ctx.save();
     this.ctx.globalAlpha = canPlace ? 0.6 : 0.5;
     this.ctx.translate(screenPos.x, screenPos.y - this.iso.tileHeight / 2);
+
+    if (width > 1 || depth > 1) {
+      const cx = (width - depth) * tileW / 4;
+      const cy = (width + depth) * tileH / 4;
+      const maxDim = Math.max(width, depth);
+      const spriteScale = maxDim >= 5 ? 0.72 : 0.85;
+      this.ctx.translate(cx, cy);
+      this.ctx.scale(spriteScale, spriteScale);
+      this.ctx.translate(-cx, -cy);
+    }
 
     // Calculate base corners (bottom face)
     const baseCorners = [
@@ -671,10 +731,28 @@ export class RenderSystem extends System {
     }
 
     if (building) {
+      const entrance = building.getEntranceOffset();
+      if (entrance) {
+        const tileW = this.iso.tileWidth;
+        const tileH = this.iso.tileHeight;
+        const cx = (building.width - building.height) * tileW / 4;
+        const cy = (building.width + building.height) * tileH / 4;
+        const maxDim = Math.max(building.width, building.height);
+        const spriteScale = maxDim >= 5 ? 0.72 : 0.85;
+        this.ctx.save();
+        this.ctx.translate(cx, cy);
+        this.ctx.scale(spriteScale, spriteScale);
+        this.ctx.translate(-cx, -cy);
+      }
+
       if (renderable.spritePath) {
         this.renderBuildingSprite(building, renderable, isSelected);
       } else {
         this.renderIsometricBuilding(building, renderable, isSelected);
+      }
+
+      if (entrance) {
+        this.ctx.restore();
       }
     } else if (entity.hasComponent(Worker)) {
       const movable = entity.getComponent(Movable) ?? null;

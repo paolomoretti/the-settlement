@@ -38,6 +38,15 @@ export class Building extends Component {
     this.isActive = !requiresRoad;
   }
 
+  getEntranceOffset(): { dx: number; dy: number } | null {
+    if (this.passable) return null;
+    if (this.width <= 1 && this.height <= 1) return null;
+    return {
+      dx: this.width - 1,
+      dy: Math.ceil((this.height - 1) / 2)
+    };
+  }
+
   isComplete(): boolean {
     return this.state === 'complete';
   }

@@ -242,6 +242,7 @@ export class BuildingMenu {
     // Set the appropriate build mode based on building type
     const modeMap: { [key: string]: string } = {
       'warehouse': 'build_warehouse',
+      'storehouse': 'build_storehouse',
       'lumberjack': 'build_lumberjack',
       'hut': 'build_hut',
       'house': 'build_house',

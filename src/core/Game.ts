@@ -54,7 +54,7 @@ export class Game {
     max: 0
   };
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, skipInit = false) {
     this.canvas = canvas;
 
     // Initialize large map (20x bigger: 1000x1000)
@@ -72,7 +72,9 @@ export class Game {
     this.setupEventListeners();
 
     // Initialize game world
-    this.initializeWorld();
+    if (!skipInit) {
+      this.initializeWorld();
+    }
   }
 
   private setupEventListeners(): void {
@@ -793,16 +795,14 @@ export class Game {
     }
   }
 
-  // Save/Load functionality
-  save(): void {
-    // Only save buildings, not workers (they're dynamic)
+  getSaveData(): object {
     const buildingsToSave = this.entities.filter(e => {
       const building = e.getComponent(Building);
       const worker = e.getComponent(Worker);
-      return building && !worker; // Buildings but not workers
+      return building && !worker;
     });
 
-    const saveData = {
+    return {
       map: this.tileMap.serialize(),
       buildings: buildingsToSave.map(e => {
         const pos = e.getComponent(Position);
@@ -825,55 +825,49 @@ export class Game {
       population: this.population,
       timestamp: Date.now()
     };
-
-    const saveString = JSON.stringify(saveData);
-    localStorage.setItem('settler_save', saveString);
-
-    // Show save data size
-    const sizeKB = (saveString.length / 1024).toFixed(2);
-    const exploredCount = saveData.map.explored.split(';').filter((s: string) => s).length;
-    const roadCount = saveData.map.roads.split(';').filter((s: string) => s).length;
-
-    console.log(`💾 Game saved! ${saveData.buildings.length} buildings, ${exploredCount} explored tiles, ${roadCount} roads (${sizeKB} KB)`);
   }
 
-  load(): boolean {
-    const saveDataStr = localStorage.getItem('settler_save');
-    if (!saveDataStr) {
-      console.warn('No save data found');
-      return false;
-    }
+  resetForNewGame(): void {
+    this.entities.forEach(e => e.destroy());
+    this.entities = [];
+    this.systems.forEach(system => system.cleanup());
 
+    this.tileMap = new TileMap(1000, 1000);
+    this.renderSystem.updateTileMap(this.tileMap);
+
+    this.selectedEntity = null;
+    this.baseCampEntity = null;
+    this.isDraggingEntity = false;
+    this.dragPreviewPosition = null;
+    this.lastExplorationPos = null;
+    this.inventory = {};
+    this.population = { current: 0, max: 0 };
+
+    this.initializeWorld();
+    this.rebuildMinimapFromLoadedMap();
+  }
+
+  loadSaveData(saveData: any): boolean {
     try {
-      const saveData = JSON.parse(saveDataStr);
-
-      // Load map from saved data
       this.tileMap = TileMap.deserialize(saveData.map);
-
-      // Update render system's map reference and reset minimap
       this.renderSystem.updateTileMap(this.tileMap);
-
-      // Rebuild minimap from loaded map
       this.rebuildMinimapFromLoadedMap();
 
-      // Clear current entities
       this.entities.forEach(e => e.destroy());
       this.entities = [];
       this.systems.forEach(system => system.cleanup());
 
-      // Restore inventory and population
+      this.selectedEntity = null;
+      this.isDraggingEntity = false;
+      this.dragPreviewPosition = null;
+      this.lastExplorationPos = null;
+
       this.inventory = saveData.inventory || {};
       this.population = saveData.population || { current: 0, max: 0 };
       this.baseCampEntity = null;
 
-      // Recreate buildings from save data
-      console.log(`Loading ${saveData.buildings.length} buildings...`);
-
       for (const buildingData of saveData.buildings) {
-        if (!buildingData.type || buildingData.x === undefined || buildingData.y === undefined) {
-          console.warn('Invalid building data:', buildingData);
-          continue;
-        }
+        if (!buildingData.type || buildingData.x === undefined || buildingData.y === undefined) continue;
 
         const entity = createBuilding(buildingData.type, buildingData.x, buildingData.y);
 
@@ -898,23 +892,11 @@ export class Game {
         }
       }
 
-      // Spawn a few workers
       for (let i = 0; i < 3; i++) {
         this.spawnWorker();
       }
 
-      // Count explored tiles
-      let exploredCount = 0;
-      for (let y = 0; y < this.tileMap.height; y++) {
-        for (let x = 0; x < this.tileMap.width; x++) {
-          const tile = this.tileMap.getTile(x, y);
-          if (tile?.isExplored()) exploredCount++;
-        }
-      }
-
       this.updateBuildingRoadConnections();
-
-      console.log(`📂 Game loaded! ${saveData.buildings.length} buildings, ${exploredCount} explored tiles, ${this.entities.length} total entities`);
       return true;
     } catch (error) {
       console.error('Failed to load game:', error);

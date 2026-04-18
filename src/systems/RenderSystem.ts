@@ -296,13 +296,11 @@ export class RenderSystem extends System {
         corners.forEach(corner => this.ctx.lineTo(corner.x, corner.y));
         this.ctx.closePath();
 
-        // Yellow outline for selection
-        this.ctx.strokeStyle = '#ffff00';
-        this.ctx.lineWidth = 3;
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+        this.ctx.lineWidth = 1.5;
         this.ctx.stroke();
 
-        // Semi-transparent yellow fill
-        this.ctx.fillStyle = 'rgba(255, 255, 0, 0.15)';
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
         this.ctx.fill();
       }
     }
@@ -755,8 +753,8 @@ export class RenderSystem extends System {
         { x: (width - depth) * tileW / 2, y: (width + depth) * tileH / 2 },
         { x: -depth * tileW / 2, y: depth * tileH / 2 }
       ];
-      this.ctx.strokeStyle = '#ffff00';
-      this.ctx.lineWidth = 4;
+      this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+      this.ctx.lineWidth = 2;
       this.ctx.beginPath();
       baseCorners.forEach((corner, i) => {
         if (i === 0) this.ctx.moveTo(corner.x, corner.y);
@@ -831,10 +829,9 @@ export class RenderSystem extends System {
     this.ctx.fillStyle = renderable.color;
     this.ctx.fill();
 
-    // Thicker yellow stroke if selected
     if (isSelected) {
-      this.ctx.strokeStyle = '#ffff00';
-      this.ctx.lineWidth = 3;
+      this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+      this.ctx.lineWidth = 2;
     } else {
       this.ctx.strokeStyle = '#000';
       this.ctx.lineWidth = 1.5;
@@ -1105,6 +1102,10 @@ export class RenderSystem extends System {
     const worldX = (screenX - this.camera.x) / this.camera.zoom;
     const worldY = (screenY - this.camera.y) / this.camera.zoom;
     return this.iso.screenToGrid(worldX, worldY);
+  }
+
+  getZoom(): number {
+    return this.camera.zoom;
   }
 
   gridToScreen(gridX: number, gridY: number): { x: number; y: number } {

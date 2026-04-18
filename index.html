@@ -67,7 +67,6 @@
       color: white;
       border: 2px solid #6b8e5f;
       padding: 8px 16px;
-      margin: 4px;
       cursor: pointer;
       font-family: 'Courier New', monospace;
       font-size: 14px;
@@ -87,36 +86,99 @@
       border-color: #9ab791;
     }
 
-    #selection-panel {
+    .game-popover {
       position: absolute;
-      top: 10px;
-      right: 10px;
-      background: rgba(0, 0, 0, 0.8);
-      padding: 15px;
-      border-radius: 4px;
+      z-index: 10;
+      background: rgba(10, 10, 10, 0.92);
+      border: 2px solid #4a6741;
+      border-radius: 6px;
+      min-width: 220px;
+      max-width: 280px;
       pointer-events: auto;
-      display: none;
-      min-width: 200px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
+      font-size: 12px;
     }
 
-    #selection-panel h3 {
-      margin: 0 0 10px 0;
-      font-size: 14px;
+    .game-popover-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      border-bottom: 1px solid #3a5731;
+    }
+
+    .game-popover-title {
       color: #ffff00;
+      font-weight: bold;
+      font-size: 13px;
     }
 
-    #selection-panel button {
-      width: 100%;
+    .game-popover-close {
+      background: none;
+      border: 1px solid transparent;
+      color: #888;
+      cursor: pointer;
+      padding: 2px 6px;
+      font-size: 14px;
+      margin: 0;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+    }
+
+    .game-popover-close:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.1);
+      border-color: #555;
+    }
+
+    .game-popover-body {
+      padding: 10px 12px 12px;
+    }
+
+    .popover-desc {
+      color: #aaa;
+      font-size: 11px;
+      margin-bottom: 8px;
+      line-height: 1.4;
+    }
+
+    .popover-row {
       margin: 4px 0;
+      color: #ccc;
+      font-size: 11px;
     }
 
-    button.delete {
-      background: #c44;
-      border-color: #e66;
+    .popover-label {
+      color: #888;
     }
 
-    button.delete:hover {
-      background: #d55;
+    .popover-production {
+      margin: 8px 0;
+      padding: 6px 8px;
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 4px;
+      color: #9acd32;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .popover-delete-btn {
+      width: 100%;
+      margin-top: 10px;
+      padding: 6px;
+      background: #5a1a1a;
+      border: 1px solid #7a2a2a;
+      color: #ccc;
+      cursor: pointer;
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: 'Courier New', monospace;
+    }
+
+    .popover-delete-btn:hover {
+      background: #7a2222;
+      border-color: #a33;
+      color: #fff;
     }
 
     #inventory-panel {
@@ -643,11 +705,6 @@
         <div style="margin-top: 10px;">
           <button id="btn-exit" class="btn-secondary">Exit</button>
         </div>
-      </div>
-      <div id="selection-panel">
-        <h3 id="selection-title">Selected: Building</h3>
-        <p style="font-size: 11px; margin: 5px 0; opacity: 0.8;">Click and drag to move</p>
-        <button id="btn-delete" class="delete">Delete</button>
       </div>
       <div id="inventory-panel">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">

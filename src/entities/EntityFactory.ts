@@ -68,6 +68,7 @@ export function createBuilding(
     base_camp: '/assets/buildings/base_camp.png',
     warehouse: '/assets/buildings/warehouse.png',
     lumberjack: '/assets/buildings/lumberjack.png',
+    sawmill: '/assets/buildings/sawmill.png',
   };
   const spritePath = SPRITE_PATHS[buildingType];
 

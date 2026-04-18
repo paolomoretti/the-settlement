@@ -1,43 +1,290 @@
-/**
- * Main entry point - initializes and starts the game
- */
-
 import { Game } from './core/Game';
 import { eventBus } from './core/EventBus';
 import { dataManager } from './data/DataManager';
 import { BuildingMenu } from './ui/BuildingMenu';
 
-// Wait for DOM to be ready
+let game: Game | null = null;
+let buildingMenu: BuildingMenu | null = null;
+
+const SAVE_SLOT_PREFIX = 'settler_save_';
+const LAST_SAVE_KEY = 'settler_last_save_slot';
+
 window.addEventListener('DOMContentLoaded', () => {
   const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
-
   if (!canvas) {
     console.error('Canvas element not found!');
     return;
   }
 
-  // Create and start game
-  const game = new Game(canvas);
-  game.start();
+  setupDialogs();
 
-  console.log('🎮 Settler game started!');
-  console.log('Controls:');
-  console.log('  - Drag to pan camera');
-  console.log('  - Click buttons to enter build mode');
-  console.log('  - Click on map to place buildings/roads');
+  document.getElementById('btn-start-game')?.addEventListener('click', () => {
+    launchGame(canvas);
+  });
 
-  // Setup UI controls
-  setupUIControls(game);
+  document.getElementById('btn-load-game-welcome')?.addEventListener('click', () => {
+    openLoadDialog((slotIndex) => {
+      const slotData = getFullSlotData(slotIndex);
+      if (slotData) {
+        localStorage.setItem(LAST_SAVE_KEY, slotIndex.toString());
+        launchGame(canvas, slotData.data);
+      }
+    });
+  });
 
-  // Make game accessible for debugging
-  (window as any).game = game;
+  const lastSlot = localStorage.getItem(LAST_SAVE_KEY);
+  if (lastSlot !== null) {
+    const slotData = getFullSlotData(parseInt(lastSlot));
+    if (slotData) {
+      launchGame(canvas, slotData.data);
+      return;
+    }
+  }
+
+  showScreen('welcome');
 });
 
-function setupUIControls(game: Game): void {
-  // Initialize building menu
-  const buildingMenu = new BuildingMenu(game);
+// --- Screen Management ---
 
-  // Listen to mode changes to update button states
+function showScreen(screen: 'welcome' | 'game'): void {
+  const welcomeScreen = document.getElementById('welcome-screen')!;
+  const gameContainer = document.getElementById('game-container')!;
+  const loadingScreen = document.getElementById('loading-screen')!;
+
+  loadingScreen.style.display = 'none';
+
+  if (screen === 'welcome') {
+    welcomeScreen.style.display = 'flex';
+    gameContainer.style.display = 'none';
+    updateWelcomeLoadButton();
+  } else {
+    welcomeScreen.style.display = 'none';
+    gameContainer.style.display = '';
+  }
+}
+
+function updateWelcomeLoadButton(): void {
+  const hasAnySave = Array.from({ length: 10 }, (_, i) =>
+    localStorage.getItem(`${SAVE_SLOT_PREFIX}${i}`)
+  ).some(Boolean);
+  const btn = document.getElementById('btn-load-game-welcome') as HTMLButtonElement;
+  if (btn) btn.disabled = !hasAnySave;
+}
+
+function launchGame(canvas: HTMLCanvasElement, saveData?: any): void {
+  showScreen('game');
+
+  if (!game) {
+    if (saveData) {
+      game = new Game(canvas, true);
+      game.loadSaveData(saveData);
+    } else {
+      game = new Game(canvas);
+    }
+    setupGameUI(game);
+    (window as any).game = game;
+  } else {
+    if (saveData) {
+      game.loadSaveData(saveData);
+    } else {
+      game.resetForNewGame();
+    }
+  }
+
+  game.start();
+}
+
+function exitToWelcome(): void {
+  localStorage.removeItem(LAST_SAVE_KEY);
+  if (game) {
+    game.stop();
+  }
+  showScreen('welcome');
+}
+
+// --- Save/Load Slot Management ---
+
+function getFullSlotData(index: number): { name: string; timestamp: number; data: any } | null {
+  const raw = localStorage.getItem(`${SAVE_SLOT_PREFIX}${index}`);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function getSlotMeta(index: number): { name: string; timestamp: number } | null {
+  const data = getFullSlotData(index);
+  if (!data) return null;
+  return { name: data.name, timestamp: data.timestamp };
+}
+
+function saveToSlot(index: number, name: string): void {
+  if (!game) return;
+  const gameData = game.getSaveData();
+  const slotData = { name, timestamp: Date.now(), data: gameData };
+  localStorage.setItem(`${SAVE_SLOT_PREFIX}${index}`, JSON.stringify(slotData));
+  localStorage.setItem(LAST_SAVE_KEY, index.toString());
+}
+
+// --- Dialogs ---
+
+function setupDialogs(): void {
+  const saveLoadDialog = document.getElementById('save-load-dialog')!;
+  const exitDialog = document.getElementById('exit-dialog')!;
+
+  document.getElementById('btn-close-save-load')?.addEventListener('click', () => {
+    saveLoadDialog.style.display = 'none';
+  });
+  saveLoadDialog.addEventListener('click', (e) => {
+    if (e.target === saveLoadDialog) saveLoadDialog.style.display = 'none';
+  });
+
+  document.getElementById('btn-save-and-exit')?.addEventListener('click', () => {
+    exitDialog.style.display = 'none';
+    openSaveDialog(() => {
+      exitToWelcome();
+    });
+  });
+
+  document.getElementById('btn-exit-no-save')?.addEventListener('click', () => {
+    exitDialog.style.display = 'none';
+    exitToWelcome();
+  });
+
+  document.getElementById('btn-cancel-exit')?.addEventListener('click', () => {
+    exitDialog.style.display = 'none';
+  });
+
+  exitDialog.addEventListener('click', (e) => {
+    if (e.target === exitDialog) exitDialog.style.display = 'none';
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+
+    if (saveLoadDialog.style.display !== 'none') {
+      if (!saveLoadDialog.querySelector('.editing')) {
+        saveLoadDialog.style.display = 'none';
+        e.stopPropagation();
+      }
+    } else if (exitDialog.style.display !== 'none') {
+      exitDialog.style.display = 'none';
+      e.stopPropagation();
+    }
+  });
+}
+
+function openSaveDialog(onComplete?: () => void): void {
+  const dialog = document.getElementById('save-load-dialog')!;
+  const title = document.getElementById('save-load-title')!;
+  const slotsContainer = document.getElementById('save-load-slots')!;
+
+  title.textContent = 'Save Game';
+  renderSlots(slotsContainer, 'save', (slotIndex, name) => {
+    saveToSlot(slotIndex, name!);
+    dialog.style.display = 'none';
+    showMessage('Game saved!');
+    onComplete?.();
+  });
+
+  dialog.style.display = 'flex';
+}
+
+function openLoadDialog(onLoad: (slotIndex: number) => void): void {
+  const dialog = document.getElementById('save-load-dialog')!;
+  const title = document.getElementById('save-load-title')!;
+  const slotsContainer = document.getElementById('save-load-slots')!;
+
+  title.textContent = 'Load Game';
+  renderSlots(slotsContainer, 'load', (slotIndex) => {
+    dialog.style.display = 'none';
+    onLoad(slotIndex);
+  });
+
+  dialog.style.display = 'flex';
+}
+
+function renderSlots(
+  container: HTMLElement,
+  mode: 'save' | 'load',
+  onAction: (slotIndex: number, name?: string) => void,
+  editingIndex: number | null = null
+): void {
+  container.innerHTML = '';
+
+  for (let i = 0; i < 10; i++) {
+    const meta = getSlotMeta(i);
+    const slot = document.createElement('div');
+
+    if (mode === 'save' && editingIndex === i) {
+      slot.className = 'save-slot editing';
+      slot.innerHTML = `
+        <span class="slot-number">${i + 1}.</span>
+        <input type="text" class="slot-name-input" value="${escapeAttr(meta?.name || '')}" placeholder="Enter save name..." />
+      `;
+    } else {
+      slot.className = 'save-slot' + (meta ? ' filled' : '');
+      if (meta) {
+        const date = new Date(meta.timestamp);
+        const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        slot.innerHTML = `
+          <span class="slot-number">${i + 1}.</span>
+          <span class="slot-name">${escapeHtml(meta.name)}</span>
+          <span class="slot-date">${dateStr}</span>
+        `;
+      } else {
+        slot.innerHTML = `
+          <span class="slot-number">${i + 1}.</span>
+          <span class="slot-name empty-label">Empty</span>
+          <span class="slot-date"></span>
+        `;
+      }
+    }
+
+    container.appendChild(slot);
+
+    if (mode === 'save' && editingIndex === i) {
+      const input = slot.querySelector('.slot-name-input') as HTMLInputElement;
+      requestAnimationFrame(() => { input.focus(); input.select(); });
+
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.stopPropagation();
+          onAction(i, input.value.trim() || `Save ${i + 1}`);
+        } else if (e.key === 'Escape') {
+          e.stopPropagation();
+          renderSlots(container, mode, onAction);
+        }
+      });
+    } else if (mode === 'save') {
+      slot.addEventListener('click', () => {
+        renderSlots(container, mode, onAction, i);
+      });
+    } else if (mode === 'load' && meta) {
+      slot.addEventListener('click', () => onAction(i));
+    } else if (mode === 'load') {
+      slot.classList.add('disabled');
+    }
+  }
+}
+
+function escapeHtml(str: string): string {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function escapeAttr(str: string): string {
+  return str.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// --- Game UI ---
+
+function setupGameUI(game: Game): void {
+  buildingMenu = new BuildingMenu(game);
+
   eventBus.on('input:mode_changed', (mode) => {
     const modeToButtonId: Record<string, string> = {
       'view': 'btn-view',
@@ -45,67 +292,56 @@ function setupUIControls(game: Game): void {
     };
     updateButtonStates(modeToButtonId[mode] || 'btn-view');
 
-    // Refresh building menu when mode changes (to update affordability)
     if (document.getElementById('building-menu-panel')?.style.display === 'block') {
-      buildingMenu.refresh();
+      buildingMenu!.refresh();
     }
   });
 
-  // View mode
-  const btnView = document.getElementById('btn-view');
-  btnView?.addEventListener('click', () => {
+  document.getElementById('btn-view')?.addEventListener('click', () => {
     game.inputSystem.setMode('view');
   });
 
-  // Build road mode
-  const btnRoad = document.getElementById('btn-road');
-  btnRoad?.addEventListener('click', () => {
+  document.getElementById('btn-road')?.addEventListener('click', () => {
     game.inputSystem.setMode('build_road');
   });
 
-  // Building menu button
-  const btnBuildingMenu = document.getElementById('btn-building-menu');
-  btnBuildingMenu?.addEventListener('click', () => {
-    buildingMenu.toggle();
+  document.getElementById('btn-building-menu')?.addEventListener('click', () => {
+    buildingMenu!.toggle();
   });
 
-  // Spawn worker
-  const btnSpawnWorker = document.getElementById('btn-spawn-worker');
-  btnSpawnWorker?.addEventListener('click', () => {
+  document.getElementById('btn-spawn-worker')?.addEventListener('click', () => {
     eventBus.emit('spawn:worker');
   });
 
-  // Save game
-  const btnSave = document.getElementById('btn-save');
-  btnSave?.addEventListener('click', () => {
-    game.save();
-    showMessage('Game saved!');
+  document.getElementById('btn-save')?.addEventListener('click', () => {
+    openSaveDialog();
   });
 
-  // Load game
-  const btnLoad = document.getElementById('btn-load');
-  btnLoad?.addEventListener('click', () => {
-    if (game.load()) {
-      showMessage('Game loaded!');
-    } else {
-      showMessage('No save data found');
-    }
+  document.getElementById('btn-load')?.addEventListener('click', () => {
+    openLoadDialog((slotIndex) => {
+      const slotData = getFullSlotData(slotIndex);
+      if (slotData) {
+        game.loadSaveData(slotData.data);
+        localStorage.setItem(LAST_SAVE_KEY, slotIndex.toString());
+        showMessage('Game loaded!');
+      }
+    });
   });
 
-  // Selection panel - Delete button
-  const btnDelete = document.getElementById('btn-delete');
-  btnDelete?.addEventListener('click', () => {
+  document.getElementById('btn-exit')?.addEventListener('click', () => {
+    document.getElementById('exit-dialog')!.style.display = 'flex';
+  });
+
+  document.getElementById('btn-delete')?.addEventListener('click', () => {
     eventBus.emit('delete:selected');
     showMessage('Building deleted');
   });
 
-  // Inventory panel
   eventBus.on('open:inventory', () => {
     showInventoryPanel(game);
   });
 
-  const btnCloseInventory = document.getElementById('btn-close-inventory');
-  btnCloseInventory?.addEventListener('click', () => {
+  document.getElementById('btn-close-inventory')?.addEventListener('click', () => {
     hideInventoryPanel();
   });
 }
@@ -114,27 +350,21 @@ function showInventoryPanel(game: Game): void {
   const panel = document.getElementById('inventory-panel');
   if (!panel) return;
 
-  // Update population display
   const popDisplay = document.getElementById('population-display');
   if (popDisplay) {
     popDisplay.textContent = `${game.population.current}/${game.population.max}`;
   }
 
-  // Update inventory list
   const inventoryList = document.getElementById('inventory-list');
   if (!inventoryList) return;
 
   inventoryList.innerHTML = '';
 
-  // Group resources by category
   const categories = ['raw', 'refined', 'food', 'tool', 'weapon'] as const;
-
   categories.forEach(category => {
     const resources = dataManager.getResourcesByCategory(category);
     resources.forEach(resource => {
       const count = game.inventory[resource.id] || 0;
-
-      // Only show resources that exist in inventory
       if (count > 0) {
         const item = document.createElement('div');
         item.className = 'inventory-item';
@@ -152,27 +382,18 @@ function showInventoryPanel(game: Game): void {
 
 function hideInventoryPanel(): void {
   const panel = document.getElementById('inventory-panel');
-  if (panel) {
-    panel.style.display = 'none';
-  }
+  if (panel) panel.style.display = 'none';
 }
 
 function updateButtonStates(activeButtonId: string): void {
   const buttons = ['btn-view', 'btn-road'];
   buttons.forEach(id => {
     const btn = document.getElementById(id);
-    if (btn) {
-      if (id === activeButtonId) {
-        btn.classList.add('selected');
-      } else {
-        btn.classList.remove('selected');
-      }
-    }
+    if (btn) btn.classList.toggle('selected', id === activeButtonId);
   });
 }
 
 function showMessage(message: string): void {
-  // Simple message display - could be enhanced with a proper toast system
   const modeElement = document.getElementById('current-mode');
   if (modeElement) {
     const originalText = modeElement.textContent;

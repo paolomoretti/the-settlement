@@ -867,6 +867,7 @@ export class Game {
       roadSegments: roadSegmentManager.serialize(),
       inventory: this.inventory,
       population: this.population,
+      zoom: this.renderSystem.getZoom(),
       timestamp: Date.now()
     };
   }
@@ -982,6 +983,11 @@ export class Game {
       }
 
       this.updateBuildingRoadConnections();
+
+      if (saveData.zoom) {
+        this.renderSystem.setZoom(saveData.zoom);
+      }
+
       return true;
     } catch (error) {
       console.error('Failed to load game:', error);

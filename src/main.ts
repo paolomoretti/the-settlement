@@ -332,7 +332,7 @@ function setupGameUI(game: Game): void {
       const meta = getSlotMeta(currentSaveSlot);
       if (meta) {
         saveToSlot(currentSaveSlot, meta.name);
-        showMessage('Game saved!');
+        showToast('Game saved!');
         return;
       }
     }
@@ -344,6 +344,18 @@ function setupGameUI(game: Game): void {
   });
 
   eventBus.on('open:save_dialog', () => {
+    openSaveDialog();
+  });
+
+  eventBus.on('quick:save', () => {
+    if (currentSaveSlot !== null) {
+      const meta = getSlotMeta(currentSaveSlot);
+      if (meta) {
+        saveToSlot(currentSaveSlot, meta.name);
+        showToast('Game saved!');
+        return;
+      }
+    }
     openSaveDialog();
   });
 

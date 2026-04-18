@@ -4,6 +4,7 @@ import { dataManager } from './data/DataManager';
 import { BuildingMenu } from './ui/BuildingMenu';
 import { BuildingPopover } from './ui/BuildingPopover';
 import { setupKeyboardShortcuts } from './input/KeyboardShortcuts';
+import { showToast, setupToastListener } from './ui/Toast';
 
 let game: Game | null = null;
 let buildingMenu: BuildingMenu | null = null;
@@ -181,7 +182,7 @@ function openSaveDialog(onComplete?: () => void): void {
   renderSlots(slotsContainer, 'save', (slotIndex, name) => {
     saveToSlot(slotIndex, name!);
     dialog.style.display = 'none';
-    showMessage('Game saved!');
+    showToast('Game saved!');
     onComplete?.();
   });
 
@@ -289,6 +290,7 @@ function escapeAttr(str: string): string {
 
 function setupGameUI(game: Game): void {
   setupKeyboardShortcuts(game);
+  setupToastListener();
   buildingMenu = new BuildingMenu(game);
 
   eventBus.on('input:mode_changed', (mode) => {
@@ -351,7 +353,7 @@ function setupGameUI(game: Game): void {
       if (slotData) {
         game.loadSaveData(slotData.data);
         localStorage.setItem(LAST_SAVE_KEY, slotIndex.toString());
-        showMessage('Game loaded!');
+        showToast('Game loaded!');
       }
     });
   });
@@ -371,7 +373,7 @@ function setupGameUI(game: Game): void {
   });
 
   eventBus.on('delete:selected', () => {
-    showMessage('Building deleted');
+    showToast('Building deleted');
   });
 
   eventBus.on('open:inventory', () => {
@@ -428,15 +430,4 @@ function updateButtonStates(activeButtonId: string): void {
     const btn = document.getElementById(id);
     if (btn) btn.classList.toggle('selected', id === activeButtonId);
   });
-}
-
-function showMessage(message: string): void {
-  const modeElement = document.getElementById('current-mode');
-  if (modeElement) {
-    const originalText = modeElement.textContent;
-    modeElement.textContent = message;
-    setTimeout(() => {
-      modeElement.textContent = originalText;
-    }, 2000);
-  }
 }

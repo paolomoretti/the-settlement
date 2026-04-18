@@ -20,7 +20,7 @@ export class PathFinder {
     start: Position,
     end: Position,
     tileMap: TileMap,
-    preferRoads: boolean = true
+    _preferRoads: boolean = true
   ): Position[] {
     // Create grid with dimensions
     const grid = new PF.Grid(tileMap.width, tileMap.height);

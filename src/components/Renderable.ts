@@ -4,7 +4,7 @@
 
 import { Component } from '@/core/Component';
 
-export type RenderType = 'circle' | 'rectangle' | 'triangle' | 'sprite';
+export type RenderType = 'circle' | 'rectangle' | 'triangle' | 'sprite' | 'worker';
 
 export class Renderable extends Component {
   constructor(

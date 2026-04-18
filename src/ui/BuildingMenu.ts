@@ -100,8 +100,6 @@ export class BuildingMenu {
 
     // Check affordability
     const canAfford = dataManager.canAfford(building.id, this.game.inventory);
-    const missingResources = dataManager.getMissingResources(building.id, this.game.inventory);
-    const hasMissing = Object.keys(missingResources).length > 0;
 
     if (!canAfford) {
       card.classList.add('unaffordable');
@@ -188,7 +186,7 @@ export class BuildingMenu {
 
       if (inputs.length > 0) {
         // Conversion
-        const inputStr = inputs.map(([id, amt]) => {
+        const inputStr = inputs.map(([id]) => {
           const res = dataManager.getResource(id as any);
           return `${res?.name || id}`;
         }).join(', ');
@@ -251,35 +249,7 @@ export class BuildingMenu {
   }
 
   private startBuilding(buildingType: BuildingType): void {
-    // Set the appropriate build mode based on building type
-    const modeMap: { [key: string]: string } = {
-      'warehouse': 'build_warehouse',
-      'storehouse': 'build_storehouse',
-      'lumberjack': 'build_lumberjack',
-      'hut': 'build_hut',
-      'house': 'build_house',
-      'sawmill': 'build_sawmill',
-      'quarry': 'build_quarry',
-      'farm': 'build_farm',
-      'mill': 'build_mill',
-      'bakery': 'build_bakery',
-      'well': 'build_well',
-      'fisher': 'build_fisher',
-      'coal_mine': 'build_coal_mine',
-      'iron_mine': 'build_iron_mine',
-      'iron_smelter': 'build_iron_smelter',
-      'tool_smithy': 'build_tool_smithy',
-      'barracks': 'build_barracks'
-    };
-
-    const mode = modeMap[buildingType] || `build_${buildingType}`;
-
-    // Close the menu
     this.close();
-
-    // Enter build mode
-    this.game.inputSystem.setMode(mode as any);
-
-    console.log(`🏗️ Entering build mode: ${buildingType}`);
+    this.game.inputSystem.setMode(`build_${buildingType}`);
   }
 }

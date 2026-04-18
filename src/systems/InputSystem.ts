@@ -4,28 +4,9 @@
 
 import { eventBus } from '@/core/EventBus';
 import { RenderSystem } from './RenderSystem';
+import { BuildingType } from '@/types/GameData';
 
-export type InputMode =
-  | 'view'
-  | 'select'
-  | 'build_road'
-  | 'build_warehouse'
-  | 'build_storehouse'
-  | 'build_lumberjack'
-  | 'build_hut'
-  | 'build_house'
-  | 'build_sawmill'
-  | 'build_quarry'
-  | 'build_farm'
-  | 'build_mill'
-  | 'build_bakery'
-  | 'build_well'
-  | 'build_fisher'
-  | 'build_coal_mine'
-  | 'build_iron_mine'
-  | 'build_iron_smelter'
-  | 'build_tool_smithy'
-  | 'build_barracks';
+export type InputMode = 'view' | 'select' | `build_${BuildingType}`;
 
 export class InputSystem {
   private mode: InputMode = 'view';

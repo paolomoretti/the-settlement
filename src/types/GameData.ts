@@ -100,7 +100,10 @@ export type BuildingType =
   | 'barracks'
   | 'guard_tower'
   | 'watchtower'
-  | 'fortress';
+  | 'fortress'
+
+  // Infrastructure
+  | 'road';
 
 export interface BuildingCost {
   [resourceType: string]: number;

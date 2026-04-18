@@ -975,7 +975,7 @@ export class Game {
       roadSegments: roadSegmentManager.serialize(),
       inventory: this.inventory,
       population: this.population,
-      zoom: this.renderSystem.getZoom(),
+      camera: this.renderSystem.getCamera(),
       timestamp: Date.now()
     };
   }
@@ -1093,7 +1093,9 @@ export class Game {
 
       this.updateBuildingRoadConnections();
 
-      if (saveData.zoom) {
+      if (saveData.camera) {
+        this.renderSystem.setCamera(saveData.camera);
+      } else if (saveData.zoom) {
         this.renderSystem.setZoom(saveData.zoom);
       }
 

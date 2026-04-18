@@ -341,6 +341,10 @@ function setupGameUI(game: Game): void {
     openSaveDialog();
   });
 
+  eventBus.on('open:save_dialog', () => {
+    openSaveDialog();
+  });
+
   document.getElementById('btn-load')?.addEventListener('click', () => {
     openLoadDialog((slotIndex) => {
       const slotData = getFullSlotData(slotIndex);

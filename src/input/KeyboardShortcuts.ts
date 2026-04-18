@@ -16,6 +16,7 @@ export const SHORTCUT_BINDINGS: ShortcutBinding[] = [
   { key: 'H', description: 'Center on base camp', category: 'navigation' },
   { key: 'R', description: 'Build road mode', category: 'building' },
   { key: 'B', description: 'Open building menu', category: 'building' },
+  { key: 'S', description: 'Save game', category: 'general' },
   { key: 'Arrow Up', description: 'Pan up', category: 'navigation' },
   { key: 'Arrow Down', description: 'Pan down', category: 'navigation' },
   { key: 'Arrow Left', description: 'Pan left', category: 'navigation' },
@@ -66,6 +67,13 @@ export function setupKeyboardShortcuts(game: Game): void {
     if (inputSystem.getMode() !== 'view') return;
     e.preventDefault();
     eventBus.emit('toggle:building_menu');
+  });
+
+  // S — Save game
+  hotkeys('s', (e) => {
+    if (isModalOpen()) return;
+    e.preventDefault();
+    eventBus.emit('open:save_dialog');
   });
 
   // Arrow keys — Pan camera

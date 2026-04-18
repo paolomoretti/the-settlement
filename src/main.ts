@@ -303,7 +303,9 @@ function setupGameUI(game: Game): void {
     };
     updateButtonStates(modeToButtonId[mode] || 'btn-view');
 
-    if (document.getElementById('building-menu-panel')?.style.display === 'block') {
+    if (mode === 'view') {
+      buildingMenu!.close();
+    } else if (document.getElementById('building-menu-panel')?.style.display === 'block') {
       buildingMenu!.refresh();
     }
   });

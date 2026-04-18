@@ -47,17 +47,25 @@ Road neighbors use **4-directional** (cardinal only) to match the pathfinding sy
    - **Exact match** (same tiles) → keep existing worker
    - **Fuzzy match** (most tile overlap) → reuse worker, pathfind to new center
    - **No match** → spawn new worker from base camp
-4. Old segments with no matching new segment → free the worker
+4. Old segments with no matching new segment → worker walks back to base camp and is removed on arrival
 
 ### Spawning
 
 When a new segment needs a worker:
-1. Check available population (`population.current - roadWorkerCount`)
+1. Check available population (`population.current - roadWorkerCount - returningWorkerCount`)
 2. If no population available, segment gets no worker
-3. Find a road tile on the base camp perimeter
+3. Find the road tile cardinally adjacent to the base camp entrance
 4. Create worker entity there
 5. Pathfind to the segment's center tile
 6. Worker walks there and stays
+
+### Freeing (Road Deletion)
+
+When a road is deleted and a segment's worker is freed:
+1. Worker pathfinds from their current position back to the base camp entrance
+2. Worker walks along the remaining road network
+3. On arrival at base camp, the worker entity is removed and population is restored
+4. If no path exists (stranded), worker is removed immediately
 
 ### Center Tile
 
@@ -65,10 +73,10 @@ The center of a segment is `tiles[Math.floor(tiles.length / 2)]` — the middle 
 
 ### Population Cost
 
-Each road worker reduces available population by 1. The formula:
+Each road worker (active or returning) reduces available population by 1. The formula:
 
 ```
-availablePopulation = population.current - roadSegmentManager.getWorkerCount()
+availablePopulation = population.current - roadSegmentManager.getWorkerCount() - returningWorkers.size
 ```
 
 ---
@@ -95,9 +103,9 @@ Examples: 2×2 → (x+1, y+1), 3×3 → (x+2, y+1), 6×6 base_camp → (x+5, y+3
 
 ### Building Connectivity
 
-A building with an entrance is **connected** only when its entrance tile appears in the base-camp-connected road set (BFS flood-fill from base camp). Previously any adjacent road counted; now only the entrance matters.
+A building with an entrance is **connected** only when a road tile cardinally adjacent to its entrance tile is in the base-camp-connected road set. The BFS flood-fill from the base camp uses cardinal-only directions and does not enter occupied tiles (including entrance tiles). This ensures buildings connect strictly through their entrance — a road running alongside a building wall does not connect it.
 
-1×1 buildings (well) have no entrance and fall back to the old any-adjacent-road check.
+1×1 buildings have no entrance and connect via any cardinally adjacent connected road.
 
 ### "Front" Definition
 

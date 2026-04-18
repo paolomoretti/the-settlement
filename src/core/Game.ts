@@ -60,6 +60,8 @@ export class Game {
     max: 0
   };
 
+  private returningWorkers = new Set<number>();
+
   constructor(canvas: HTMLCanvasElement, skipInit = false) {
     this.canvas = canvas;
 
@@ -205,6 +207,7 @@ export class Game {
       roadSegmentManager.removeRoad(x, y);
       this.scheduleSegmentRecalc();
       this.updateBuildingRoadConnections();
+      this.rerouteReturningWorkers();
       return;
     }
 
@@ -260,12 +263,13 @@ export class Game {
       }
     }
 
-    // BFS flood-fill through connected road tiles
+    // BFS flood-fill through connected road tiles (cardinal only, skip occupied/entrance tiles)
+    const cardinalDirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
     while (queue.length > 0) {
       const { x, y } = queue.shift()!;
-      const neighbors = this.tileMap.getNeighbors(x, y);
-      for (const neighbor of neighbors) {
-        if (neighbor.hasRoad) {
+      for (const [dx, dy] of cardinalDirs) {
+        const neighbor = this.tileMap.getTile(x + dx, y + dy);
+        if (neighbor && neighbor.hasRoad && !neighbor.isOccupied()) {
           const key = `${neighbor.x},${neighbor.y}`;
           if (!connected.has(key)) {
             connected.add(key);
@@ -281,24 +285,21 @@ export class Game {
   private hasBuildingConnectedRoad(pos: Position, building: Building, connectedRoads: Set<string>): boolean {
     const entrance = building.getEntranceOffset();
     if (entrance) {
-      const key = `${pos.x + entrance.dx},${pos.y + entrance.dy}`;
-      return connectedRoads.has(key);
-    }
-
-    // Fallback for 1x1 buildings: any adjacent connected road
-    const bx = pos.x;
-    const by = pos.y;
-    const bw = building.width;
-    const bh = building.height;
-
-    for (let dy = -1; dy <= bh; dy++) {
-      for (let dx = -1; dx <= bw; dx++) {
-        const isInsideFootprint = dx >= 0 && dx < bw && dy >= 0 && dy < bh;
-        if (isInsideFootprint) continue;
-
-        const key = `${bx + dx},${by + dy}`;
+      const ex = pos.x + entrance.dx;
+      const ey = pos.y + entrance.dy;
+      const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+      for (const [dx, dy] of dirs) {
+        const key = `${ex + dx},${ey + dy}`;
         if (connectedRoads.has(key)) return true;
       }
+      return false;
+    }
+
+    // Fallback for 1x1 buildings: any cardinal adjacent connected road
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (const [dx, dy] of dirs) {
+      const key = `${pos.x + dx},${pos.y + dy}`;
+      if (connectedRoads.has(key)) return true;
     }
     return false;
   }
@@ -438,7 +439,7 @@ export class Game {
   }
 
   public getAvailablePopulation(): number {
-    return this.population.current - roadSegmentManager.getWorkerCount();
+    return this.population.current - roadSegmentManager.getWorkerCount() - this.returningWorkers.size;
   }
 
   private findBaseCampSpawnTile(): { x: number; y: number } | null {
@@ -447,17 +448,23 @@ export class Game {
     const building = this.baseCampEntity.getComponent(Building);
     if (!pos || !building) return null;
 
-    for (let dy = -1; dy <= building.height; dy++) {
-      for (let dx = -1; dx <= building.width; dx++) {
-        const isInside = dx >= 0 && dx < building.width && dy >= 0 && dy < building.height;
-        if (isInside) continue;
-        const tile = this.tileMap.getTile(pos.x + dx, pos.y + dy);
-        if (tile && tile.hasRoad) {
-          return { x: pos.x + dx, y: pos.y + dy };
-        }
+    const entrance = building.getEntranceOffset();
+    if (!entrance) return null;
+
+    const ex = pos.x + entrance.dx;
+    const ey = pos.y + entrance.dy;
+
+    // Find the first road tile cardinally adjacent to the entrance
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (const [dx, dy] of dirs) {
+      const tile = this.tileMap.getTile(ex + dx, ey + dy);
+      if (tile && tile.hasRoad && !tile.isOccupied()) {
+        return { x: ex + dx, y: ey + dy };
       }
     }
-    return null;
+
+    // Fall back to the entrance tile itself
+    return { x: ex, y: ey };
   }
 
   private spawnSegmentWorker(segment: RoadSegment): number | null {
@@ -499,9 +506,62 @@ export class Game {
 
   private freeSegmentWorker(workerId: number): void {
     const entity = this.entities.find(e => e.id === workerId && e.active);
-    if (entity) {
-      this.removeEntity(entity);
-      console.log(`Road worker #${workerId} freed`);
+    if (!entity) return;
+
+    const pos = entity.getComponent(Position);
+    if (!pos) { this.removeEntity(entity); return; }
+
+    const spawnTile = this.findBaseCampSpawnTile();
+    if (!spawnTile) { this.removeEntity(entity); return; }
+
+    const path = this.pathFinder.findPath(
+      new Position(Math.floor(pos.x), Math.floor(pos.y)),
+      new Position(spawnTile.x, spawnTile.y),
+      this.tileMap
+    );
+
+    if (path.length > 0) {
+      const movable = entity.getComponent(Movable);
+      const worker = entity.getComponent(Worker);
+      if (movable && worker) {
+        movable.setPath(path);
+        worker.setState('walking');
+        this.returningWorkers.add(workerId);
+        return;
+      }
+    }
+
+    this.removeEntity(entity);
+  }
+
+  private rerouteReturningWorkers(): void {
+    if (this.returningWorkers.size === 0) return;
+    const spawnTile = this.findBaseCampSpawnTile();
+
+    for (const workerId of this.returningWorkers) {
+      const entity = this.entities.find(e => e.id === workerId && e.active);
+      if (!entity) { this.returningWorkers.delete(workerId); continue; }
+
+      const pos = entity.getComponent(Position);
+      const movable = entity.getComponent(Movable);
+      const worker = entity.getComponent(Worker);
+      if (!pos || !movable || !worker) { this.removeEntity(entity); this.returningWorkers.delete(workerId); continue; }
+
+      if (!spawnTile) { this.removeEntity(entity); this.returningWorkers.delete(workerId); continue; }
+
+      const path = this.pathFinder.findPath(
+        new Position(Math.floor(pos.x), Math.floor(pos.y)),
+        new Position(spawnTile.x, spawnTile.y),
+        this.tileMap
+      );
+
+      if (path.length > 0) {
+        movable.setPath(path);
+        worker.setState('walking');
+      } else {
+        this.removeEntity(entity);
+        this.returningWorkers.delete(workerId);
+      }
     }
   }
 
@@ -604,6 +664,19 @@ export class Game {
       this.renderSystem.hoveredEntityId = hoveredEntity?.id ?? null;
     } else {
       this.renderSystem.hoveredEntityId = null;
+    }
+
+    // Remove returning workers that reached base camp
+    if (this.returningWorkers.size > 0) {
+      for (const workerId of this.returningWorkers) {
+        const entity = this.entities.find(e => e.id === workerId && e.active);
+        if (!entity) { this.returningWorkers.delete(workerId); continue; }
+        const movable = entity.getComponent(Movable);
+        if (movable && !movable.isMoving) {
+          this.removeEntity(entity);
+          this.returningWorkers.delete(workerId);
+        }
+      }
     }
 
     // Update building construction progress
@@ -924,6 +997,7 @@ export class Game {
     this.lastExplorationPos = null;
     this.inventory = {};
     this.population = { current: 0, max: 0 };
+    this.returningWorkers.clear();
 
     this.initializeWorld();
     this.rebuildMinimapFromLoadedMap();

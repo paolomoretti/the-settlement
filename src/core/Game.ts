@@ -187,20 +187,29 @@ export class Game {
     return true;
   }
 
+  private segmentRecalcTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private scheduleSegmentRecalc(): void {
+    if (this.segmentRecalcTimer) return;
+    this.segmentRecalcTimer = setTimeout(() => {
+      this.segmentRecalcTimer = null;
+      roadSegmentManager.recalculate(this.tileMap);
+    }, 200);
+  }
+
   private buildRoad(x: number, y: number): void {
     if (!this.isAreaExplored(x, y)) {
       return;
     }
 
     if (!this.isRoadPlacementValid(x, y)) {
-      eventBus.emit('build:failed', { reason: 'Must connect to existing road or base camp' });
       return;
     }
 
     if (this.tileMap.buildRoad(x, y)) {
       audioManager.playSound('build_placed');
       roadSegmentManager.addRoad(x, y);
-      roadSegmentManager.recalculate(this.tileMap);
+      this.scheduleSegmentRecalc();
       this.updateBuildingRoadConnections();
     }
   }

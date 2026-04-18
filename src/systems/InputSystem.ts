@@ -35,6 +35,7 @@ export class InputSystem {
   public hoverGridPos: { x: number; y: number } | null = null;
   private dragStartGridPos: { x: number; y: number } | null = null;
   private spacebarPressed = false;
+  private lastRoadBuildPos: { x: number; y: number } | null = null;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -117,6 +118,12 @@ export class InputSystem {
     if (this.mode === 'view') {
       eventBus.emit('check:drag_selected', this.dragStartGridPos);
     }
+
+    // Place first road tile on mouse-down
+    if (this.mode === 'build_road') {
+      eventBus.emit('build:road', { x: this.dragStartGridPos.x, y: this.dragStartGridPos.y });
+      this.lastRoadBuildPos = { ...this.dragStartGridPos };
+    }
   }
 
   private handlePointerMove(clientX: number, clientY: number): void {
@@ -137,6 +144,13 @@ export class InputSystem {
       } else if (this.mode === 'select') {
         // Drag selected entity in real-time
         eventBus.emit('drag:move', { x: this.hoverGridPos.x, y: this.hoverGridPos.y });
+      } else if (this.mode === 'build_road') {
+        const gx = this.hoverGridPos.x;
+        const gy = this.hoverGridPos.y;
+        if (!this.lastRoadBuildPos || gx !== this.lastRoadBuildPos.x || gy !== this.lastRoadBuildPos.y) {
+          eventBus.emit('build:road', { x: gx, y: gy });
+          this.lastRoadBuildPos = { x: gx, y: gy };
+        }
       } else if (this.mode === 'view') {
         // Check if we should be dragging an entity instead of panning
         const hasMoved = Math.abs(clientX - this.lastPos.x) > 5 || Math.abs(clientY - this.lastPos.y) > 5;
@@ -180,19 +194,16 @@ export class InputSystem {
           // It's a click - handle selection
           eventBus.emit('select:entity', { x: gridX, y: gridY });
         }
-      } else {
-        // Handle building placement
-        if (this.mode === 'build_road') {
-          eventBus.emit('build:road', { x: gridX, y: gridY });
-        } else if (this.mode.startsWith('build_')) {
-          const buildingType = this.mode.replace('build_', '');
-          eventBus.emit(`build:${buildingType}`, { x: gridX, y: gridY });
-        }
+      } else if (this.mode.startsWith('build_') && this.mode !== 'build_road') {
+        // Handle building placement (road is handled on down/drag)
+        const buildingType = this.mode.replace('build_', '');
+        eventBus.emit(`build:${buildingType}`, { x: gridX, y: gridY });
       }
     }
 
     this.isDragging = false;
     this.dragStartGridPos = null;
+    this.lastRoadBuildPos = null;
   }
 
   private handleWheel(e: WheelEvent): void {

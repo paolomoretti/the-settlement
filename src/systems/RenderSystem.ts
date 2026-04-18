@@ -21,6 +21,11 @@ const CONSTRUCTION_SPRITES: Record<string, string[]> = {
     '/assets/buildings/warehouse_build_0.png',
     '/assets/buildings/warehouse_build_1.png',
   ],
+  lumberjack: [
+    '/assets/buildings/lumberjack_build_0.png',
+    '/assets/buildings/lumberjack_build_1.png',
+    '/assets/buildings/lumberjack_build_2.png',
+  ],
 };
 
 export class RenderSystem extends System {

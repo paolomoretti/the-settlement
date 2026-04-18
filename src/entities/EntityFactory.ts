@@ -67,6 +67,7 @@ export function createBuilding(
   const SPRITE_PATHS: Record<string, string> = {
     base_camp: '/assets/buildings/base_camp.png',
     warehouse: '/assets/buildings/warehouse.png',
+    lumberjack: '/assets/buildings/lumberjack.png',
   };
   const spritePath = SPRITE_PATHS[buildingType];
 

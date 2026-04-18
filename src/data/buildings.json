@@ -48,7 +48,7 @@
     "storage": {
       "capacity": 500
     },
-    "category": "core",
+    "category": "infrastructure",
     "tier": 1
   },
 
@@ -74,7 +74,7 @@
     "storage": {
       "capacity": 200
     },
-    "category": "core",
+    "category": "infrastructure",
     "tier": 1
   },
 

@@ -10,6 +10,7 @@ export type InputMode =
   | 'select'
   | 'build_road'
   | 'build_warehouse'
+  | 'build_storehouse'
   | 'build_lumberjack'
   | 'build_hut'
   | 'build_house'

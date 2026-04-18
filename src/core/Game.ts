@@ -81,7 +81,7 @@ export class Game {
 
     // Generic building handler for all building types
     const buildingTypes = [
-      'warehouse', 'hut', 'house',
+      'warehouse', 'storehouse', 'hut', 'house',
       'lumberjack', 'sawmill', 'quarry', 'farm', 'mill', 'bakery', 'well', 'fisher',
       'coal_mine', 'iron_mine', 'iron_smelter', 'tool_smithy',
       'barracks'

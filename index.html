@@ -659,6 +659,12 @@
       background: #555;
     }
 
+    .shortcut-hint {
+      color: #9ab791;
+      font-size: 11px;
+      opacity: 0.7;
+    }
+
     /* Toast notifications */
     #toast-container {
       position: absolute;
@@ -740,13 +746,13 @@
       </div>
       <div id="controls">
         <div>
-          <button id="btn-view">View Mode</button>
-          <button id="btn-road">Build Road</button>
-          <button id="btn-building-menu">🏗️ Buildings</button>
+          <button id="btn-view">View Mode <span class="shortcut-hint">[Esc]</span></button>
+          <button id="btn-road">Build Road <span class="shortcut-hint">[R]</span></button>
+          <button id="btn-building-menu">Buildings <span class="shortcut-hint">[B]</span></button>
         </div>
         <div style="margin-top: 10px;">
           <button id="btn-spawn-worker">Spawn Worker</button>
-          <button id="btn-save">Save Game</button>
+          <button id="btn-save">Save Game <span class="shortcut-hint">[S]</span></button>
           <button id="btn-save-as">Save As...</button>
           <button id="btn-load">Load Game</button>
         </div>

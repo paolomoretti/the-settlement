@@ -99,6 +99,8 @@ export function createBuilding(
 
   if (buildingDef.buildTime > 0) {
     buildingComp.startConstruction(buildingDef.buildTime);
+  } else {
+    buildingComp.completedAt = Date.now();
   }
 
   entity.addComponent(buildingComp);
@@ -108,7 +110,7 @@ export function createBuilding(
       buildingDef.production.productionTime,
       buildingDef.production.outputs,
       buildingDef.production.inputs || {},
-      10,
+      buildingDef.production.maxOutputBuffer || 10,
       buildingDef.production.continuous
     ));
   }

@@ -12,6 +12,7 @@ import { Movable } from '@/components/Movable';
 import { TileMap } from '@/map/TileMap';
 import { Isometric } from '@/utils/Isometric';
 import { Tile } from '@/map/Tile';
+import { Production } from '@/components/Production';
 import { dataManager } from '@/data/DataManager';
 import { TerrainTextures } from '@/rendering/TerrainTextures';
 
@@ -124,7 +125,7 @@ export class RenderSystem extends System {
 
   private loadSprite(path: string): HTMLImageElement | null {
     const cached = this.spriteCache.get(path);
-    if (cached) return cached.complete ? cached : null;
+    if (cached) return (cached.complete && cached.naturalWidth > 0) ? cached : null;
 
     const img = new Image();
     img.src = path;
@@ -799,6 +800,16 @@ export class RenderSystem extends System {
         () => this.drawRoadMissingIcon(),
         'No road connection'
       );
+    } else if (building && building.isComplete()) {
+      const production = entity.getComponent(Production);
+      if (production) {
+        const buffered = production.getTotalBuffered();
+        if (production.status === 'stopped_full') {
+          this.renderProductionBubble(building, production, true);
+        } else if (buffered > 0) {
+          this.renderProductionBubble(building, production, false);
+        }
+      }
     }
 
     this.ctx.restore();
@@ -979,6 +990,61 @@ export class RenderSystem extends System {
       this.ctx.fillText(hoverText, 0, 0);
     } else {
       drawIcon();
+    }
+
+    this.ctx.restore();
+  }
+
+  private renderProductionBubble(
+    building: Building,
+    production: Production,
+    isFull: boolean
+  ): void {
+    const tileW = this.iso.tileWidth;
+    const tileH = this.iso.tileHeight;
+    const buffered = production.getTotalBuffered();
+
+    const bubbleX = (building.width - 1) * tileW / 2;
+    const bubbleY = (building.width - 1) * tileH / 2 - 12;
+
+    const primaryOutput = Object.keys(production.outputs)[0];
+    const icon = primaryOutput ? this.loadSprite(`/assets/resources/${primaryOutput}.png`) : null;
+
+    const r = 10;
+    const hasIcon = !!icon;
+    const pillW = hasIcon ? 34 : 20;
+    const pillH = 20;
+
+    this.ctx.save();
+    this.ctx.translate(bubbleX, bubbleY);
+
+    this.ctx.beginPath();
+    this.ctx.moveTo(-pillW / 2 + r, -pillH / 2);
+    this.ctx.lineTo(pillW / 2 - r, -pillH / 2);
+    this.ctx.arc(pillW / 2 - r, 0, pillH / 2, -Math.PI / 2, Math.PI / 2);
+    this.ctx.lineTo(-pillW / 2 + r, pillH / 2);
+    this.ctx.arc(-pillW / 2 + r, 0, pillH / 2, Math.PI / 2, -Math.PI / 2);
+    this.ctx.closePath();
+
+    this.ctx.fillStyle = 'rgba(30, 30, 30, 0.88)';
+    this.ctx.fill();
+    this.ctx.strokeStyle = isFull ? '#cc3333' : '#5a8a4a';
+    this.ctx.lineWidth = 1.5;
+    this.ctx.stroke();
+
+    if (hasIcon) {
+      this.ctx.drawImage(icon!, -pillW / 2 + 3, -7, 14, 14);
+      this.ctx.fillStyle = isFull ? '#ff6666' : '#ffffff';
+      this.ctx.font = 'bold 9px monospace';
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
+      this.ctx.fillText(`${buffered}`, pillW / 2 - 8, 0);
+    } else {
+      this.ctx.fillStyle = isFull ? '#ff6666' : '#ffffff';
+      this.ctx.font = 'bold 9px monospace';
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
+      this.ctx.fillText(`${buffered}`, 0, 0);
     }
 
     this.ctx.restore();

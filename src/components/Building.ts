@@ -14,6 +14,7 @@ export class Building extends Component {
   public constructionProgress: number = 0; // 0-1
   public constructionStartedAt: number | null = null; // Unix timestamp
   public buildTimeSec: number = 0; // Total build time in seconds
+  public completedAt: number | null = null;
   public width: number; // Width in tiles
   public height: number; // Depth in tiles (for isometric footprint)
   public buildingHeight: number; // Visual 3D height in pixels
@@ -66,6 +67,13 @@ export class Building extends Component {
     if (this.constructionProgress >= 1) {
       this.state = 'complete';
       this.constructionStartedAt = null;
+      this.completedAt = Date.now();
     }
+  }
+
+  getProductionProgress(productionTimeSec: number): number {
+    if (!this.completedAt || this.state !== 'complete' || productionTimeSec <= 0) return 0;
+    const elapsed = (Date.now() - this.completedAt) / 1000;
+    return (elapsed % productionTimeSec) / productionTimeSec;
   }
 }

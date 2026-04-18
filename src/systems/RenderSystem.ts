@@ -925,30 +925,28 @@ export class RenderSystem extends System {
     this.ctx.lineWidth = 0.5;
     this.ctx.strokeRect(barX, barY, barWidth, barHeight);
 
-    // Hammer icon above the building
-    const hammerX = centerX;
-    const hammerY = frontY / 2 - building.buildingHeight / 2 - 14;
-    const bob = Math.sin(Date.now() * 0.005) * 4;
+    // Dust particle effect
+    const now = Date.now();
+    const dustCount = 10;
+    const cycleDuration = 2200;
+    const spreadX = (width + depth) * tileW / 3;
+    const baseY = frontY / 2 - building.buildingHeight / 4;
 
-    this.ctx.save();
-    this.ctx.translate(hammerX, hammerY + bob);
-
-    // Hammer handle
-    this.ctx.strokeStyle = '#8B6914';
-    this.ctx.lineWidth = 4;
-    this.ctx.beginPath();
-    this.ctx.moveTo(0, 6);
-    this.ctx.lineTo(0, 22);
-    this.ctx.stroke();
-
-    // Hammer head
-    this.ctx.fillStyle = '#888888';
-    this.ctx.fillRect(-10, -4, 20, 11);
-    this.ctx.strokeStyle = '#555555';
-    this.ctx.lineWidth = 1.5;
-    this.ctx.strokeRect(-10, -4, 20, 11);
-
-    this.ctx.restore();
+    for (let i = 0; i < dustCount; i++) {
+      const seed = i * 137.5;
+      const t = ((now + seed * 7) % cycleDuration) / cycleDuration;
+      if (t > 0.85) continue;
+      const fade = t < 0.15 ? t / 0.15 : 1 - (t / 0.85);
+      const px = centerX + Math.sin(seed) * spreadX * (0.3 + 0.7 * Math.sin(seed * 2.3));
+      const py = baseY - t * 40 + Math.sin(seed * 3.7) * 8;
+      const radius = 3 + t * 6;
+      this.ctx.globalAlpha = fade * 0.65;
+      this.ctx.fillStyle = '#d4c4a0';
+      this.ctx.beginPath();
+      this.ctx.arc(px, py, radius, 0, Math.PI * 2);
+      this.ctx.fill();
+    }
+    this.ctx.globalAlpha = 1;
   }
 
   private drawRoadMissingIcon(): void {

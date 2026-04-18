@@ -74,6 +74,7 @@ export function createBuilding(
     lumberjack: '/assets/buildings/lumberjack.png',
     sawmill: '/assets/buildings/sawmill.png',
     forester: '/assets/buildings/forester.png',
+    quarry: '/assets/buildings/quarry.png',
   };
   const spritePath = SPRITE_PATHS[buildingType];
 

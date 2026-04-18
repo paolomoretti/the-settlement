@@ -1003,10 +1003,9 @@ export class RenderSystem extends System {
     const tileW = this.iso.tileWidth;
     const tileH = this.iso.tileHeight;
     const buffered = production.getTotalBuffered();
-    const maxBuffer = production.maxOutputBuffer;
 
-    const bubbleX = building.width * tileW / 2 + 2;
-    const bubbleY = building.width * tileH / 2 - building.buildingHeight - 2;
+    const bubbleX = (building.width - 1) * tileW / 2;
+    const bubbleY = (building.width - 1) * tileH / 2 - 12;
 
     const primaryOutput = Object.keys(production.outputs)[0];
     const icon = primaryOutput ? this.loadSprite(`/assets/resources/${primaryOutput}.png`) : null;

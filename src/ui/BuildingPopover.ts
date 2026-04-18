@@ -14,6 +14,8 @@ export class BuildingPopover {
   private currentEntity: Entity | null = null;
   private progressBarFill: HTMLElement | null = null;
   private progressBarLabel: HTMLElement | null = null;
+  private progressContainer: HTMLElement | null = null;
+  private stoppedLabel: HTMLElement | null = null;
   private bufferContainer: HTMLElement | null = null;
   private productionTimeSec: number = 0;
 
@@ -30,6 +32,8 @@ export class BuildingPopover {
       this.currentEntity = null;
       this.progressBarFill = null;
       this.progressBarLabel = null;
+      this.progressContainer = null;
+      this.stoppedLabel = null;
       this.bufferContainer = null;
     };
   }
@@ -73,6 +77,8 @@ export class BuildingPopover {
     this.currentEntity = null;
     this.progressBarFill = null;
     this.progressBarLabel = null;
+    this.progressContainer = null;
+    this.stoppedLabel = null;
     this.bufferContainer = null;
     this.popover.hide();
   }
@@ -82,15 +88,33 @@ export class BuildingPopover {
   }
 
   private updateProgressBar(): void {
-    if (!this.progressBarFill || !this.progressBarLabel || !this.currentEntity) return;
+    if (!this.currentEntity || !this.progressContainer || !this.stoppedLabel) return;
     const building = this.currentEntity.getComponent(Building);
+    const production = this.currentEntity.getComponent(Production);
     if (!building || this.productionTimeSec <= 0) return;
 
-    const progress = building.getProductionProgress(this.productionTimeSec);
-    this.progressBarFill.style.width = `${progress * 100}%`;
+    const isStopped = production && production.status !== 'producing' && production.status !== 'idle';
 
-    const remaining = Math.ceil(this.productionTimeSec * (1 - progress));
-    this.progressBarLabel.textContent = `${remaining}s`;
+    if (isStopped) {
+      this.progressContainer.style.display = 'none';
+      this.stoppedLabel.style.display = '';
+      if (production!.status === 'stopped_full') {
+        this.stoppedLabel.textContent = 'Production stopped — buffer full';
+      } else if (production!.status === 'stopped_no_inputs') {
+        this.stoppedLabel.textContent = 'Production stopped — missing inputs';
+      } else if (production!.status === 'stopped_no_road') {
+        this.stoppedLabel.textContent = 'Production stopped — no road';
+      }
+    } else {
+      this.progressContainer.style.display = '';
+      this.stoppedLabel.style.display = 'none';
+      if (this.progressBarFill && this.progressBarLabel) {
+        const progress = building.getProductionProgress(this.productionTimeSec);
+        this.progressBarFill.style.width = `${progress * 100}%`;
+        const remaining = Math.ceil(this.productionTimeSec * (1 - progress));
+        this.progressBarLabel.textContent = `${remaining}s`;
+      }
+    }
   }
 
   private updateBufferDisplay(): void {
@@ -179,6 +203,7 @@ export class BuildingPopover {
       if (building.state === 'complete') {
         const barContainer = document.createElement('div');
         barContainer.className = 'popover-progress';
+        this.progressContainer = barContainer;
 
         const barTrack = document.createElement('div');
         barTrack.className = 'popover-progress-track';
@@ -195,6 +220,14 @@ export class BuildingPopover {
         barContainer.appendChild(barTrack);
         barContainer.appendChild(barLabel);
         prod.appendChild(barContainer);
+
+        const stopped = document.createElement('div');
+        stopped.className = 'popover-row';
+        stopped.style.display = 'none';
+        stopped.style.color = '#f44336';
+        stopped.style.fontSize = '11px';
+        this.stoppedLabel = stopped;
+        prod.appendChild(stopped);
       }
 
       el.appendChild(prod);

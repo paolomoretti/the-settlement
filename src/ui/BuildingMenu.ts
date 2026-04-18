@@ -107,14 +107,26 @@ export class BuildingMenu {
       card.classList.add('unaffordable');
     }
 
-    // Building preview (colored square for now)
+    // Building preview (sprite if available, colored square fallback)
+    const spriteSrc = `/assets/buildings/${building.id}.png`;
+
     const preview = document.createElement('div');
     preview.className = 'building-preview';
-    preview.style.backgroundColor = building.visual.color;
     preview.style.width = '80px';
     preview.style.height = '60px';
     preview.style.borderRadius = '4px';
     preview.style.marginBottom = '8px';
+    preview.style.backgroundImage = `url(${spriteSrc})`;
+    preview.style.backgroundSize = 'cover';
+    preview.style.backgroundPosition = 'center';
+    preview.style.backgroundRepeat = 'no-repeat';
+
+    const testImg = new Image();
+    testImg.src = spriteSrc;
+    testImg.onerror = () => {
+      preview.style.backgroundImage = 'none';
+      preview.style.backgroundColor = building.visual.color;
+    };
 
     // Building name
     const name = document.createElement('div');

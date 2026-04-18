@@ -233,6 +233,7 @@ function renderSlots(
           <span class="slot-number">${i + 1}.</span>
           <span class="slot-name">${escapeHtml(meta.name)}</span>
           <span class="slot-date">${dateStr}</span>
+          ${mode === 'save' ? '<span class="slot-edit-btn" title="Rename">&#9998;</span>' : ''}
         `;
       } else {
         slot.innerHTML = `
@@ -256,6 +257,14 @@ function renderSlots(
         } else if (e.key === 'Escape') {
           e.stopPropagation();
           renderSlots(container, mode, onAction);
+        }
+      });
+    } else if (mode === 'save' && meta) {
+      slot.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).classList.contains('slot-edit-btn')) {
+          renderSlots(container, mode, onAction, i);
+        } else {
+          onAction(i, meta.name);
         }
       });
     } else if (mode === 'save') {

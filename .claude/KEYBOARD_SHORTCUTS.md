@@ -18,6 +18,7 @@ All keyboard shortcuts are defined and registered in `src/input/KeyboardShortcut
 | **H** | view mode, no modal dialog | Center camera on base camp |
 | **R** | view mode, no modal dialog | Enter build road mode |
 | **B** | view mode, no modal dialog | Toggle building menu |
+| **S** | no modal dialog | Open save game dialog |
 | **Arrow Up** | view mode, no modal dialog | Pan camera up |
 | **Arrow Down** | view mode, no modal dialog | Pan camera down |
 | **Arrow Left** | view mode, no modal dialog | Pan camera left |

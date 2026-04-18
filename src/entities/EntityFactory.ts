@@ -8,7 +8,10 @@ import { Renderable } from '@/components/Renderable';
 import { Movable } from '@/components/Movable';
 import { Worker } from '@/components/Worker';
 import { Building, BuildingType } from '@/components/Building';
+import { Production } from '@/components/Production';
+import { Storage } from '@/components/Storage';
 import { dataManager } from '@/data/DataManager';
+import { ResourceType } from '@/types/GameData';
 
 export function createWorker(x: number, y: number): Entity {
   const entity = new Entity();
@@ -95,6 +98,24 @@ export function createBuilding(
   }
 
   entity.addComponent(buildingComp);
+
+  if (buildingDef.production && Object.keys(buildingDef.production.outputs).length > 0) {
+    entity.addComponent(new Production(
+      buildingDef.production.productionTime,
+      buildingDef.production.outputs,
+      buildingDef.production.inputs || {},
+      10,
+      buildingDef.production.continuous
+    ));
+  }
+
+  if (buildingDef.storage) {
+    entity.addComponent(new Storage(
+      buildingDef.storage.capacity,
+      buildingDef.isHeadquarters || false,
+      buildingDef.storage.accepts as ResourceType[] | undefined
+    ));
+  }
 
   return entity;
 }

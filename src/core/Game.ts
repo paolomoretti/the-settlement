@@ -8,6 +8,7 @@ import { eventBus } from './EventBus';
 import { TileMap } from '@/map/TileMap';
 import { RenderSystem } from '@/systems/RenderSystem';
 import { MovementSystem } from '@/systems/MovementSystem';
+import { ProductionSystem } from '@/systems/ProductionSystem';
 import { InputSystem } from '@/systems/InputSystem';
 import { PathFinder } from '@/pathfinding/AStar';
 import { audioManager } from '@/audio/AudioManager';
@@ -15,7 +16,10 @@ import { Position } from '@/components/Position';
 import { Movable } from '@/components/Movable';
 import { Worker } from '@/components/Worker';
 import { Building } from '@/components/Building';
+import { Production } from '@/components/Production';
+import { Storage } from '@/components/Storage';
 import { dataManager } from '@/data/DataManager';
+import { resourceManager } from '@/economics/ResourceManager';
 import { Inventory, BuildingType } from '@/types/GameData';
 
 // Entity factories
@@ -34,6 +38,7 @@ export class Game {
   public tileMap: TileMap;
   public renderSystem: RenderSystem;
   public movementSystem: MovementSystem;
+  public productionSystem: ProductionSystem;
   public inputSystem: InputSystem;
   public pathFinder: PathFinder;
 
@@ -63,10 +68,15 @@ export class Game {
     // Initialize systems
     this.renderSystem = new RenderSystem(canvas, this.tileMap);
     this.movementSystem = new MovementSystem();
+    this.productionSystem = new ProductionSystem();
     this.inputSystem = new InputSystem(canvas, this.renderSystem);
     this.pathFinder = new PathFinder();
 
-    this.systems.push(this.movementSystem, this.renderSystem);
+    // Production runs before movement, movement before render
+    this.systems.push(this.productionSystem, this.movementSystem, this.renderSystem);
+
+    // Give ResourceManager access to entities
+    resourceManager.setEntityGetter(() => this.entities);
 
     // Setup event listeners
     this.setupEventListeners();
@@ -123,8 +133,6 @@ export class Game {
   }
 
   private initializeWorld(): void {
-    // Load starting resources
-    this.inventory = { ...dataManager.getStartingResources() };
     this.population.current = dataManager.getStartingPopulation();
 
     // Create base camp in center
@@ -332,9 +340,19 @@ export class Game {
     const baseCampDef = dataManager.getBuilding('base_camp');
     this.population.max = baseCampDef?.population?.provides || 15;
 
-    console.log(`🏕️ Base Camp (${building.width}x${building.height}) established at (${x}, ${y})`);
-    console.log(`📦 Starting inventory:`, this.inventory);
-    console.log(`👥 Population: ${this.population.current}/${this.population.max}`);
+    // Load starting resources into base camp storage
+    const storage = baseCamp.getComponent(Storage);
+    if (storage) {
+      const startingResources = dataManager.getStartingResources();
+      for (const [resource, amount] of Object.entries(startingResources)) {
+        storage.addItem(resource, amount);
+      }
+    }
+    this.syncInventory();
+
+    console.log(`Base Camp (${building.width}x${building.height}) established at (${x}, ${y})`);
+    console.log(`Starting inventory:`, this.inventory);
+    console.log(`Population: ${this.population.current}/${this.population.max}`);
   }
 
   private buildGeneric(buildingType: BuildingType, x: number, y: number): void {
@@ -346,9 +364,8 @@ export class Game {
     }
 
     // Check affordability
-    if (!dataManager.canAfford(buildingType, this.inventory)) {
-      const missing = dataManager.getMissingResources(buildingType, this.inventory);
-      console.warn(`Cannot afford ${buildingDef.name}. Missing:`, missing);
+    if (!resourceManager.canAfford(buildingDef.buildCost)) {
+      console.warn(`Cannot afford ${buildingDef.name}`);
       eventBus.emit('build:failed', { reason: `Cannot afford ${buildingDef.name}` });
       return;
     }
@@ -365,10 +382,9 @@ export class Game {
       return;
     }
 
-    // Deduct resources
-    Object.entries(buildingDef.buildCost).forEach(([resourceId, amount]) => {
-      this.inventory[resourceId] = (this.inventory[resourceId] || 0) - amount;
-    });
+    // Deduct resources from storage buildings
+    resourceManager.deductResources(buildingDef.buildCost);
+    this.syncInventory();
 
     // Create building entity
     const entity = createBuilding(buildingType, x, y);
@@ -568,6 +584,9 @@ export class Game {
     // Update all systems
     this.systems.forEach(system => system.update(deltaTime));
 
+    // Keep inventory in sync with storage components
+    this.syncInventory();
+
     requestAnimationFrame(this.gameLoop);
   };
 
@@ -579,6 +598,10 @@ export class Game {
         building.updateConstruction();
       }
     }
+  }
+
+  private syncInventory(): void {
+    this.inventory = resourceManager.getGlobalInventory();
   }
 
   private exploreVisibleArea(): void {
@@ -698,9 +721,11 @@ export class Game {
         }
       }
 
+      resourceManager.onBuildingDestroyed(this.selectedEntity.id);
       console.log(`Deleted entity #${this.selectedEntity.id}`);
       this.removeEntity(this.selectedEntity);
       this.selectedEntity = null;
+      this.syncInventory();
       this.updateSelectionUI();
       this.updateBuildingRoadConnections();
     }
@@ -800,6 +825,8 @@ export class Game {
       buildings: buildingsToSave.map(e => {
         const pos = e.getComponent(Position);
         const building = e.getComponent(Building);
+        const production = e.getComponent(Production);
+        const storage = e.getComponent(Storage);
 
         const data: any = {
           type: building?.buildingType,
@@ -812,8 +839,17 @@ export class Game {
           data.buildTimeSec = building.buildTimeSec;
         }
 
+        if (production) {
+          data.production = production.serialize();
+        }
+
+        if (storage) {
+          data.storage = storage.serialize();
+        }
+
         return data;
       }),
+      transportQueue: resourceManager.serialize(),
       inventory: this.inventory,
       population: this.population,
       timestamp: Date.now()
@@ -824,6 +860,7 @@ export class Game {
     this.entities.forEach(e => e.destroy());
     this.entities = [];
     this.systems.forEach(system => system.cleanup());
+    resourceManager.reset();
 
     this.tileMap = new TileMap(1000, 1000);
     this.renderSystem.updateTileMap(this.tileMap);
@@ -849,13 +886,13 @@ export class Game {
       this.entities.forEach(e => e.destroy());
       this.entities = [];
       this.systems.forEach(system => system.cleanup());
+      resourceManager.reset();
 
       this.selectedEntity = null;
       this.isDraggingEntity = false;
       this.dragPreviewPosition = null;
       this.lastExplorationPos = null;
 
-      this.inventory = saveData.inventory || {};
       this.population = saveData.population || { current: 0, max: 0 };
       this.baseCampEntity = null;
 
@@ -880,10 +917,34 @@ export class Game {
             building.constructionStartedAt = null;
           }
 
+          // Restore production state
+          const production = entity.getComponent(Production);
+          if (production && buildingData.production) {
+            production.deserialize(buildingData.production);
+          }
+
+          // Restore storage state
+          const storage = entity.getComponent(Storage);
+          if (storage && buildingData.storage) {
+            storage.deserialize(buildingData.storage);
+          } else if (storage && buildingData.type === 'base_camp' && saveData.inventory) {
+            // Backwards compatibility: load old inventory into base camp storage
+            for (const [resource, amount] of Object.entries(saveData.inventory)) {
+              storage.addItem(resource, amount as number);
+            }
+          }
+
           this.addEntity(entity);
           this.occupyBuildingTiles(entity.id, buildingData.x, buildingData.y, building.width, building.height);
         }
       }
+
+      // Restore transport queue
+      if (saveData.transportQueue) {
+        resourceManager.deserialize(saveData.transportQueue);
+      }
+
+      this.syncInventory();
 
       for (let i = 0; i < 3; i++) {
         this.spawnWorker();

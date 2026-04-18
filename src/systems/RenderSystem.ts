@@ -218,6 +218,29 @@ export class RenderSystem extends System {
     // Render entities
     sortedEntities.forEach(entity => this.renderEntity(entity));
 
+    // Render entrance indicators for disconnected buildings
+    for (const entity of visibleEntities) {
+      const building = entity.getComponent(Building);
+      if (!building || building.isActive) continue;
+      const entrance = building.getEntranceOffset();
+      if (!entrance) continue;
+      const pos = entity.getComponent(Position)!;
+      const ex = pos.x + entrance.dx;
+      const ey = pos.y + entrance.dy;
+      const corners = this.iso.getTileCorners(ex, ey);
+      this.ctx.beginPath();
+      this.ctx.moveTo(corners[0].x, corners[0].y);
+      for (let i = 1; i < corners.length; i++) {
+        this.ctx.lineTo(corners[i].x, corners[i].y);
+      }
+      this.ctx.closePath();
+      this.ctx.fillStyle = 'rgba(200, 40, 40, 0.5)';
+      this.ctx.fill();
+      this.ctx.strokeStyle = 'rgba(220, 50, 50, 0.9)';
+      this.ctx.lineWidth = 2;
+      this.ctx.stroke();
+    }
+
     // Render selection outline for selected entity
     if (this.selectedEntityId !== null) {
       const selectedEntity = sortedEntities.find(e => e.id === this.selectedEntityId);
@@ -366,8 +389,10 @@ export class RenderSystem extends System {
     if (width > 1 || depth > 1) {
       const cx = (width - depth) * tileW / 4;
       const cy = (width + depth) * tileH / 4;
+      const maxDim = Math.max(width, depth);
+      const spriteScale = maxDim >= 5 ? 0.72 : 0.85;
       this.ctx.translate(cx, cy);
-      this.ctx.scale(0.85, 0.85);
+      this.ctx.scale(spriteScale, spriteScale);
       this.ctx.translate(-cx, -cy);
     }
 
@@ -442,8 +467,10 @@ export class RenderSystem extends System {
     if (width > 1 || depth > 1) {
       const cx = (width - depth) * tileW / 4;
       const cy = (width + depth) * tileH / 4;
+      const maxDim = Math.max(width, depth);
+      const spriteScale = maxDim >= 5 ? 0.72 : 0.85;
       this.ctx.translate(cx, cy);
-      this.ctx.scale(0.85, 0.85);
+      this.ctx.scale(spriteScale, spriteScale);
       this.ctx.translate(-cx, -cy);
     }
 
@@ -704,9 +731,11 @@ export class RenderSystem extends System {
         const tileH = this.iso.tileHeight;
         const cx = (building.width - building.height) * tileW / 4;
         const cy = (building.width + building.height) * tileH / 4;
+        const maxDim = Math.max(building.width, building.height);
+        const spriteScale = maxDim >= 5 ? 0.72 : 0.85;
         this.ctx.save();
         this.ctx.translate(cx, cy);
-        this.ctx.scale(0.85, 0.85);
+        this.ctx.scale(spriteScale, spriteScale);
         this.ctx.translate(-cx, -cy);
       }
 

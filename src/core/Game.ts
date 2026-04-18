@@ -226,9 +226,6 @@ export class Game {
       const tile = this.tileMap.getTile(x + dx, y + dy);
       if (!tile) continue;
       if (tile.hasRoad) return true;
-      if (tile.isOccupied() && this.baseCampEntity && tile.occupiedBy === this.baseCampEntity.id) {
-        return true;
-      }
     }
     return false;
   }
@@ -241,24 +238,24 @@ export class Game {
     const baseCampBuilding = this.baseCampEntity.getComponent(Building);
     if (!baseCampPos || !baseCampBuilding) return connected;
 
-    const bx = baseCampPos.x;
-    const by = baseCampPos.y;
-    const bw = baseCampBuilding.width;
-    const bh = baseCampBuilding.height;
+    const entrance = baseCampBuilding.getEntranceOffset();
+    if (!entrance) return connected;
 
-    // Find road tiles adjacent to the base camp as BFS seeds
+    const entranceX = baseCampPos.x + entrance.dx;
+    const entranceY = baseCampPos.y + entrance.dy;
+    const entranceKey = `${entranceX},${entranceY}`;
+    connected.add(entranceKey);
+
+    // Seed BFS from road tiles adjacent to the entrance
     const queue: { x: number; y: number }[] = [];
-    for (let dy = -1; dy <= bh; dy++) {
-      for (let dx = -1; dx <= bw; dx++) {
-        const isInside = dx >= 0 && dx < bw && dy >= 0 && dy < bh;
-        if (isInside) continue;
-        const tile = this.tileMap.getTile(bx + dx, by + dy);
-        if (tile && tile.hasRoad) {
-          const key = `${bx + dx},${by + dy}`;
-          if (!connected.has(key)) {
-            connected.add(key);
-            queue.push({ x: bx + dx, y: by + dy });
-          }
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (const [dx, dy] of dirs) {
+      const tile = this.tileMap.getTile(entranceX + dx, entranceY + dy);
+      if (tile && tile.hasRoad && !tile.isOccupied()) {
+        const key = `${entranceX + dx},${entranceY + dy}`;
+        if (!connected.has(key)) {
+          connected.add(key);
+          queue.push({ x: entranceX + dx, y: entranceY + dy });
         }
       }
     }

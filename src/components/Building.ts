@@ -43,7 +43,7 @@ export class Building extends Component {
     if (this.width <= 1 && this.height <= 1) return null;
     return {
       dx: this.width - 1,
-      dy: Math.floor((this.height - 1) / 2)
+      dy: Math.ceil((this.height - 1) / 2)
     };
   }
 

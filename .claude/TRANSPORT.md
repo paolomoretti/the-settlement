@@ -12,7 +12,7 @@ A **segment** is a continuous stretch of road tiles between two **nodes**. A nod
 
 - A **dead end** — has 0 or 1 cardinal road neighbors
 - A **junction** — has 3+ cardinal road neighbors
-- **Building-adjacent** — any of its 8 neighbors is a building footprint tile
+- **Building-adjacent** — cardinally adjacent to a building **entrance tile** (occupied + hasRoad)
 
 Tiles with exactly 2 cardinal road neighbors and no adjacent buildings are **corridor tiles** — they're interior to a segment, not boundaries.
 
@@ -28,7 +28,7 @@ The building splits the road into 2 segments. Each gets one worker.
 ### Segment Computation Algorithm
 
 1. Collect all road tile positions (tracked incrementally via `addRoad`/`removeRoad`)
-2. Classify each road tile: node or corridor (using 4-directional road neighbors + 8-directional building adjacency)
+2. Classify each road tile: node or corridor (using 4-directional road neighbors + 4-directional entrance adjacency)
 3. From each node, trace outward along each branch through corridor tiles until hitting another node
 4. Each trace = one segment (ordered tile list + two endpoint nodes)
 5. Deduplicate via edge tracking so each segment is only created once
@@ -81,16 +81,16 @@ Every building ≥ 2×2 has an **entrance tile** — a road tile automatically p
 
 ```
 entranceX = pos.x + width - 1     (rightmost column)
-entranceY = pos.y + floor((height - 1) / 2)  (middle row, rounds down)
+entranceY = pos.y + ceil((height - 1) / 2)   (middle row, rounds toward front/bottom in iso)
 ```
 
-Examples: 2×2 → (x+1, y+0), 3×3 → (x+2, y+1), 6×6 base_camp → (x+5, y+2).
+Examples: 2×2 → (x+1, y+1), 3×3 → (x+2, y+1), 6×6 base_camp → (x+5, y+3).
 
 ### Entrance Tile State
 
 - **Occupied** by the building entity (prevents other buildings from overlapping)
 - **hasRoad = true** (workers can walk through, road renders visually)
-- **Registered** in `RoadSegmentManager.roadTiles` (participates in segment graph as a building node)
+- **NOT registered** in `RoadSegmentManager.roadTiles` — entrance tiles are excluded from segment computation so they don't spawn workers
 - Pathfinder allows walking on occupied road tiles (`hasRoad && walkable`)
 
 ### Building Connectivity
@@ -99,15 +99,21 @@ A building with an entrance is **connected** only when its entrance tile appears
 
 1×1 buildings (well) have no entrance and fall back to the old any-adjacent-road check.
 
-### Road Rendering
+### "Front" Definition
 
-Entrance roads are drawn **on top of** building sprites so the entrance is always visible, even when the building graphic covers the footprint.
+In isometric view, a building's **front** is the **bottom-right side**. The entrance is placed at the center (or closest to center, biased toward the bottom/front) of this side. Building sprites are scaled down so the footprint tiles peek through underneath, making the entrance road visible behind/below the sprite:
+- Buildings < 5 tiles: 85% scale
+- Buildings ≥ 5 tiles (base camp): 72% scale
+
+### Disconnected Indicator
+
+When a building requires a road connection but isn't connected, its entrance tile is highlighted with a **red diamond overlay** drawn on top of the building sprite. This clearly shows the player where to connect a road. The indicator disappears once the entrance is connected to the road network.
 
 ---
 
 ## Road Placement Rules
 
-Roads must be placed **adjacent (4-directional) to an existing road or the base camp footprint**. This enforces that all roads grow outward from the base camp — no disconnected roads. Building entrance tiles also count as existing roads for adjacency.
+Roads must be placed **adjacent (4-directional) to an existing road tile** (including building entrance tiles, which have `hasRoad = true`). This enforces that all roads grow outward from the base camp — no disconnected roads. The base camp follows the same entrance system as all other buildings; roads can only connect to it at its entrance tile, not anywhere around its perimeter.
 
 New games start with **zero roads**. The player builds the first road from the base camp.
 

@@ -317,6 +317,10 @@ function setupGameUI(game: Game): void {
     buildingMenu!.toggle();
   });
 
+  eventBus.on('toggle:building_menu', () => {
+    buildingMenu!.toggle();
+  });
+
   document.getElementById('btn-spawn-worker')?.addEventListener('click', () => {
     eventBus.emit('spawn:worker');
   });

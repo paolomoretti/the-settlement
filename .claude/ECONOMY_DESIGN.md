@@ -326,25 +326,20 @@ Tool Smithy: Requires 1 Iron Smelter built
 
 ## Future Improvements
 
-### Phase 1: Production System (NEXT)
-**Priority: HIGH**
-- [ ] Implement actual resource production over time
-- [ ] Add worker assignment to buildings
-- [ ] Workers walk to assigned buildings
-- [ ] Idle workers return to base camp
-- [ ] Production halts if no worker assigned
-- [ ] Resource delivery system (carriers transport goods to storage)
+### Phase 1: Production System — IMPLEMENTED
+**Status: DONE** (2026-04-18)
 
-**Data Changes Needed**:
-```typescript
-// Add to BuildingInstance in GameData.ts
-interface BuildingInstance {
-  // ... existing fields
-  productionTimer?: number;        // Current production progress (0-1)
-  nextProduction?: ResourceType[]; // What will be produced next
-  workerAssigned?: number;         // Entity ID of assigned worker
-}
-```
+See [ECONOMICS_RUNTIME.md](ECONOMICS_RUNTIME.md) for full implementation details.
+
+- [x] Implement actual resource production over time (ProductionSystem + Production component)
+- [x] Production uses output buffers per building (max 10 items)
+- [x] Production stops when buffer full, no inputs, or no road connection
+- [x] Storage component on warehouses/base camp holds global inventory
+- [x] Transport request queue (data layer for road worker pickups)
+- [x] Save/load persists production state, storage, and transport queue
+- [ ] Road workers that carry items between buildings and storage (data layer ready, workers not yet implemented)
+- [ ] Worker assignment to buildings
+- [ ] UX indicators (stop icon, pickup icon, progress bars)
 
 ### Phase 2: Resource Consumption
 **Priority: HIGH**

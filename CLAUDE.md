@@ -15,8 +15,9 @@ A browser-based city-building game heavily inspired by Settlers of Catan / The S
 ```
 src/
   core/         - Game loop, Entity, System, EventBus, Component base classes
-  components/   - ECS data: Position, Movable, Building, Worker, Renderable
-  systems/      - ECS logic: RenderSystem, InputSystem, MovementSystem
+  components/   - ECS data: Position, Movable, Building, Worker, Renderable, Production, Storage
+  systems/      - ECS logic: RenderSystem, InputSystem, MovementSystem, ProductionSystem
+  economics/    - ResourceManager (global inventory), TransportRequest (pickup queue)
   entities/     - EntityFactory for creating game objects
   map/          - Tile and TileMap (1000x1000 procedural grid)
   pathfinding/  - A* pathfinding wrapper
@@ -45,15 +46,20 @@ npm run preview  # Preview production build
 
 ## Current State
 
-Working: terrain generation, isometric rendering, camera pan/zoom, building placement/selection/deletion/drag, road building, worker spawning, A* pathfinding on roads, fog of war, minimap, save/load, touch support.
+Working: terrain generation, isometric rendering, camera pan/zoom, building placement/selection/deletion/drag, road building, worker spawning, A* pathfinding on roads, fog of war, minimap, save/load, touch support, resource production system (buildings produce into output buffers), storage system (inventory lives in Storage components on warehouses/base camp), transport request queue (data layer for pickup/delivery).
 
-Not yet implemented: sprite assets (all visuals are colored shapes), resource system, production chains, worker job assignment, trading, military, audio, building upgrades, weather/seasons.
+Not yet implemented: sprite assets (all visuals are colored shapes), road workers (people on each road stretch who carry items between buildings and storage), production UX indicators (stop/pickup icons, progress bars), worker job assignment, resource consumption (food), trading, military, audio, building upgrades, weather/seasons.
 
 ## Documentation
 
+- [Economics Runtime](.claude/ECONOMICS_RUNTIME.md) - **How production, storage, and transport work** — the core game economics system
+- [Economy Design](.claude/ECONOMY_DESIGN.md) - Game design goals, balance theory, production chains, tech progression
+- [Data System](.claude/DATA_SYSTEM.md) - JSON config layer: resources.json, buildings.json, game-config.json, DataManager
 - [Asset Guide](.claude/ASSET_GUIDE.md) - Comprehensive guide for creating game sprites
 - [AI Prompt Template](.claude/AI_PROMPT_TEMPLATE.txt) - Quick-reference template for AI image generation
 - [Performance Guidelines](.claude/PERFORMANCE.md) - Mandatory rules for rendering, textures, and canvas performance
+
+**Convention**: Every time new logic is added to the game, document it in `.claude/` and reference it here. Future agents and chats rely on these docs to understand how systems work without re-explanation.
 
 ## Style & Conventions
 

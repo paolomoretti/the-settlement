@@ -98,7 +98,7 @@ export function createBuilding(
   );
 
   if (buildingDef.buildTime > 0) {
-    buildingComp.startConstruction(buildingDef.buildTime);
+    buildingComp.buildTimeSec = buildingDef.buildTime;
   } else {
     buildingComp.completedAt = Date.now();
   }

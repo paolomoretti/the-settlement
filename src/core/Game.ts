@@ -62,6 +62,9 @@ export class Game {
   };
 
   private returningWorkers = new Set<number>();
+  private builderWorkers = new Map<number, number>(); // builderEntityId → buildingEntityId
+  private returningBuilders = new Set<number>();
+  private toolWorkers = new Map<number, number>(); // toolWorkerEntityId → buildingEntityId
   private roadDragMode: 'create' | 'delete' | null = null;
 
   constructor(canvas: HTMLCanvasElement, skipInit = false) {
@@ -211,11 +214,19 @@ export class Game {
     transportManager.clearBuildingRoutes();
     for (const entity of this.entities) {
       if (!entity.active) continue;
-      const production = entity.getComponent(Production);
       const building = entity.getComponent(Building);
-      if (!production || !building || !production.hasInputs()) continue;
-      if (!building.isComplete()) continue;
-      transportManager.computeRoutesToBuilding(segments, entity.id);
+      if (!building) continue;
+
+      // Routes for production buildings with inputs
+      const production = entity.getComponent(Production);
+      if (production && production.hasInputs() && building.isComplete()) {
+        transportManager.computeRoutesToBuilding(segments, entity.id);
+      }
+
+      // Routes for construction sites awaiting materials
+      if (building.state === 'awaiting_materials') {
+        transportManager.computeRoutesToBuilding(segments, entity.id);
+      }
     }
   }
 
@@ -467,8 +478,34 @@ export class Game {
 
     if (!building) return;
 
+    // Set construction state based on whether building has costs
+    const hasCosts = Object.values(buildingDef.buildCost).some(v => v > 0);
+    if (building.buildTimeSec > 0) {
+      if (hasCosts) {
+        building.startAwaitingMaterials(building.buildTimeSec, buildingDef.buildCost);
+      } else {
+        building.startConstruction(building.buildTimeSec);
+      }
+    }
+
     this.addEntity(entity);
     this.occupyBuildingTiles(entity.id, x, y, building.width, building.height, building);
+
+    // Dispatch construction materials as junction items at base camp entrance
+    if (building.state === 'awaiting_materials' && building.constructionMaterials) {
+      const spawnTile = this.findBaseCampSpawnTile();
+      if (spawnTile) {
+        for (const [res, amount] of Object.entries(building.constructionMaterials)) {
+          for (let i = 0; i < amount; i++) {
+            transportManager.addJunctionItem(spawnTile.x, spawnTile.y, res, entity.id);
+          }
+          building.materialsSent[res] = amount;
+        }
+      }
+
+      // Spawn builder worker
+      this.spawnBuilder(entity);
+    }
 
     // Update population if residential
     if (buildingDef.population?.provides) {
@@ -478,11 +515,11 @@ export class Game {
     audioManager.playSound('build_placed');
     this.updateBuildingRoadConnections();
     eventBus.emit('build:success');
-    console.log(`✅ ${buildingDef.name} (${building.width}x${building.height}) built at (${x}, ${y})`);
+    console.log(`${buildingDef.name} (${building.width}x${building.height}) placed at (${x}, ${y}) — ${building.state}`);
   }
 
   public getAvailablePopulation(): number {
-    return this.population.current - roadSegmentManager.getWorkerCount() - this.returningWorkers.size;
+    return this.population.current - roadSegmentManager.getWorkerCount() - this.returningWorkers.size - this.builderWorkers.size - this.returningBuilders.size - this.toolWorkers.size;
   }
 
   private findBaseCampSpawnTile(): { x: number; y: number } | null {
@@ -513,6 +550,13 @@ export class Game {
   private spawnSegmentWorker(segment: RoadSegment): number | null {
     if (this.getAvailablePopulation() <= 0) {
       console.warn('No available population for road worker');
+      return null;
+    }
+
+    // Only spawn workers on segments connected to base camp
+    const connectedRoads = this.getBaseCampConnectedRoads();
+    const isConnected = segment.tiles.some(t => connectedRoads.has(`${t.x},${t.y}`));
+    if (!isConnected) {
       return null;
     }
 
@@ -649,6 +693,270 @@ export class Game {
       }
     } else {
       pos.set(center.x, center.y);
+    }
+  }
+
+  private findBuildingAdjacentRoadTile(buildingEntity: Entity): { x: number; y: number } | null {
+    const pos = buildingEntity.getComponent(Position);
+    const building = buildingEntity.getComponent(Building);
+    if (!pos || !building) return null;
+
+    const entrance = building.getEntranceOffset();
+    if (entrance) {
+      const ex = pos.x + entrance.dx;
+      const ey = pos.y + entrance.dy;
+      const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+      for (const [dx, dy] of dirs) {
+        const tile = this.tileMap.getTile(ex + dx, ey + dy);
+        if (tile && tile.hasRoad && !tile.isOccupied()) {
+          return { x: ex + dx, y: ey + dy };
+        }
+      }
+      return { x: ex, y: ey };
+    }
+
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (const [dx, dy] of dirs) {
+      const tile = this.tileMap.getTile(pos.x + dx, pos.y + dy);
+      if (tile && tile.hasRoad && !tile.isOccupied()) {
+        return { x: pos.x + dx, y: pos.y + dy };
+      }
+    }
+    return null;
+  }
+
+  private spawnBuilder(buildingEntity: Entity): void {
+    const building = buildingEntity.getComponent(Building);
+    if (!building || building.builderEntityId != null) return;
+    if (this.getAvailablePopulation() <= 0) return;
+
+    const spawnTile = this.findBaseCampSpawnTile();
+    if (!spawnTile) return;
+
+    const targetTile = this.findBuildingAdjacentRoadTile(buildingEntity);
+    if (!targetTile) return;
+
+    const path = this.pathFinder.findPath(
+      new Position(spawnTile.x, spawnTile.y),
+      new Position(targetTile.x, targetTile.y),
+      this.tileMap
+    );
+    if (path.length === 0) return;
+
+    const builder = createWorker(spawnTile.x, spawnTile.y);
+    this.addEntity(builder);
+
+    const workerComp = builder.getComponent(Worker);
+    if (workerComp) {
+      workerComp.carryingResource = 'hammer';
+    }
+
+    building.builderEntityId = builder.id;
+    this.builderWorkers.set(builder.id, buildingEntity.id);
+
+    const movable = builder.getComponent(Movable);
+    if (movable && workerComp) {
+      movable.setPath(path);
+      workerComp.setState('walking');
+    }
+  }
+
+  private returnBuilder(buildingEntity: Entity): void {
+    const building = buildingEntity.getComponent(Building);
+    if (!building || building.builderEntityId === null) return;
+
+    const builderEntity = this.entities.find(e => e.id === building.builderEntityId && e.active);
+    if (!builderEntity) {
+      building.builderEntityId = null;
+      return;
+    }
+
+    const bPos = builderEntity.getComponent(Position);
+    if (!bPos) {
+      this.removeEntity(builderEntity);
+      building.builderEntityId = null;
+      return;
+    }
+
+    const spawnTile = this.findBaseCampSpawnTile();
+    if (!spawnTile) {
+      this.removeEntity(builderEntity);
+      building.builderEntityId = null;
+      return;
+    }
+
+    const path = this.pathFinder.findPath(
+      new Position(Math.floor(bPos.x), Math.floor(bPos.y)),
+      new Position(spawnTile.x, spawnTile.y),
+      this.tileMap
+    );
+
+    if (path.length > 0) {
+      const movable = builderEntity.getComponent(Movable);
+      const worker = builderEntity.getComponent(Worker);
+      if (movable && worker) {
+        movable.setPath(path);
+        worker.setState('walking');
+        this.returningBuilders.add(builderEntity.id);
+      }
+    } else {
+      this.removeEntity(builderEntity);
+    }
+
+    building.builderEntityId = null;
+  }
+
+  private spawnToolWorker(buildingEntity: Entity, tool: string): void {
+    if (this.getAvailablePopulation() <= 0) return;
+
+    const spawnTile = this.findBaseCampSpawnTile();
+    if (!spawnTile) return;
+
+    const targetTile = this.findBuildingAdjacentRoadTile(buildingEntity);
+    if (!targetTile) return;
+
+    const path = this.pathFinder.findPath(
+      new Position(spawnTile.x, spawnTile.y),
+      new Position(targetTile.x, targetTile.y),
+      this.tileMap
+    );
+    if (path.length === 0) return;
+
+    const worker = createWorker(spawnTile.x, spawnTile.y);
+    this.addEntity(worker);
+
+    const workerComp = worker.getComponent(Worker);
+    if (workerComp) {
+      workerComp.carryingResource = tool;
+    }
+
+    this.toolWorkers.set(worker.id, buildingEntity.id);
+
+    const movable = worker.getComponent(Movable);
+    if (movable && workerComp) {
+      movable.setPath(path);
+      workerComp.setState('walking');
+    }
+  }
+
+  private updateConstructionDelivery(): void {
+    // Check builder arrivals
+    for (const [builderId, buildingId] of this.builderWorkers) {
+      const builderEntity = this.entities.find(e => e.id === builderId && e.active);
+      if (!builderEntity) {
+        this.builderWorkers.delete(builderId);
+        continue;
+      }
+
+      const movable = builderEntity.getComponent(Movable);
+      if (movable && !movable.isMoving) {
+        const buildingEntity = this.entities.find(e => e.id === buildingId && e.active);
+        if (!buildingEntity) {
+          this.removeEntity(builderEntity);
+          this.builderWorkers.delete(builderId);
+          continue;
+        }
+
+        const targetTile = this.findBuildingAdjacentRoadTile(buildingEntity);
+        const builderPos = builderEntity.getComponent(Position);
+
+        if (targetTile && builderPos &&
+            Math.floor(builderPos.x) === targetTile.x &&
+            Math.floor(builderPos.y) === targetTile.y) {
+          const building = buildingEntity.getComponent(Building);
+          if (building) building.builderArrived = true;
+          this.builderWorkers.delete(builderId);
+        } else if (targetTile && builderPos) {
+          const path = this.pathFinder.findPath(
+            new Position(Math.floor(builderPos.x), Math.floor(builderPos.y)),
+            new Position(targetTile.x, targetTile.y),
+            this.tileMap
+          );
+          if (path.length > 0) {
+            movable.setPath(path);
+            const workerComp = builderEntity.getComponent(Worker);
+            if (workerComp) workerComp.setState('walking');
+          }
+        }
+      }
+    }
+
+    // Check construction sites
+    for (const entity of this.entities) {
+      if (!entity.active) continue;
+      const building = entity.getComponent(Building);
+      if (!building || building.state !== 'awaiting_materials') continue;
+
+      if (building.canStartConstruction()) {
+        building.beginConstruction();
+        continue;
+      }
+
+      // Spawn builder if needed and building has road connection
+      if (building.builderEntityId === null && building.isActive) {
+        this.spawnBuilder(entity);
+      }
+    }
+
+    // Check tool worker arrivals
+    for (const [workerId, buildingId] of this.toolWorkers) {
+      const workerEntity = this.entities.find(e => e.id === workerId && e.active);
+      if (!workerEntity) {
+        this.toolWorkers.delete(workerId);
+        continue;
+      }
+
+      const movable = workerEntity.getComponent(Movable);
+      if (movable && !movable.isMoving) {
+        const buildingEntity = this.entities.find(e => e.id === buildingId && e.active);
+        if (!buildingEntity) {
+          this.removeEntity(workerEntity);
+          this.toolWorkers.delete(workerId);
+          continue;
+        }
+
+        const targetTile = this.findBuildingAdjacentRoadTile(buildingEntity);
+        const workerPos = workerEntity.getComponent(Position);
+
+        if (targetTile && workerPos &&
+            Math.floor(workerPos.x) === targetTile.x &&
+            Math.floor(workerPos.y) === targetTile.y) {
+          const building = buildingEntity.getComponent(Building);
+          if (building) building.hasOperator = true;
+          this.removeEntity(workerEntity);
+          this.toolWorkers.delete(workerId);
+        } else if (targetTile && workerPos) {
+          const path = this.pathFinder.findPath(
+            new Position(Math.floor(workerPos.x), Math.floor(workerPos.y)),
+            new Position(targetTile.x, targetTile.y),
+            this.tileMap
+          );
+          if (path.length > 0) {
+            movable.setPath(path);
+            const wc = workerEntity.getComponent(Worker);
+            if (wc) wc.setState('walking');
+          }
+        }
+      }
+    }
+
+    // Spawn tool workers for completed buildings needing operators
+    for (const entity of this.entities) {
+      if (!entity.active) continue;
+      const building = entity.getComponent(Building);
+      if (!building || !building.isComplete() || building.hasOperator) continue;
+      if (!building.isActive) continue;
+
+      let hasToolWorker = false;
+      for (const [, bId] of this.toolWorkers) {
+        if (bId === entity.id) { hasToolWorker = true; break; }
+      }
+      if (hasToolWorker) continue;
+
+      const buildingDef = dataManager.getBuilding(building.buildingType);
+      if (buildingDef?.requiredTool) {
+        this.spawnToolWorker(entity, buildingDef.requiredTool as string);
+      }
     }
   }
 
@@ -875,11 +1183,19 @@ export class Game {
           } else {
             const destEntity = this.entities.find(e => e.id === task.destEntityId && e.active);
             if (destEntity) {
-              const destStorage = destEntity.getComponent(Storage);
-              if (destStorage && destStorage.canAccept(res)) {
-                destStorage.addItem(res, 1);
+              // Check if this is a construction site delivery
+              const destBuilding = destEntity.getComponent(Building);
+              if (destBuilding && destBuilding.state === 'awaiting_materials') {
+                if (!destBuilding.deliverMaterial(res)) {
+                  transportManager.addJunctionItem(task.dropoffPos.x, task.dropoffPos.y, res, this.baseCampEntity?.id ?? null);
+                }
               } else {
-                transportManager.addJunctionItem(task.dropoffPos.x, task.dropoffPos.y, res, this.baseCampEntity?.id ?? null);
+                const destStorage = destEntity.getComponent(Storage);
+                if (destStorage && destStorage.canAccept(res)) {
+                  destStorage.addItem(res, 1);
+                } else {
+                  transportManager.addJunctionItem(task.dropoffPos.x, task.dropoffPos.y, res, this.baseCampEntity?.id ?? null);
+                }
               }
             } else {
               transportManager.addJunctionItem(task.dropoffPos.x, task.dropoffPos.y, res, this.baseCampEntity?.id ?? null);
@@ -1019,6 +1335,22 @@ export class Game {
       }
     }
 
+    // Remove returning builders that reached base camp
+    if (this.returningBuilders.size > 0) {
+      for (const builderId of this.returningBuilders) {
+        const entity = this.entities.find(e => e.id === builderId && e.active);
+        if (!entity) { this.returningBuilders.delete(builderId); continue; }
+        const movable = entity.getComponent(Movable);
+        if (movable && !movable.isMoving) {
+          this.removeEntity(entity);
+          this.returningBuilders.delete(builderId);
+        }
+      }
+    }
+
+    // Update construction delivery (builder arrivals, material checks)
+    this.updateConstructionDelivery();
+
     // Update building construction progress
     this.updateConstruction();
 
@@ -1045,6 +1377,14 @@ export class Game {
         building.updateConstruction();
         if (building.isComplete()) {
           audioManager.playSound('building_complete');
+          this.returnBuilder(entity);
+
+          // Mark building as needing tool worker if it has a requiredTool
+          const buildingDef = dataManager.getBuilding(building.buildingType);
+          if (buildingDef?.requiredTool) {
+            building.hasOperator = false;
+          }
+
           const production = entity.getComponent(Production);
           if (production && production.hasInputs()) {
             transportManager.computeRoutesToBuilding(roadSegmentManager.getSegments(), entity.id);
@@ -1165,6 +1505,38 @@ export class Game {
     const building = this.selectedEntity.getComponent(Building);
 
     if (pos && building) {
+      // Refund construction materials if building is awaiting materials
+      if (building.state === 'awaiting_materials' && building.constructionMaterials) {
+        const baseCampStorage = this.baseCampEntity?.getComponent(Storage);
+        if (baseCampStorage) {
+          for (const [res, required] of Object.entries(building.constructionMaterials)) {
+            const sent = building.materialsSent[res] || 0;
+            const undispatched = required - sent;
+            if (undispatched > 0) baseCampStorage.addItem(res, undispatched);
+            const delivered = building.materialsDelivered[res] || 0;
+            if (delivered > 0) baseCampStorage.addItem(res, delivered);
+          }
+        }
+      }
+
+      // Remove builder worker if exists
+      if (building.builderEntityId != null) {
+        const builderEntity = this.entities.find(e => e.id === building.builderEntityId && e.active);
+        if (builderEntity) this.removeEntity(builderEntity);
+        this.builderWorkers.delete(building.builderEntityId);
+        this.returningBuilders.delete(building.builderEntityId);
+      }
+
+      // Remove tool worker if in transit
+      for (const [workerId, buildingId] of this.toolWorkers) {
+        if (buildingId === this.selectedEntity!.id) {
+          const workerEntity = this.entities.find(e => e.id === workerId && e.active);
+          if (workerEntity) this.removeEntity(workerEntity);
+          this.toolWorkers.delete(workerId);
+          break;
+        }
+      }
+
       const entrance = building.getEntranceOffset();
 
       // Release occupied tiles
@@ -1308,13 +1680,24 @@ export class Game {
           y: pos?.y
         };
 
-        if (building?.constructionStartedAt) {
+        if (building?.state === 'awaiting_materials') {
+          data.state = 'awaiting_materials';
+          data.buildTimeSec = building.buildTimeSec;
+          data.constructionMaterials = building.constructionMaterials;
+          data.materialsSent = building.materialsSent;
+          data.materialsDelivered = building.materialsDelivered;
+          data.builderArrived = building.builderArrived;
+        } else if (building?.constructionStartedAt) {
           data.constructionStartedAt = building.constructionStartedAt;
           data.buildTimeSec = building.buildTimeSec;
         }
 
         if (building?.completedAt) {
           data.completedAt = building.completedAt;
+        }
+
+        if (building && !building.hasOperator) {
+          data.hasOperator = false;
         }
 
         if (production) {
@@ -1356,6 +1739,9 @@ export class Game {
     this.inventory = {};
     this.population = { current: 0, max: 0 };
     this.returningWorkers.clear();
+    this.builderWorkers.clear();
+    this.returningBuilders.clear();
+    this.toolWorkers.clear();
 
     this.initializeWorld();
     this.rebuildMinimapFromLoadedMap();
@@ -1377,6 +1763,10 @@ export class Game {
       this.isDraggingEntity = false;
       this.dragPreviewPosition = null;
       this.lastExplorationPos = null;
+      this.builderWorkers.clear();
+      this.returningBuilders.clear();
+      this.returningWorkers.clear();
+      this.toolWorkers.clear();
 
       this.population = saveData.population || { current: 0, max: 0 };
       this.baseCampEntity = null;
@@ -1392,7 +1782,14 @@ export class Game {
 
         const building = entity.getComponent(Building);
         if (building) {
-          if (buildingData.constructionStartedAt) {
+          if (buildingData.state === 'awaiting_materials') {
+            building.state = 'awaiting_materials';
+            building.buildTimeSec = buildingData.buildTimeSec;
+            building.constructionMaterials = buildingData.constructionMaterials || {};
+            building.materialsSent = buildingData.materialsSent || {};
+            building.materialsDelivered = buildingData.materialsDelivered || {};
+            building.builderArrived = buildingData.builderArrived || false;
+          } else if (buildingData.constructionStartedAt) {
             building.constructionStartedAt = buildingData.constructionStartedAt;
             building.buildTimeSec = buildingData.buildTimeSec;
             building.state = 'under_construction';
@@ -1401,6 +1798,10 @@ export class Game {
             building.state = 'complete';
             building.constructionStartedAt = null;
             building.completedAt = buildingData.completedAt || Date.now();
+          }
+
+          if (buildingData.hasOperator === false) {
+            building.hasOperator = false;
           }
 
           // Restore production state

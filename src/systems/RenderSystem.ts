@@ -1002,7 +1002,7 @@ export class RenderSystem extends System {
     this.ctx.save();
 
     const isInactive = building && !building.isActive;
-    const isUnderConstruction = building && building.state === 'under_construction';
+    const isUnderConstruction = building && (building.state === 'under_construction' || building.state === 'awaiting_materials');
 
     // Apply fade effect for selected buildings
     if (isSelected && building) {
@@ -1083,8 +1083,8 @@ export class RenderSystem extends System {
       this.ctx.filter = 'none';
     }
 
-    // Construction overlay for buildings under construction
-    if (building && building.state === 'under_construction') {
+    // Construction overlay for buildings under construction or awaiting materials
+    if (building && (building.state === 'under_construction' || building.state === 'awaiting_materials')) {
       this.ctx.globalAlpha = 1;
       this.renderConstructionOverlay(building);
     }
@@ -1113,7 +1113,7 @@ export class RenderSystem extends System {
   }
 
   private getConstructionSpritePath(building: Building, renderable: Renderable): string | undefined {
-    if (building.state !== 'under_construction' || !renderable.spritePath) return renderable.spritePath;
+    if ((building.state !== 'under_construction' && building.state !== 'awaiting_materials') || !renderable.spritePath) return renderable.spritePath;
     const stages = CONSTRUCTION_SPRITES[building.buildingType];
     if (!stages || stages.length === 0) return renderable.spritePath;
     const totalFrames = stages.length + 1;

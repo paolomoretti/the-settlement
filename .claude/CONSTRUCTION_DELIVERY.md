@@ -1,168 +1,153 @@
 # Construction Material Delivery
 
-How the construction system will work when building placement requires physical delivery of boards and stones via the road network.
+How buildings are constructed: resources are physically delivered from base camp, then a builder worker constructs the building.
 
-**Status**: PLANNED (not yet implemented)
+**Status**: IMPLEMENTED
 **Last Updated**: 2026-04-19
 
 ---
 
 ## Overview
 
-Currently, placing a building instantly deducts resources from global inventory and starts a build timer. The new system replaces this with physical material delivery: players place a construction site, then workers deliver the required boards (`wood_plank`) and stones (`stone`) via roads. Construction completes once all materials arrive.
-
-This matches The Settlers II construction model where buildings are built by delivering materials to the site.
+When a building is placed, resources are deducted from base camp storage and dispatched as junction items at the base camp entrance. A builder worker (carrying a hammer) walks from base camp to the construction site. When both materials and builder arrive, construction begins. When complete, the builder walks back to base camp.
 
 ---
 
-## New Construction Flow
+## Construction Flow
 
-### Current Flow (to be replaced)
 ```
-Player places building → Resources deducted from inventory → Build timer starts → Building complete
+1. Player places building
+   → Resources deducted from base camp storage
+   → Building enters 'awaiting_materials' state (shows first construction sprite)
+   → Materials dispatched as junction items at base camp entrance
+   → Builder worker spawned at base camp, walks to site
+
+2. Road workers relay materials through road network to construction site
+   → Each material arrival calls building.deliverMaterial()
+   → Tracked in building.materialsDelivered
+
+3. When ALL materials delivered AND builder arrived at site:
+   → building.beginConstruction() starts the build timer
+   → State transitions to 'under_construction'
+
+4. Build timer completes:
+   → State transitions to 'complete'
+   → Builder walks back to base camp and is removed
+   → Production routes computed if building has inputs
 ```
 
-### New Flow
+### Example: Sawmill (cost: 2 boards)
+1. Player places sawmill → 2 wood_plank deducted from base camp
+2. 2 junction items created at base camp entrance (destination = sawmill entity)
+3. Builder spawns at base camp, walks to sawmill's adjacent road tile
+4. Road workers carry the 2 wood_plank to sawmill's entrance
+5. Both items delivered + builder arrived → construction timer starts (30 sec)
+6. Timer completes → sawmill operational, builder walks back
+
+---
+
+## Building States
+
 ```
-1. Player places building → Construction site appears (no resources deducted)
-2. Transport system creates delivery requests for each board/stone needed
-3. Road workers deliver materials one at a time via the relay chain
-4. Each delivery increments construction progress
-5. When all materials delivered → Build timer starts (construction animation)
-6. Timer completes → Building operational
+'awaiting_materials' → 'under_construction' → 'complete'
 ```
 
-### Example: Sawmill (cost: 2 boards + 2 stones)
-1. Player places sawmill → construction site sprite appears
-2. System creates 4 delivery requests: 2 × wood_plank, 2 × stone
-3. Workers deliver from nearest storage (base camp/storehouse) via road network
-4. After each delivery, construction progress updates (25% per item)
-5. After 4th delivery → build timer runs (30 seconds)
-6. Building complete and operational
+- **awaiting_materials**: Building placed, first construction sprite shown (progress 0). Waiting for materials + builder.
+- **under_construction**: Builder and materials present. Wall-clock timer running. Construction overlay with progress bar.
+- **complete**: Building operational. Builder returned to base camp.
 
 ---
 
-## Design Decisions
+## Building Component Fields
 
-### Pre-placement Check
-When the player tries to place a building, the system should:
-- **Check** that enough boards/stones exist in global inventory (across all storage buildings)
-- **Reserve** the materials so they can't be double-spent on another building
-- If materials are insufficient, show a toast: "Need X more boards / Y more stones"
+```typescript
+// Set during awaiting_materials state
+constructionMaterials: Record<string, number> | null  // Required amounts (from buildCost)
+materialsSent: Record<string, number>                  // Dispatched as junction items
+materialsDelivered: Record<string, number>             // Arrived at construction site
+builderEntityId: number | null                         // Builder worker entity
+builderArrived: boolean                                // Builder reached the site
+```
 
-### Material Reservation
-Once a building is placed:
-- Materials are **reserved** but not deducted from storage
-- Reserved materials don't count as "available" for other build requests
-- If the building is cancelled/deleted before completion, reserved materials are released
-
-### Delivery Priority
-- Construction deliveries share the road network with production transport
-- No special priority — materials wait their turn in the relay chain
-- Multiple construction sites compete for the same board/stone supply
-
-### Road Requirement
-- The construction site must be connected to the road network (via its entrance)
-- If not connected, the site stays as a placeholder until roads reach it
-- This creates a natural gameplay loop: roads first, then buildings
-
-### Construction Site Visual
-- Show the building's footprint/foundation at reduced opacity
-- Display a progress indicator showing materials received vs. needed
-- Example: "Sawmill [2/2 boards, 1/2 stones]"
-
-### Cancellation
-- Player can delete a construction site at any time
-- Materials already delivered are dropped at the site and need to be transported back to storage
-- Materials in transit continue to their destination (the construction site), then get rerouted
+All cleared when `beginConstruction()` is called.
 
 ---
 
-## Implementation Plan
+## Transport Integration
 
-### Phase 1: Building Component Changes
-- Add `constructionMaterials` field to `Building` component:
-  ```typescript
-  constructionMaterials: {
-    required: Record<string, number>;   // { wood_plank: 2, stone: 2 }
-    delivered: Record<string, number>;   // { wood_plank: 1, stone: 0 }
-  } | null;
-  ```
-- Building state flow: `awaiting_materials` → `under_construction` → `complete`
-- Construction timer only starts when all materials are delivered
-
-### Phase 2: Placement Logic Changes (Game.ts)
-- `buildGeneric()`:
-  - Remove `resourceManager.deductResources()` call
-  - Instead, set `building.constructionMaterials` from `buildCost`
-  - Building starts in `awaiting_materials` state
-  - Only board/stone costs trigger deliveries; tools are separate
-
-### Phase 3: Transport Integration
-- Create delivery requests for each unit of material needed
-- Use the existing demand-based routing: construction sites "demand" boards and stones
-- Workers deliver from nearest storage building with available materials
-- On delivery arrival, increment `constructionMaterials.delivered`
-- When `delivered >= required` for all materials → transition to `under_construction`
-
-### Phase 4: UI Updates
-- `BuildingPopover`: show material delivery progress for buildings in `awaiting_materials` state
-- Construction site rendering: show foundation/outline with progress overlay
-- Build menu: show "X boards, Y stones" cost, grey out if insufficient
-
-### Phase 5: Save/Load
-- Serialize `constructionMaterials` state
-- On load, resume delivery requests for incomplete construction sites
+- Materials are dispatched as junction items at the base camp entrance with `destinationEntityId` set to the construction site entity
+- `TransportManager.computeRoutesToBuilding()` computes BFS direction maps for construction sites (same as production buildings)
+- `recomputeTransportRoutes()` includes construction sites in its route computation
+- In `advanceTransport()`, the `to_dropoff` phase checks if the destination building is in `awaiting_materials` state and calls `building.deliverMaterial()` instead of storage deposit
 
 ---
 
-## Interaction with Existing Systems
+## Builder Worker
 
-### Transport Manager
-- Construction sites register as "demanding" buildings for wood_plank and stone
-- The existing `computeRoutesToBuilding()` handles pathfinding to construction sites
-- Materials route via the standard relay chain
-
-### Resource Manager  
-- `canAfford()` needs to account for reserved materials
-- Add `getReservedAmount(resourceType)` to track materials committed to construction
-- `getAvailableAmount()` = stored - reserved - in_transit
-
-### Production System
-- Buildings in `awaiting_materials` state are skipped by ProductionSystem
-- No change needed — the existing `building.isComplete()` check handles this
-
-### Road Segment Workers
-- No changes — workers already handle demand-based routing
-- Construction site deliveries are just another destination type
+- Regular worker entity with `carryingResource = 'hammer'` for visual
+- Spawned at base camp spawn tile, pathfinds to construction site's adjacent road tile
+- Tracked in `Game.builderWorkers` map (builderEntityId → buildingEntityId)
+- Position verified on arrival (must be at the target tile)
+- When construction completes, builder keeps hammer and walks back to base camp (`Game.returningBuilders`)
+- Removed when reaching base camp
 
 ---
 
-## Edge Cases
+## Tool Worker (Operator)
 
-- **No road connection**: Construction site placed but not connected → materials can't be delivered → site waits
-- **Storage empty**: Not enough boards/stones in any storage → deliveries stall, construction waits
-- **Building deleted mid-delivery**: Cancel pending deliveries, reroute in-transit materials to nearest storage
-- **Multiple construction sites**: Materials distributed based on which site workers reach first (no priority system initially)
-- **Road destroyed mid-delivery**: Existing stranded item recovery handles this
+After construction completes, buildings with `requiredTool` need an operator before production starts:
 
----
+1. Construction completes → `building.hasOperator = false`
+2. `updateConstructionDelivery()` spawns a tool worker at base camp carrying the required tool (e.g., saw for sawmill)
+3. Tool worker walks to the building's adjacent road tile
+4. On arrival → `building.hasOperator = true`, worker entity removed (enters building)
+5. `ProductionSystem` only runs production when `building.hasOperator` is true
 
-## Future Enhancements
+Tracked in `Game.toolWorkers` map (toolWorkerEntityId → buildingEntityId). On building deletion, in-transit tool workers are removed.
 
-- **Construction priority**: Let player set priority order for multiple construction sites
-- **Builder workers**: Dedicated builder workers with hammers who do the actual construction (visual)
-- **Construction stages**: Show visual building stages as materials arrive (foundation → walls → roof)
+Buildings without `requiredTool` (huts, storehouses, etc.) have `hasOperator = true` by default.
 
 ---
 
-## File Map (planned changes)
+## Cancellation / Deletion
+
+When a building in `awaiting_materials` is deleted:
+1. **Undispatched materials** (required - sent) refunded to base camp storage
+2. **Delivered materials** (materialsDelivered) refunded to base camp storage
+3. **In-transit materials** (junction items) are orphaned — workers reroute them back to base camp automatically
+4. Builder entity removed immediately
+5. Tool worker removed if in transit
+
+---
+
+## Road Connectivity
+
+- Builder only spawns when a valid path exists from base camp to the construction site
+- If no road connection, `updateConstructionDelivery()` retries each frame
+- Junction items at base camp entrance wait until routes are computed (items with no valid direction are skipped by workers)
+- When road is built → `recomputeTransportRoutes()` adds the construction site → items start flowing
+
+---
+
+## Disconnected Road Worker Fix
+
+Road workers are only spawned on road segments connected to base camp. `spawnSegmentWorker()` checks `getBaseCampConnectedRoads()` and skips segments with no connected tiles.
+
+---
+
+## Save/Load
+
+- `awaiting_materials` state saved with: constructionMaterials, materialsSent, materialsDelivered, builderArrived
+- Builder entity not saved (re-spawned by `updateConstructionDelivery()` on load)
+- Junction items saved/loaded via TransportManager serialization
+
+---
+
+## File Map
 
 | File | Change |
 |------|--------|
-| `src/components/Building.ts` | Add `constructionMaterials` field, `awaiting_materials` state |
-| `src/core/Game.ts` | Update `buildGeneric()`, add construction delivery logic |
-| `src/economics/ResourceManager.ts` | Add material reservation tracking |
-| `src/ui/BuildingPopover.ts` | Show material delivery progress |
-| `src/systems/RenderSystem.ts` | Render construction site differently |
-| `src/data/buildings.json` | Already done — costs are in boards + stones |
+| `src/components/Building.ts` | `awaiting_materials` state, material tracking fields, builder tracking |
+| `src/core/Game.ts` | `buildGeneric()` dispatch, `updateConstructionDelivery()`, builder spawn/return, `deleteSelectedEntity()` refund |
+| `src/entities/EntityFactory.ts` | Don't auto-start construction (store buildTimeSec only) |
+| `src/systems/RenderSystem.ts` | Show construction sprite for `awaiting_materials` state |

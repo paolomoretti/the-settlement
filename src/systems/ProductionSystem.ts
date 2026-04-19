@@ -20,6 +20,7 @@ export class ProductionSystem extends System {
       if (!building || !production) continue;
 
       if (!building.isComplete()) continue;
+      if (!building.hasOperator) continue;
 
       if (!building.isActive) {
         if (production.status !== 'stopped_no_road') {

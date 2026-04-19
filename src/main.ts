@@ -14,6 +14,7 @@ let autoSaveInterval: ReturnType<typeof setInterval> | null = null;
 
 const SAVE_SLOT_PREFIX = 'settler_save_';
 const LAST_SAVE_KEY = 'settler_last_save_slot';
+const OPTIONS_KEY = 'settler_options';
 
 window.addEventListener('DOMContentLoaded', () => {
   const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
@@ -396,12 +397,43 @@ function setupGameUI(game: Game): void {
   });
 }
 
+function loadOptions(): { autosave: boolean; debugInfo: boolean; buildingLabels: boolean; navigator: boolean } {
+  const defaults = { autosave: false, debugInfo: true, buildingLabels: true, navigator: true };
+  try {
+    const raw = localStorage.getItem(OPTIONS_KEY);
+    if (raw) return { ...defaults, ...JSON.parse(raw) };
+  } catch {}
+  return defaults;
+}
+
+function saveOptions(opts: { autosave: boolean; debugInfo: boolean; buildingLabels: boolean; navigator: boolean }): void {
+  localStorage.setItem(OPTIONS_KEY, JSON.stringify(opts));
+}
+
 function setupOptionsPanel(game: Game): void {
   const panel = document.getElementById('options-panel')!;
   const autosaveToggle = document.getElementById('opt-autosave') as HTMLInputElement;
   const debugToggle = document.getElementById('opt-debug-info') as HTMLInputElement;
   const buildingLabelsToggle = document.getElementById('opt-building-labels') as HTMLInputElement;
   const navigatorToggle = document.getElementById('opt-navigator') as HTMLInputElement;
+
+  const opts = loadOptions();
+  autosaveToggle.checked = opts.autosave;
+  debugToggle.checked = opts.debugInfo;
+  buildingLabelsToggle.checked = opts.buildingLabels;
+  navigatorToggle.checked = opts.navigator;
+
+  if (opts.autosave) startAutoSave();
+  if (!opts.debugInfo) document.getElementById('debug-info')!.style.display = 'none';
+  if (!opts.buildingLabels) game.renderSystem.showBuildingLabels = false;
+  if (!opts.navigator) document.getElementById('minimap')!.style.display = 'none';
+
+  const persistAll = () => saveOptions({
+    autosave: autosaveToggle.checked,
+    debugInfo: debugToggle.checked,
+    buildingLabels: buildingLabelsToggle.checked,
+    navigator: navigatorToggle.checked,
+  });
 
   document.getElementById('btn-options')?.addEventListener('click', () => {
     panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
@@ -421,20 +453,24 @@ function setupOptionsPanel(game: Game): void {
     } else {
       stopAutoSave();
     }
+    persistAll();
   });
 
   debugToggle.addEventListener('change', () => {
     const debugInfo = document.getElementById('debug-info');
     if (debugInfo) debugInfo.style.display = debugToggle.checked ? '' : 'none';
+    persistAll();
   });
 
   buildingLabelsToggle.addEventListener('change', () => {
     game.renderSystem.showBuildingLabels = buildingLabelsToggle.checked;
+    persistAll();
   });
 
   navigatorToggle.addEventListener('change', () => {
     const minimap = document.getElementById('minimap');
     if (minimap) minimap.style.display = navigatorToggle.checked ? '' : 'none';
+    persistAll();
   });
 }
 

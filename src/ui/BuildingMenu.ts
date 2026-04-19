@@ -166,6 +166,7 @@ export class BuildingMenu {
           <span style="color: ${hasEnough ? '#4caf50' : '#f44336'}">
             ${hasEnough ? '✓' : '✗'}
           </span>
+          <img src="/assets/resources/${resourceId}.png" class="resource-icon" onerror="this.style.display='none'">
           <span>${resource.name}: ${amount}</span>
           ${!hasEnough ? `<span style="color: #f44336; font-size: 10px;"> (need ${amount - available})</span>` : ''}
         `;

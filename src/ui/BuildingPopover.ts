@@ -135,7 +135,7 @@ export class BuildingPopover {
       .filter(([, amt]) => amt > 0)
       .map(([id, amt]) => {
         const res = dataManager.getResource(id as any);
-        return `${amt} ${res?.name || id}`;
+        return `<img src="/assets/resources/${id}.png" class="resource-icon" onerror="this.style.display='none'">${amt} ${res?.name || id}`;
       })
       .join(', ');
 

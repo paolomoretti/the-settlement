@@ -5,6 +5,7 @@ import { BuildingMenu } from './ui/BuildingMenu';
 import { BuildingPopover } from './ui/BuildingPopover';
 import { setupKeyboardShortcuts } from './input/KeyboardShortcuts';
 import { showToast, setupToastListener } from './ui/Toast';
+import { audioManager } from './audio/AudioManager';
 
 let game: Game | null = null;
 let buildingMenu: BuildingMenu | null = null;
@@ -397,8 +398,8 @@ function setupGameUI(game: Game): void {
   });
 }
 
-function loadOptions(): { autosave: boolean; debugInfo: boolean; buildingLabels: boolean; navigator: boolean } {
-  const defaults = { autosave: false, debugInfo: true, buildingLabels: true, navigator: true };
+function loadOptions(): { autosave: boolean; debugInfo: boolean; buildingLabels: boolean; navigator: boolean; soundEffects: boolean } {
+  const defaults = { autosave: false, debugInfo: true, buildingLabels: true, navigator: true, soundEffects: true };
   try {
     const raw = localStorage.getItem(OPTIONS_KEY);
     if (raw) return { ...defaults, ...JSON.parse(raw) };
@@ -406,7 +407,7 @@ function loadOptions(): { autosave: boolean; debugInfo: boolean; buildingLabels:
   return defaults;
 }
 
-function saveOptions(opts: { autosave: boolean; debugInfo: boolean; buildingLabels: boolean; navigator: boolean }): void {
+function saveOptions(opts: { autosave: boolean; debugInfo: boolean; buildingLabels: boolean; navigator: boolean; soundEffects: boolean }): void {
   localStorage.setItem(OPTIONS_KEY, JSON.stringify(opts));
 }
 
@@ -416,23 +417,27 @@ function setupOptionsPanel(game: Game): void {
   const debugToggle = document.getElementById('opt-debug-info') as HTMLInputElement;
   const buildingLabelsToggle = document.getElementById('opt-building-labels') as HTMLInputElement;
   const navigatorToggle = document.getElementById('opt-navigator') as HTMLInputElement;
+  const soundEffectsToggle = document.getElementById('opt-sound-effects') as HTMLInputElement;
 
   const opts = loadOptions();
   autosaveToggle.checked = opts.autosave;
   debugToggle.checked = opts.debugInfo;
   buildingLabelsToggle.checked = opts.buildingLabels;
   navigatorToggle.checked = opts.navigator;
+  soundEffectsToggle.checked = opts.soundEffects;
 
   if (opts.autosave) startAutoSave();
   if (!opts.debugInfo) document.getElementById('debug-info')!.style.display = 'none';
   if (!opts.buildingLabels) game.renderSystem.showBuildingLabels = false;
   if (!opts.navigator) document.getElementById('minimap')!.style.display = 'none';
+  if (!opts.soundEffects) audioManager.toggle();
 
   const persistAll = () => saveOptions({
     autosave: autosaveToggle.checked,
     debugInfo: debugToggle.checked,
     buildingLabels: buildingLabelsToggle.checked,
     navigator: navigatorToggle.checked,
+    soundEffects: soundEffectsToggle.checked,
   });
 
   document.getElementById('btn-options')?.addEventListener('click', () => {
@@ -470,6 +475,11 @@ function setupOptionsPanel(game: Game): void {
   navigatorToggle.addEventListener('change', () => {
     const minimap = document.getElementById('minimap');
     if (minimap) minimap.style.display = navigatorToggle.checked ? '' : 'none';
+    persistAll();
+  });
+
+  soundEffectsToggle.addEventListener('change', () => {
+    audioManager.toggle();
     persistAll();
   });
 }

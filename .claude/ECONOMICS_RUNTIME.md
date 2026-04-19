@@ -2,7 +2,7 @@
 
 How production, storage, and transport actually work at runtime. This is the **implemented** system — for design goals and balance theory, see [ECONOMY_DESIGN.md](ECONOMY_DESIGN.md).
 
-**Last Updated**: 2026-04-18
+**Last Updated**: 2026-04-19
 
 ---
 
@@ -100,61 +100,60 @@ When a player builds something, costs are deducted from Storage components via `
 
 ---
 
-## Transport System
+## Transport Relay Chain
 
-### The Vision (Settlers II Style)
+Settlers II style: road workers relay items from production buildings to base camp through the road segment graph. Each worker handles exactly one segment — picking up from the "away from base camp" end and delivering to the "toward base camp" end.
 
-This is how the full transport system is designed to work:
+Full details in [TRANSPORT.md](TRANSPORT.md) § Transport Relay Chain.
 
-1. Every stretch of road has a **road worker** standing at its center
-2. When a production building produces an item, a **transport request** is created
-3. The road worker connected to that building walks to it, picks up the item, and carries it
-4. The worker brings the item to the nearest connected warehouse or base camp
-5. The item is deposited into the Storage component of the destination building
-6. The worker returns to their road position
+### How It Works
 
-**Currently implemented**: The data layer (transport requests, queue management). **Not yet implemented**: The actual road workers and their movement/pickup behavior.
+1. Building produces an item → goes into `Production.outputBuffer`
+2. The segment worker nearest to that building notices items at its pickup endpoint
+3. Worker walks to the pickup endpoint, takes 1 item from the building's output buffer (buffer decrements)
+4. Worker carries the item to the dropoff endpoint (toward base camp), arms raised, item visible above head
+5. At the dropoff:
+   - If directly connected to base camp → item goes into base camp `Storage` (global inventory increases)
+   - Otherwise → item is placed as a **junction item** on the ground for the next segment's worker
+6. Worker walks back to segment center, checks for more items
 
-### Transport Queue
+### Junction Items
 
-`TransportQueue` (`src/economics/TransportRequest.ts`) manages pickup requests:
+Items waiting at road junctions for the next worker in the relay chain. Rendered as small crates on the road tile (up to 5 visible per junction). FIFO order — first item dropped is first picked up.
 
-Each `TransportRequest` has:
-- **id**: unique identifier
-- **sourceEntityId**: the building that produced the item
-- **destinationEntityId**: target storage building (null until assigned)
-- **resourceType**: what resource to carry
-- **amount**: how many items
-- **status**: `waiting` → `assigned` → `in_transit` → `delivered`
-- **assignedWorkerId**: which road worker is handling this (null until assigned)
+Managed by `TransportManager` (`src/economics/TransportManager.ts`).
+
+### Route Computation
+
+`TransportManager.computeRoutes()` runs BFS from the base camp through the segment graph to determine "toward base camp" direction for every reachable segment. Recomputed on any road/segment change.
 
 ### Transport Lifecycle
 
 ```
 Building produces item
-  → TransportRequest created (status: waiting)
-  → Event: transport:pickup_available
+  → Item enters Production.outputBuffer
 
-Road worker picks up request
-  → transportQueue.assignWorker(requestId, workerId, destinationId)
-  → status: assigned
+Segment worker checks pickup endpoint (every frame, when idle)
+  → Sees item in building buffer OR junction items
+  → Creates TransportTask, walks to pickup
 
-Worker picks up item from building
-  → production.removeFromBuffer(resource, amount)
-  → transportQueue.markInTransit(requestId)
-  → status: in_transit
+Worker arrives at pickup
+  → production.removeFromBuffer(resource, 1)  (buffer decrements)
+  → worker.pickUpResource(resource)  (carrying state)
 
-Worker delivers to storage
-  → resourceManager.completeDelivery(requestId, resource, amount)
-  → storage.addItem(resource, amount)
-  → status: delivered (removed from queue)
+Worker arrives at dropoff
+  → If base camp: storage.addItem(resource, 1)  (inventory increases)
+  → If junction: transportManager.addJunctionItem(x, y, resource)
+  → worker.dropResource()  (idle state)
+  → Walk back to center
 ```
 
-### Cleanup
+### Edge Cases
 
-- When a building is deleted: `resourceManager.onBuildingDestroyed(entityId)` cancels all its transport requests
-- When a worker is freed: `transportQueue.cancelByWorker(workerId)` resets their assigned requests back to `waiting`
-- On game reset: `resourceManager.reset()` clears the entire queue
+- **Segment recalc mid-transport**: all active transport tasks cancelled, carried items dropped as junction items at current position
+- **Worker freed**: carried items dropped as junction items before walking back
+- **Item gone before pickup**: worker returns to center idle
+- **Building destroyed**: `resourceManager.onBuildingDestroyed(entityId)` cleans up
 
 ---
 
@@ -273,10 +272,11 @@ Old saves (before the economics system) have `inventory` at the top level instea
 
 ### System Order (every frame)
 
-1. **ProductionSystem** — advance timers, produce items, create transport requests
+1. **ProductionSystem** — advance timers, produce items
 2. **MovementSystem** — move workers along paths
-3. **RenderSystem** — draw everything
-4. After systems: **syncInventory()** — recalculate `game.inventory` from Storage components
+3. **RenderSystem** — draw everything (including junction items on roads, carrying visual on workers)
+4. After systems: **updateTransport()** — check idle workers for items, handle pickup/carry/dropoff phase transitions
+5. After transport: **syncInventory()** — recalculate `game.inventory` from Storage components
 
 ### Component Attachment (EntityFactory)
 

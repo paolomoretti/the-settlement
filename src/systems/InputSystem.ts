@@ -165,6 +165,7 @@ export class InputSystem {
     this.isDragging = false;
     this.dragStartGridPos = null;
     this.lastRoadBuildPos = null;
+    eventBus.emit('road:drag_end');
   }
 
   private handleWheel(e: WheelEvent): void {

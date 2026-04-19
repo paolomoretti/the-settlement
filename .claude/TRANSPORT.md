@@ -2,7 +2,7 @@
 
 How road segments are computed and workers are assigned to them. Settlers II style: every segment of road gets exactly one worker standing at its center.
 
-**Last Updated**: 2026-04-18
+**Last Updated**: 2026-04-19
 
 ---
 
@@ -121,7 +121,7 @@ When a building requires a road connection but isn't connected, a **road stub** 
 
 ## Road Placement Rules
 
-Roads must be placed **adjacent (4-directional) to an existing road tile** (including building entrance tiles, which have `hasRoad = true`). This enforces that all roads grow outward from the base camp — no disconnected roads. The base camp follows the same entrance system as all other buildings; roads can only connect to it at its entrance tile, not anywhere around its perimeter.
+Roads can be placed anywhere on walkable, unoccupied tiles. They don't need to be adjacent to existing roads. Drag-mode locking: the first tile in a drag determines whether the entire drag creates or deletes roads.
 
 New games start with **zero roads**. The player builds the first road from the base camp.
 
@@ -152,36 +152,87 @@ New games start with **zero roads**. The player builds the first road from the b
 | Method | Purpose |
 |--------|---------|
 | `spawnSegmentWorker(segment)` | Create worker entity, pathfind to center |
-| `freeSegmentWorker(workerId)` | Pathfind worker back to base camp, remove on arrival |
+| `freeSegmentWorker(workerId)` | Drop carried items, pathfind worker back to base camp, remove on arrival |
 | `rerouteReturningWorkers()` | Re-pathfind all returning workers (called on road deletion) |
 | `moveSegmentWorker(workerId, segment)` | Pathfind existing worker to new center |
-| `isRoadPlacementValid(x, y)` | Check adjacency to existing road or base camp |
 | `getAvailablePopulation()` | Population minus road workers and returning workers |
 | `occupyBuildingTiles(...)` | Occupy footprint tiles, create entrance road |
 | `hasBuildingConnectedRoad(...)` | Check entrance tile connectivity (or adjacent for 1×1) |
+| `updateTransport()` | Per-frame: check idle workers for items, advance transport phases |
+| `tryStartTransport(...)` | Check pickup endpoint for items, create TransportTask |
+| `advanceTransport(...)` | Handle to_pickup → to_dropoff → to_center transitions |
+| `getSegmentPath(...)` | Extract sub-path from segment tile list (no A*) |
+| `recomputeTransportRoutes()` | Cancel tasks + recompute BFS after segment changes |
 
 ---
 
 ## Save/Load
 
-Segment data is saved as `roadSegments` in the save file. On load:
+Segment data is saved as `roadSegments` in the save file. Junction items are saved as `transport`. On load:
 1. Road tile set is rebuilt from the map
 2. Segment assignments are restored
 3. Workers are spawned directly at segment centers (no walking animation on load)
+4. Junction items are restored from `transport` data
+5. Transport routes are recomputed via BFS
 
 Old saves without `roadSegments` trigger a full recalculation from the road tile data.
 
 ---
 
-## Future: Item Transport
+## Transport Relay Chain
 
-Road workers will eventually carry items between production buildings and storage:
+Road workers relay items from production buildings to base camp through the segment graph. Each worker handles one segment — they pick up items at their "away from base camp" endpoint and drop them off at their "toward base camp" endpoint.
 
-1. Production building fills its output buffer → creates a `TransportRequest` (already implemented in economics system)
-2. The road worker on the segment connected to that building picks up the request
-3. Worker walks to the building, picks up the item
-4. Worker carries item to the nearest warehouse/base camp
-5. Item is deposited into the Storage component
-6. Worker returns to their segment center
+### Route Computation
 
-The transport request queue (`src/economics/TransportRequest.ts`) and ResourceManager delivery methods are already implemented — they just need to be wired to the road worker behavior.
+`TransportManager.computeRoutes()` runs a BFS from the base camp through the segment graph:
+
+1. Find all segments with an endpoint adjacent to base camp → those endpoints point "toward base camp" (index stored in `baseCampDirection`)
+2. BFS outward through shared junction endpoints to determine direction for every reachable segment
+3. Each segment gets a **pickup endpoint** (away from base camp) and a **dropoff endpoint** (toward base camp)
+
+Routes are recomputed whenever road segments change (road placed/deleted, building placed/deleted).
+
+### Worker State Machine
+
+Each segment worker cycles through transport phases:
+
+1. **Idle at center** → checks pickup endpoint for items (building output buffer or junction items)
+2. **to_pickup** → walks along segment tiles to pickup endpoint
+3. **Pickup** → takes 1 item from building's `Production.outputBuffer` (decrements buffer) or from junction items
+4. **to_dropoff** → walks along segment tiles to dropoff endpoint (carrying the item visually)
+5. **Dropoff** → if dropoff is base camp, adds to `Storage`; otherwise adds to junction items for next worker
+6. **to_center** → walks back to segment center, then returns to idle
+
+Workers walk along the segment's tile list (not A* pathfinding), which is a direct ordered path between endpoints.
+
+### Junction Items
+
+Items waiting at segment endpoints (junctions) for the next worker to pick up. Managed by `TransportManager`:
+
+- `addJunctionItem(x, y, resourceType)` — place item at junction
+- `takeJunctionItem(x, y)` — next worker picks it up (FIFO)
+- `peekJunctionItem(x, y)` — check without taking
+- Junction items are serialized/deserialized for save/load
+
+### Visual Rendering
+
+**Carrying**: When a worker carries an item, their arms are raised and a small colored box (or resource sprite if available at `/assets/resources/{type}.png`) is rendered above their head.
+
+**Junction items**: Items on the ground at junctions are rendered as small 3D crates (or resource sprites), offset so up to 5 are visible per junction. Rendered after roads but before entities so workers walk over them.
+
+### Edge Cases
+
+- **Segment recalc mid-transport**: all active transport tasks are cancelled, carried items are dropped as junction items at the worker's current position
+- **Worker freed**: carried items dropped as junction items before worker walks back to base camp
+- **Item consumed before pickup**: worker returns to center idle
+- **Single-tile segment**: worker skips walking phases (already at pickup/dropoff/center)
+
+### File Map
+
+| File | Purpose |
+|------|---------|
+| `src/economics/TransportManager.ts` | Junction items, route computation (BFS), pickup/dropoff endpoint helpers |
+| `src/core/Game.ts` | Transport update loop, worker state machine, integration with Production/Storage |
+| `src/components/Worker.ts` | `TransportTask` interface, `transportTask` field, `carryingResource` state |
+| `src/systems/RenderSystem.ts` | Carrying visual (raised arms, item on head) |

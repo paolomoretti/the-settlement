@@ -21,6 +21,7 @@ import { Storage } from '@/components/Storage';
 import { dataManager } from '@/data/DataManager';
 import { resourceManager } from '@/economics/ResourceManager';
 import { roadSegmentManager, RoadSegment } from '@/economics/RoadSegmentManager';
+import { transportManager } from '@/economics/TransportManager';
 import { Inventory, BuildingType } from '@/types/GameData';
 
 // Entity factories
@@ -61,6 +62,7 @@ export class Game {
   };
 
   private returningWorkers = new Set<number>();
+  private roadDragMode: 'create' | 'delete' | null = null;
 
   constructor(canvas: HTMLCanvasElement, skipInit = false) {
     this.canvas = canvas;
@@ -100,6 +102,7 @@ export class Game {
   private setupEventListeners(): void {
     // Building events
     eventBus.on('build:road', (data) => this.buildRoad(data.x, data.y));
+    eventBus.on('road:drag_end', () => { this.roadDragMode = null; });
 
     // Generic building handler for all building types (derived from data)
     for (const building of dataManager.getAllBuildings()) {
@@ -190,7 +193,32 @@ export class Game {
     this.segmentRecalcTimer = setTimeout(() => {
       this.segmentRecalcTimer = null;
       roadSegmentManager.recalculate(this.tileMap);
+      this.recomputeTransportRoutes();
     }, 200);
+  }
+
+  private recomputeTransportRoutes(): void {
+    if (!this.baseCampEntity) return;
+    this.cancelAllTransportTasks();
+    transportManager.computeRoutes(roadSegmentManager.getSegments(), this.baseCampEntity.id);
+  }
+
+  private cancelAllTransportTasks(): void {
+    for (const segment of roadSegmentManager.getSegments()) {
+      if (segment.assignedWorkerId === null) continue;
+      const entity = this.entities.find(e => e.id === segment.assignedWorkerId && e.active);
+      if (!entity) continue;
+      const worker = entity.getComponent(Worker);
+      if (!worker || !worker.transportTask) continue;
+      if (worker.carryingResource) {
+        const p = entity.getComponent(Position);
+        if (p) {
+          transportManager.addJunctionItem(Math.floor(p.x), Math.floor(p.y), worker.carryingResource);
+        }
+        worker.carryingResource = undefined;
+      }
+      worker.transportTask = null;
+    }
   }
 
   private buildRoad(x: number, y: number): void {
@@ -201,37 +229,30 @@ export class Game {
     const tile = this.tileMap.getTile(x, y);
     if (!tile) return;
 
-    // Toggle: remove existing road (but not entrance roads inside buildings)
-    if (tile.hasRoad && !tile.isOccupied()) {
+    const isExistingRoad = tile.hasRoad && !tile.isOccupied();
+
+    // On first tile of a drag, lock the mode based on what's under the cursor
+    if (this.roadDragMode === null) {
+      this.roadDragMode = isExistingRoad ? 'delete' : 'create';
+    }
+
+    if (this.roadDragMode === 'delete') {
+      if (!isExistingRoad) return;
       tile.hasRoad = false;
       roadSegmentManager.removeRoad(x, y);
       this.scheduleSegmentRecalc();
       this.updateBuildingRoadConnections();
       this.rerouteReturningWorkers();
-      return;
-    }
-
-    if (!this.isRoadPlacementValid(x, y)) {
-      return;
-    }
-
-    if (this.tileMap.buildRoad(x, y)) {
-      audioManager.playSound('build_placed');
-      roadSegmentManager.addRoad(x, y);
-      this.scheduleSegmentRecalc();
-      this.updateBuildingRoadConnections();
+    } else {
+      if (this.tileMap.buildRoad(x, y)) {
+        audioManager.playSound('build_placed');
+        roadSegmentManager.addRoad(x, y);
+        this.scheduleSegmentRecalc();
+        this.updateBuildingRoadConnections();
+      }
     }
   }
 
-  private isRoadPlacementValid(x: number, y: number): boolean {
-    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-    for (const [dx, dy] of dirs) {
-      const tile = this.tileMap.getTile(x + dx, y + dy);
-      if (!tile) continue;
-      if (tile.hasRoad) return true;
-    }
-    return false;
-  }
 
   private getBaseCampConnectedRoads(): Set<string> {
     const connected = new Set<string>();
@@ -355,6 +376,7 @@ export class Game {
     }
     if (roadsRemoved || entrance) {
       roadSegmentManager.recalculate(this.tileMap);
+      this.recomputeTransportRoutes();
     }
   }
 
@@ -508,6 +530,18 @@ export class Game {
     const entity = this.entities.find(e => e.id === workerId && e.active);
     if (!entity) return;
 
+    const workerComp = entity.getComponent(Worker);
+    if (workerComp?.transportTask) {
+      if (workerComp.carryingResource) {
+        const p = entity.getComponent(Position);
+        if (p) {
+          transportManager.addJunctionItem(Math.floor(p.x), Math.floor(p.y), workerComp.carryingResource);
+        }
+        workerComp.carryingResource = undefined;
+      }
+      workerComp.transportTask = null;
+    }
+
     const pos = entity.getComponent(Position);
     if (!pos) { this.removeEntity(entity); return; }
 
@@ -591,6 +625,164 @@ export class Game {
     } else {
       pos.set(center.x, center.y);
     }
+  }
+
+  private updateTransport(): void {
+    const segments = roadSegmentManager.getSegments();
+    for (const segment of segments) {
+      if (segment.assignedWorkerId === null) continue;
+      const entity = this.entities.find(e => e.id === segment.assignedWorkerId && e.active);
+      if (!entity) continue;
+      const worker = entity.getComponent(Worker);
+      const movable = entity.getComponent(Movable);
+      const pos = entity.getComponent(Position);
+      if (!worker || !movable || !pos) continue;
+      if (movable.isMoving) continue;
+      if (this.returningWorkers.has(entity.id)) continue;
+      if (!worker.transportTask) {
+        this.tryStartTransport(segment, worker, movable, pos);
+      } else {
+        this.advanceTransport(segment, worker, movable, pos);
+      }
+    }
+  }
+
+  private tryStartTransport(segment: RoadSegment, worker: Worker, movable: Movable, pos: Position): void {
+    const pickupEp = transportManager.getPickupEndpoint(segment);
+    if (!pickupEp) return;
+    let resourceType: string | null = null;
+    let sourceEntityId: number | null = null;
+    if (pickupEp.type === 'building' && pickupEp.entityId != null) {
+      const bldgEntity = this.entities.find(e => e.id === pickupEp.entityId && e.active);
+      if (bldgEntity) {
+        const production = bldgEntity.getComponent(Production);
+        if (production) {
+          for (const [res, amount] of Object.entries(production.outputBuffer)) {
+            if (amount > 0) {
+              resourceType = res;
+              sourceEntityId = pickupEp.entityId;
+              break;
+            }
+          }
+        }
+      }
+    }
+    if (!resourceType && transportManager.hasJunctionItems(pickupEp.x, pickupEp.y)) {
+      const item = transportManager.peekJunctionItem(pickupEp.x, pickupEp.y);
+      if (item) {
+        resourceType = item.resourceType;
+      }
+    }
+    if (!resourceType) return;
+    const dropoffEp = transportManager.getDropoffEndpoint(segment);
+    if (!dropoffEp) return;
+    worker.transportTask = {
+      phase: 'to_pickup',
+      pickupPos: { x: pickupEp.x, y: pickupEp.y },
+      dropoffPos: { x: dropoffEp.x, y: dropoffEp.y },
+      resourceType,
+      sourceEntityId,
+      destEntityId: dropoffEp.entityId ?? null,
+    };
+    const path = this.getSegmentPath(segment, pos, pickupEp.x, pickupEp.y);
+    if (path.length > 0) {
+      movable.setPath(path);
+      worker.setState('walking');
+    }
+  }
+
+  private advanceTransport(segment: RoadSegment, worker: Worker, movable: Movable, pos: Position): void {
+    const task = worker.transportTask!;
+    switch (task.phase) {
+      case 'to_pickup': {
+        let taken = false;
+        if (task.sourceEntityId != null) {
+          const bldgEntity = this.entities.find(e => e.id === task.sourceEntityId && e.active);
+          if (bldgEntity) {
+            const production = bldgEntity.getComponent(Production);
+            if (production && production.removeFromBuffer(task.resourceType, 1) > 0) {
+              worker.pickUpResource(task.resourceType);
+              taken = true;
+            }
+          }
+        } else {
+          const item = transportManager.takeJunctionItem(task.pickupPos.x, task.pickupPos.y);
+          if (item) {
+            worker.pickUpResource(item.resourceType);
+            task.resourceType = item.resourceType;
+            taken = true;
+          }
+        }
+        if (!taken) {
+          worker.transportTask = null;
+          worker.setState('idle');
+          this.walkWorkerToCenter(segment, movable, pos, worker);
+          return;
+        }
+        task.phase = 'to_dropoff';
+        const path = this.getSegmentPath(segment, pos, task.dropoffPos.x, task.dropoffPos.y);
+        if (path.length > 0) {
+          movable.setPath(path);
+          worker.setState('carrying');
+        }
+        break;
+      }
+      case 'to_dropoff': {
+        const res = worker.carryingResource;
+        if (!res) {
+          worker.transportTask = null;
+          worker.setState('idle');
+          this.walkWorkerToCenter(segment, movable, pos, worker);
+          return;
+        }
+        if (task.destEntityId != null && task.destEntityId === this.baseCampEntity?.id) {
+          const storage = this.baseCampEntity!.getComponent(Storage);
+          if (storage) storage.addItem(res, 1);
+        } else {
+          transportManager.addJunctionItem(task.dropoffPos.x, task.dropoffPos.y, res);
+        }
+        worker.dropResource();
+        task.phase = 'to_center';
+        this.walkWorkerToCenter(segment, movable, pos, worker);
+        break;
+      }
+      case 'to_center': {
+        worker.transportTask = null;
+        worker.setState('idle');
+        break;
+      }
+    }
+  }
+
+  private walkWorkerToCenter(segment: RoadSegment, movable: Movable, pos: Position, worker: Worker): void {
+    const center = roadSegmentManager.getCenterTile(segment);
+    const path = this.getSegmentPath(segment, pos, center.x, center.y);
+    if (path.length > 0) {
+      movable.setPath(path);
+      worker.setState('walking');
+    }
+  }
+
+  private getSegmentPath(segment: RoadSegment, fromPos: Position, toX: number, toY: number): Position[] {
+    const tiles = segment.tiles;
+    const fromX = Math.floor(fromPos.x);
+    const fromY = Math.floor(fromPos.y);
+    let fromIdx = tiles.findIndex(t => t.x === fromX && t.y === fromY);
+    const toIdx = tiles.findIndex(t => t.x === toX && t.y === toY);
+    if (fromIdx === -1) {
+      let minDist = Infinity;
+      tiles.forEach((t, i) => {
+        const d = Math.abs(t.x - fromX) + Math.abs(t.y - fromY);
+        if (d < minDist) { minDist = d; fromIdx = i; }
+      });
+    }
+    if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return [];
+    const path: Position[] = [];
+    const step = fromIdx < toIdx ? 1 : -1;
+    for (let i = fromIdx + step; step > 0 ? i <= toIdx : i >= toIdx; i += step) {
+      path.push(new Position(tiles[i].x, tiles[i].y));
+    }
+    return path;
   }
 
   addEntity(entity: Entity): void {
@@ -687,6 +879,9 @@ export class Game {
 
     // Update all systems
     this.systems.forEach(system => system.update(deltaTime));
+
+    // Update transport relay chain
+    this.updateTransport();
 
     // Keep inventory in sync with storage components
     this.syncInventory();
@@ -840,6 +1035,7 @@ export class Game {
       this.syncInventory();
       this.updateSelectionUI();
       roadSegmentManager.recalculate(this.tileMap);
+      this.recomputeTransportRoutes();
       this.updateBuildingRoadConnections();
     }
   }
@@ -976,6 +1172,7 @@ export class Game {
         return data;
       }),
       transportQueue: resourceManager.serialize(),
+      transport: transportManager.serialize(),
       roadSegments: roadSegmentManager.serialize(),
       inventory: this.inventory,
       population: this.population,
@@ -990,6 +1187,7 @@ export class Game {
     this.systems.forEach(system => system.cleanup());
     resourceManager.reset();
     roadSegmentManager.reset();
+    transportManager.reset();
 
     this.tileMap = new TileMap(1000, 1000);
     this.renderSystem.updateTileMap(this.tileMap);
@@ -1076,6 +1274,11 @@ export class Game {
         resourceManager.deserialize(saveData.transportQueue);
       }
 
+      // Restore junction items
+      if (saveData.transport) {
+        transportManager.deserialize(saveData.transport);
+      }
+
       this.syncInventory();
 
       // Rebuild road segments and spawn workers
@@ -1097,6 +1300,10 @@ export class Game {
       }
 
       this.updateBuildingRoadConnections();
+
+      if (this.baseCampEntity) {
+        transportManager.computeRoutes(roadSegmentManager.getSegments(), this.baseCampEntity.id);
+      }
 
       if (saveData.camera) {
         this.renderSystem.setCamera(saveData.camera);

@@ -485,7 +485,7 @@ function showInventoryPanel(game: Game): void {
         const item = document.createElement('div');
         item.className = 'inventory-item';
         item.innerHTML = `
-          <span class="inventory-item-name">${resource.name}</span>
+          <span class="inventory-item-name"><img src="/assets/resources/${resource.id}.png" class="resource-icon" onerror="this.style.display='none'">${resource.name}</span>
           <span class="inventory-item-count">${count}</span>
         `;
         inventoryList.appendChild(item);

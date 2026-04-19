@@ -613,13 +613,59 @@ The procedural placeholders use seeded hash values per tile for size, position o
 
 ---
 
+## Integration Guide — Adding a Resource Sprite
+
+When the user provides a resource sprite image, follow these steps. **Only one step is needed — save the file. No code changes required.**
+
+### Step 1: Save the image to `assets/resources/`
+
+The filename **must** match the resource's id (from `src/data/resources.json` / `src/types/GameData.ts`).
+
+```
+assets/resources/<resourceId>.png
+```
+
+That's it. The icon will automatically appear in:
+- **Inventory panel** — before the resource name
+- **Building production bubble** — the small pill above buildings showing buffered output
+- **Building popover** — the detailed buffer breakdown when clicking a building
+
+All three locations use the same path pattern `/assets/resources/{resourceId}.png` and gracefully hide the icon if the file doesn't exist.
+
+### Resource id reference
+
+**Raw Materials:** `wood_log`, `stone`, `coal`, `iron_ore`, `gold_ore`, `granite`
+
+**Refined Materials:** `wood_plank`, `iron_bar`, `gold_bar`
+
+**Food:** `grain`, `flour`, `bread`, `water`, `fish`, `meat`
+
+**Tools:** `hammer`, `axe`, `saw`, `pickaxe`, `shovel`, `fishing_rod`, `scythe`
+
+**Weapons:** `sword`, `shield`, `bow`
+
+### Sprite image requirements
+
+- **Format:** PNG with transparent background
+- **Size:** 96x96 pixels (recommended). The icon is displayed at 20x20 in the UI panels and 14x14 in production bubbles, so it gets scaled down. 96x96 gives clean downscaling.
+- **Style:** Hand-painted, slightly cartoonish, Settlers II aesthetic
+- **Rendering:** `image-rendering: pixelated` is applied in CSS so pixel art scales cleanly
+- **Content:** The item on its own, centered in the frame, no background
+
+### How it works under the hood
+
+- **Inventory panel** (`src/main.ts`): Each inventory row includes an `<img src="/assets/resources/{id}.png">` with `onerror="this.style.display='none'"` so missing sprites are hidden gracefully.
+- **Building popover** (`src/ui/BuildingPopover.ts`): Buffer display includes the same `<img>` pattern for each resource in the output buffer.
+- **Production bubble** (`src/systems/RenderSystem.ts`): The canvas-rendered pill bubble loads sprites via `loadSprite('/assets/resources/{id}.png')` — the same lazy-load cache used by buildings. All resource sprites are preloaded at startup.
+
+---
+
 ## Future Expansion
 
 As the project grows, add:
 - Animation frames for units
 - Seasonal variations (winter grass, autumn trees)
 - More building construction stage sprites
-- Resource icons
 - UI theme assets
 - Particle effects (smoke, sparkles)
 
@@ -627,5 +673,5 @@ Always maintain consistency with the original Settlers II aesthetic!
 
 ---
 
-**Last Updated**: 2026-04-17  
+**Last Updated**: 2026-04-19  
 **Game Version**: 0.1.0

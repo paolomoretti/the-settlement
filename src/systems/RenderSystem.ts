@@ -115,6 +115,35 @@ export class RenderSystem extends System {
       allSprites.push(...stages);
     }
     this.preloadSprites(allSprites);
+
+    // Preload all known resource sprites (for production bubbles)
+    this.preloadSprites([
+      '/assets/resources/wood_log.png',
+      '/assets/resources/wood_plank.png',
+      '/assets/resources/stone.png',
+      '/assets/resources/coal.png',
+      '/assets/resources/iron_ore.png',
+      '/assets/resources/gold_ore.png',
+      '/assets/resources/granite.png',
+      '/assets/resources/iron_bar.png',
+      '/assets/resources/gold_bar.png',
+      '/assets/resources/grain.png',
+      '/assets/resources/flour.png',
+      '/assets/resources/bread.png',
+      '/assets/resources/water.png',
+      '/assets/resources/fish.png',
+      '/assets/resources/meat.png',
+      '/assets/resources/hammer.png',
+      '/assets/resources/axe.png',
+      '/assets/resources/saw.png',
+      '/assets/resources/pickaxe.png',
+      '/assets/resources/shovel.png',
+      '/assets/resources/fishing_rod.png',
+      '/assets/resources/scythe.png',
+      '/assets/resources/sword.png',
+      '/assets/resources/shield.png',
+      '/assets/resources/bow.png',
+    ]);
   }
 
   private preloadSprites(paths: string[]): void {

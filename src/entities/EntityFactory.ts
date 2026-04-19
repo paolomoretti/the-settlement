@@ -116,11 +116,15 @@ export function createBuilding(
   }
 
   if (buildingDef.storage) {
-    entity.addComponent(new Storage(
+    const storage = new Storage(
       buildingDef.storage.capacity,
       buildingDef.isHeadquarters || false,
       buildingDef.storage.accepts as ResourceType[] | undefined
-    ));
+    );
+    if (buildingDef.production && Object.keys(buildingDef.production.inputs || {}).length > 0) {
+      storage.isProductionStorage = true;
+    }
+    entity.addComponent(storage);
   }
 
   return entity;

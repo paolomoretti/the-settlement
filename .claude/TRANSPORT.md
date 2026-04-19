@@ -181,39 +181,45 @@ Old saves without `roadSegments` trigger a full recalculation from the road tile
 
 ## Transport Relay Chain
 
-Road workers relay items from production buildings to base camp through the segment graph. Each worker handles one segment — they pick up items at their "away from base camp" endpoint and drop them off at their "toward base camp" endpoint.
+Road workers relay items through the segment graph. Each worker handles one segment. Items can flow in **either direction** depending on their destination — toward base camp OR toward a production building that needs them.
 
 ### Route Computation
 
-`TransportManager.computeRoutes()` runs a BFS from the base camp through the segment graph:
+`TransportManager` maintains direction maps via BFS:
 
-1. Find all segments with an endpoint adjacent to base camp → those endpoints point "toward base camp" (index stored in `baseCampDirection`)
-2. BFS outward through shared junction endpoints to determine direction for every reachable segment
-3. Each segment gets a **pickup endpoint** (away from base camp) and a **dropoff endpoint** (toward base camp)
+- **Base camp routes**: `computeRoutes()` — BFS from base camp, determines "toward base camp" direction per segment
+- **Building routes**: `computeRoutesToBuilding()` — BFS from each production building with inputs, determines "toward building" direction per segment
+- `getDirectionIndex(segmentId, destEntityId)` — unified lookup for any destination
 
-Routes are recomputed whenever road segments change (road placed/deleted, building placed/deleted).
+Routes are recomputed whenever roads change, buildings are placed/deleted, or a building finishes construction.
+
+### Demand-Based Routing
+
+When a worker picks up a resource, the system checks if any production building **demands** it (has it as an input and has storage space). If so, the item is routed toward that building instead of base camp. See [Building Dependencies](BUILDING_DEPENDENCIES.md) for full details.
 
 ### Worker State Machine
 
 Each segment worker cycles through transport phases:
 
-1. **Idle at center** → checks pickup endpoint for items (building output buffer or junction items)
+1. **Idle at center** → checks **both endpoints** for items to transport
 2. **to_pickup** → walks along segment tiles to pickup endpoint
-3. **Pickup** → takes 1 item from building's `Production.outputBuffer` (decrements buffer) or from junction items
+3. **Pickup** → takes 1 item from building's output (Storage or outputBuffer) or from junction items
 4. **to_dropoff** → walks along segment tiles to dropoff endpoint (carrying the item visually)
-5. **Dropoff** → if dropoff is base camp, adds to `Storage`; otherwise adds to junction items for next worker
+5. **Dropoff**:
+   - If at destination building → delivers to building's `Storage` (base camp or production building)
+   - If at junction (not final destination) → drops as junction item with destination tag
 6. **to_center** → walks back to segment center, then returns to idle
 
 Workers walk along the segment's tile list (not A* pathfinding), which is a direct ordered path between endpoints.
 
 ### Junction Items
 
-Items waiting at segment endpoints (junctions) for the next worker to pick up. Managed by `TransportManager`:
+Items waiting at segment endpoints (junctions) for the next worker to pick up. Each item carries a destination tag. Managed by `TransportManager`:
 
-- `addJunctionItem(x, y, resourceType)` — place item at junction
-- `takeJunctionItem(x, y)` — next worker picks it up (FIFO)
-- `peekJunctionItem(x, y)` — check without taking
-- Junction items are serialized/deserialized for save/load
+- `addJunctionItem(x, y, resourceType, destinationEntityId)` — place item with destination
+- `takeJunctionItemForDirection(x, y, segmentId, pickupIdx)` — take first item whose destination is reachable through this segment
+- `peekJunctionItemForDirection(x, y, segmentId, pickupIdx)` — check without taking
+- Junction items are serialized/deserialized for save/load (destination preserved)
 
 ### Visual Rendering
 

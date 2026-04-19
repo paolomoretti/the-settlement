@@ -28,14 +28,19 @@ Each production building has a `Production` component (`src/components/Productio
 
 1. Skip if building is not complete (still under construction)
 2. Skip if building has no road connection → status = `stopped_no_road`
-3. Check if output buffer has space for the next production batch → if not, status = `stopped_full`
-4. Check if required inputs are available in global inventory → if not, status = `stopped_no_inputs`
+3. Check space for outputs:
+   - **Local storage mode** (buildings with inputs): check `storage.getFreeSpace()` against output total
+   - **Output buffer mode** (buildings without inputs): check `production.hasBufferSpace()`
+4. Check inputs:
+   - **Local storage mode**: check if building's own Storage has required inputs
+   - **Output buffer mode**: check if global inventory has required inputs (via `ResourceManager`)
 5. If all checks pass, advance the production timer by `deltaTime`
 6. When timer reaches `productionTime`, one cycle completes:
-   - Inputs are consumed from storage buildings (via `ResourceManager`)
-   - Outputs are added to the building's local output buffer
-   - A transport request is created for each output resource
+   - **Local storage mode**: inputs consumed from building's Storage, outputs added to building's Storage
+   - **Output buffer mode**: inputs consumed from global inventory, outputs added to outputBuffer, transport request created
    - Timer wraps (subtracts `productionTime`, keeping remainder for smooth cycling)
+
+See [Building Dependencies](BUILDING_DEPENDENCIES.md) for full details on local storage mode and demand routing.
 
 ### Production Status
 

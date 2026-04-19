@@ -6,6 +6,7 @@ export class Storage extends Component {
   public capacity: number;
   public accepts?: ResourceType[];
   public isHeadquarters: boolean;
+  public isProductionStorage: boolean = false;
 
   constructor(
     capacity: number,

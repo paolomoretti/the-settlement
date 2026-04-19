@@ -61,6 +61,7 @@ export class RenderSystem extends System {
   private terrainTextures: TerrainTextures;
   private spriteCache = new Map<string, HTMLImageElement>();
   public hoveredEntityId: number | null = null;
+  public showBuildingLabels = true;
   private toast: { text: string; x: number; y: number; startTime: number } | null = null;
 
   // Minimap
@@ -1014,8 +1015,7 @@ export class RenderSystem extends System {
       }
     }
 
-    // Debug: render building type
-    if (building) {
+    if (building && this.showBuildingLabels) {
       this.ctx.fillStyle = 'white';
       this.ctx.font = '10px monospace';
       this.ctx.textAlign = 'center';

@@ -94,8 +94,8 @@ export class RenderSystem extends System {
     this.minimapOffscreenCtx.fillStyle = '#1a1a1a';
     this.minimapOffscreenCtx.fillRect(0, 0, 200, 200);
 
-    // Minimap click navigation
-    this.minimapCanvas.addEventListener('click', (e) => this.handleMinimapClick(e));
+    // Minimap click & drag navigation
+    this.setupMinimapInteraction();
 
     // Center camera on map
     this.centerCamera();
@@ -133,21 +133,42 @@ export class RenderSystem extends System {
     return null;
   }
 
-  private handleMinimapClick(e: MouseEvent): void {
-    const rect = this.minimapCanvas.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const clickY = e.clientY - rect.top;
+  private setupMinimapInteraction(): void {
+    let dragging = false;
 
-    // Convert minimap click to grid coordinates
-    const minimapSize = 200;
-    const scale = minimapSize / this.tileMap.width;
-    const gridX = clickX / scale;
-    const gridY = clickY / scale;
+    const navigateToMinimapPos = (e: MouseEvent) => {
+      const rect = this.minimapCanvas.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
 
-    // Move camera to center on this grid position
-    const worldPos = this.iso.gridToScreen(gridX, gridY);
-    this.camera.x = this.canvas.width / 2 - worldPos.x;
-    this.camera.y = this.canvas.height / 2 - worldPos.y;
+      const scale = 200 / this.tileMap.width;
+      const targetGridX = clickX / scale;
+      const targetGridY = clickY / scale;
+
+      const currentCenter = this.screenToWorld(this.canvas.width / 2, this.canvas.height / 2);
+      const deltaX = targetGridX - currentCenter.x;
+      const deltaY = targetGridY - currentCenter.y;
+
+      const deltaWorld = this.iso.gridToScreen(deltaX, deltaY);
+      const origin = this.iso.gridToScreen(0, 0);
+      this.camera.x -= (deltaWorld.x - origin.x) * this.camera.zoom;
+      this.camera.y -= (deltaWorld.y - origin.y) * this.camera.zoom;
+    };
+
+    this.minimapCanvas.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      dragging = true;
+      navigateToMinimapPos(e);
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      navigateToMinimapPos(e);
+    });
+
+    window.addEventListener('mouseup', () => {
+      dragging = false;
+    });
   }
 
   private resizeCanvas(): void {

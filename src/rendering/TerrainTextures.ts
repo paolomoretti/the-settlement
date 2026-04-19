@@ -105,15 +105,14 @@ function genMountain(x: number, y: number, n: NoiseGenerator, r: Float64Array, g
 }
 
 function genForest(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: Float64Array, b: Float64Array, i: number): void {
-  const n1 = tileNoise(n, x, y, 0.8);
-  const n2 = tileNoise(n, x, y, 2.2, 37, 53);
-  const n3 = tileNoise(n, x, y, 5.5, 73, 91);
-  const v = (n1 - 0.5) * 30 + (n2 - 0.5) * 15;
-  r[i] = FOREST.r + v * 0.4;
-  g[i] = FOREST.g + v;
-  b[i] = FOREST.b + v * 0.3;
-  if (n3 > 0.55) { const c = (n3 - 0.55) * 50; r[i] -= c * 0.4; g[i] += c * 0.4; b[i] -= c * 0.3; }
-  if (n2 > 0.82 && n3 < 0.4) { r[i] += 25; g[i] += 8; b[i] -= 5; }
+  genGrass(x, y, n, r, g, b, i);
+  const cn = tileNoise(n, x, y, 2.2, 37, 53);
+  if (cn > 0.5) {
+    const mix = (cn - 0.5) * 0.25;
+    r[i] = r[i] * (1 - mix) + FOREST.r * mix;
+    g[i] = g[i] * (1 - mix) + FOREST.g * mix;
+    b[i] = b[i] * (1 - mix) + FOREST.b * mix;
+  }
 }
 
 function genHill(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: Float64Array, b: Float64Array, i: number): void {
@@ -143,13 +142,11 @@ function genTree(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: Fl
   genGrass(x, y, n, r, g, b, i);
   const cn = tileNoise(n, x, y, 3.5, 200, 210);
   if (cn > 0.5) {
-    const mix = (cn - 0.5) * 1.2;
+    const mix = (cn - 0.5) * 0.25;
     r[i] = r[i] * (1 - mix) + 42 * mix;
     g[i] = g[i] * (1 - mix) + 110 * mix;
     b[i] = b[i] * (1 - mix) + 26 * mix;
   }
-  const tn = tileNoise(n, x, y, 8.5, 300, 310);
-  if (tn > 0.88 && cn > 0.55) { r[i] = 93; g[i] = 64; b[i] = 55; }
 }
 
 function genFog(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: Float64Array, b: Float64Array, i: number): void {

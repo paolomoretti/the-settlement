@@ -186,14 +186,16 @@
     "requiresRoad": true,
     "production": {
       "outputs": {
-        "wood_plank": 2
+        "wood_plank": 1
       },
       "inputs": {
         "wood_log": 1
       },
-      "productionTime": 15,
-      "continuous": true,
-      "maxOutputBuffer": 6
+      "productionTime": 120,
+      "continuous": true
+    },
+    "storage": {
+      "capacity": 10
     },
     "population": {
       "requires": 1

@@ -2,6 +2,7 @@ import { Game } from '@/core/Game';
 import { GamePopover } from './GamePopover';
 import { Building } from '@/components/Building';
 import { Production } from '@/components/Production';
+import { Storage } from '@/components/Storage';
 import { Position } from '@/components/Position';
 import { Entity } from '@/core/Entity';
 import { dataManager } from '@/data/DataManager';
@@ -108,8 +109,8 @@ export class BuildingPopover {
     } else {
       this.progressContainer.style.display = '';
       this.stoppedLabel.style.display = 'none';
-      if (this.progressBarFill && this.progressBarLabel) {
-        const progress = building.getProductionProgress(this.productionTimeSec);
+      if (this.progressBarFill && this.progressBarLabel && production) {
+        const progress = production.getProgress();
         this.progressBarFill.style.width = `${progress * 100}%`;
         const remaining = Math.ceil(this.productionTimeSec * (1 - progress));
         this.progressBarLabel.textContent = `${remaining}s`;
@@ -121,6 +122,30 @@ export class BuildingPopover {
     if (!this.bufferContainer || !this.currentEntity) return;
     const production = this.currentEntity.getComponent(Production);
     if (!production) return;
+
+    const storage = this.currentEntity.getComponent(Storage);
+    if (storage && storage.isProductionStorage) {
+      const totalStored = storage.getTotalStored();
+      if (totalStored === 0) {
+        this.bufferContainer.style.display = 'none';
+        return;
+      }
+      this.bufferContainer.style.display = '';
+      const isFull = storage.isFull();
+      const items = Object.entries(storage.items)
+        .filter(([, amt]) => amt > 0)
+        .map(([id, amt]) => {
+          const res = dataManager.getResource(id as any);
+          return `<img src="/assets/resources/${id}.png" class="resource-icon" onerror="this.style.display='none'">${amt} ${res?.name || id}`;
+        })
+        .join(', ');
+      this.bufferContainer.innerHTML =
+        `<span class="popover-label">Storage:</span> ` +
+        `<span style="color:${isFull ? '#f44336' : '#4caf50'}">${totalStored}/${storage.capacity}</span>` +
+        `<span style="color:#aaa;margin-left:4px">(${items})</span>` +
+        (isFull ? `<span style="color:#f44336;margin-left:4px">⚠ Full</span>` : '');
+      return;
+    }
 
     const totalBuffered = production.getTotalBuffered();
     if (totalBuffered === 0) {

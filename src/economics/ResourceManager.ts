@@ -32,7 +32,7 @@ export class ResourceManager {
     for (const entity of this.getEntities()) {
       if (!entity.active) continue;
       const storage = entity.getComponent(Storage);
-      if (!storage) continue;
+      if (!storage || storage.isProductionStorage) continue;
       for (const [resource, amount] of Object.entries(storage.items)) {
         inventory[resource] = (inventory[resource] || 0) + amount;
       }
@@ -45,7 +45,7 @@ export class ResourceManager {
     for (const entity of this.getEntities()) {
       if (!entity.active) continue;
       const storage = entity.getComponent(Storage);
-      if (!storage) continue;
+      if (!storage || storage.isProductionStorage) continue;
       total += storage.getAmount(resourceType);
     }
     return total;

@@ -810,7 +810,15 @@ export class RenderSystem extends System {
   private renderSingleTree(cx: number, cy: number, tileX: number, tileY: number): void {
     const sprite = this.loadSprite('/assets/terrain/tree_single.png');
     if (sprite && sprite.naturalWidth > 0) {
-      this.renderTreeSprite(cx, cy, sprite, 1.0);
+      const count = 1 + Math.floor(this.tileHash(tileX, tileY, 1) * 3);
+      const tileW = this.iso.tileWidth;
+      const tileH = this.iso.tileHeight;
+      for (let i = 0; i < count; i++) {
+        const ox = (this.tileHash(tileX, tileY, 10 + i) - 0.5) * tileW * 0.35;
+        const oy = (this.tileHash(tileX, tileY, 20 + i) - 0.5) * tileH * 0.35;
+        const s = 0.28 + this.tileHash(tileX, tileY, 30 + i) * 0.12;
+        this.renderTreeSprite(cx + ox, cy + oy, sprite, s);
+      }
       return;
     }
 
@@ -822,9 +830,17 @@ export class RenderSystem extends System {
   }
 
   private renderForestCluster(cx: number, cy: number, tileX: number, tileY: number): void {
-    const sprite = this.loadSprite('/assets/terrain/tree_forest.png');
+    const sprite = this.loadSprite('/assets/terrain/tree_single.png');
     if (sprite && sprite.naturalWidth > 0) {
-      this.renderTreeSprite(cx, cy, sprite, 1.0);
+      const count = 3 + Math.floor(this.tileHash(tileX, tileY, 10) * 3);
+      const tileW = this.iso.tileWidth;
+      const tileH = this.iso.tileHeight;
+      for (let i = 0; i < count; i++) {
+        const ox = (this.tileHash(tileX, tileY, 60 + i) - 0.5) * tileW * 0.4;
+        const oy = (this.tileHash(tileX, tileY, 70 + i) - 0.5) * tileH * 0.4;
+        const s = 0.25 + this.tileHash(tileX, tileY, 80 + i) * 0.15;
+        this.renderTreeSprite(cx + ox, cy + oy, sprite, s);
+      }
       return;
     }
 

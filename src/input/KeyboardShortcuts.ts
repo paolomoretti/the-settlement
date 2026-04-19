@@ -16,6 +16,7 @@ export const SHORTCUT_BINDINGS: ShortcutBinding[] = [
   { key: 'H', description: 'Center on base camp', category: 'navigation' },
   { key: 'R', description: 'Build road mode', category: 'building' },
   { key: 'B', description: 'Open building menu', category: 'building' },
+  { key: 'O', description: 'Open options', category: 'general' },
   { key: 'S', description: 'Quick save', category: 'general' },
   { key: 'Arrow Up', description: 'Pan up', category: 'navigation' },
   { key: 'Arrow Down', description: 'Pan down', category: 'navigation' },
@@ -26,7 +27,7 @@ export const SHORTCUT_BINDINGS: ShortcutBinding[] = [
 ];
 
 function isModalOpen(): boolean {
-  const ids = ['save-load-dialog', 'exit-dialog'];
+  const ids = ['save-load-dialog', 'exit-dialog', 'options-panel'];
   return ids.some(id => {
     const el = document.getElementById(id);
     return el !== null && el.style.display !== 'none' && el.style.display !== '';
@@ -65,6 +66,14 @@ export function setupKeyboardShortcuts(game: Game): void {
     if (isModalOpen()) return;
     e.preventDefault();
     eventBus.emit('toggle:building_menu');
+  });
+
+  // O — Toggle options
+  hotkeys('o', (e) => {
+    const optionsOpen = document.getElementById('options-panel')?.style.display === 'block';
+    if (!optionsOpen && isModalOpen()) return;
+    e.preventDefault();
+    eventBus.emit('toggle:options');
   });
 
   // S — Quick save (auto-saves to last slot, or opens dialog if no previous save)
@@ -118,6 +127,12 @@ export function setupKeyboardShortcuts(game: Game): void {
     const exitDialog = document.getElementById('exit-dialog');
     if (exitDialog && exitDialog.style.display !== 'none' && exitDialog.style.display !== '') {
       exitDialog.style.display = 'none';
+      return;
+    }
+
+    const optionsPanel = document.getElementById('options-panel');
+    if (optionsPanel && optionsPanel.style.display === 'block') {
+      optionsPanel.style.display = 'none';
       return;
     }
 

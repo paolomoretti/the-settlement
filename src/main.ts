@@ -10,6 +10,7 @@ let game: Game | null = null;
 let buildingMenu: BuildingMenu | null = null;
 let buildingPopover: BuildingPopover | null = null;
 let currentSaveSlot: number | null = null;
+let autoSaveInterval: ReturnType<typeof setInterval> | null = null;
 
 const SAVE_SLOT_PREFIX = 'settler_save_';
 const LAST_SAVE_KEY = 'settler_last_save_slot';
@@ -323,10 +324,6 @@ function setupGameUI(game: Game): void {
     buildingMenu!.toggle();
   });
 
-  document.getElementById('btn-spawn-worker')?.addEventListener('click', () => {
-    eventBus.emit('spawn:worker');
-  });
-
   document.getElementById('btn-save')?.addEventListener('click', () => {
     if (currentSaveSlot !== null) {
       const meta = getSlotMeta(currentSaveSlot);
@@ -374,6 +371,8 @@ function setupGameUI(game: Game): void {
     document.getElementById('exit-dialog')!.style.display = 'flex';
   });
 
+  setupOptionsPanel();
+
   buildingPopover = new BuildingPopover(game);
 
   eventBus.on('building:selected', (data) => {
@@ -395,6 +394,66 @@ function setupGameUI(game: Game): void {
   document.getElementById('btn-close-inventory')?.addEventListener('click', () => {
     hideInventoryPanel();
   });
+}
+
+function setupOptionsPanel(): void {
+  const panel = document.getElementById('options-panel')!;
+  const autosaveToggle = document.getElementById('opt-autosave') as HTMLInputElement;
+  const debugToggle = document.getElementById('opt-debug-info') as HTMLInputElement;
+  const navigatorToggle = document.getElementById('opt-navigator') as HTMLInputElement;
+
+  document.getElementById('btn-options')?.addEventListener('click', () => {
+    panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+  });
+
+  document.getElementById('btn-close-options')?.addEventListener('click', () => {
+    panel.style.display = 'none';
+  });
+
+  eventBus.on('toggle:options', () => {
+    panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+  });
+
+  autosaveToggle.addEventListener('change', () => {
+    if (autosaveToggle.checked) {
+      startAutoSave();
+    } else {
+      stopAutoSave();
+    }
+  });
+
+  debugToggle.addEventListener('change', () => {
+    const debugInfo = document.getElementById('debug-info');
+    if (debugInfo) debugInfo.style.display = debugToggle.checked ? '' : 'none';
+  });
+
+  navigatorToggle.addEventListener('change', () => {
+    const minimap = document.getElementById('minimap');
+    if (minimap) minimap.style.display = navigatorToggle.checked ? '' : 'none';
+  });
+}
+
+function startAutoSave(): void {
+  stopAutoSave();
+  autoSaveInterval = setInterval(() => {
+    if (currentSaveSlot !== null) {
+      const meta = getSlotMeta(currentSaveSlot);
+      if (meta) {
+        saveToSlot(currentSaveSlot, meta.name);
+        showToast('Auto saved');
+        return;
+      }
+    }
+    saveToSlot(currentSaveSlot ?? 0, `Auto Save`);
+    showToast('Auto saved');
+  }, 2 * 60 * 1000);
+}
+
+function stopAutoSave(): void {
+  if (autoSaveInterval !== null) {
+    clearInterval(autoSaveInterval);
+    autoSaveInterval = null;
+  }
 }
 
 function showInventoryPanel(game: Game): void {

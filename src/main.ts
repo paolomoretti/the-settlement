@@ -371,7 +371,7 @@ function setupGameUI(game: Game): void {
     document.getElementById('exit-dialog')!.style.display = 'flex';
   });
 
-  setupOptionsPanel();
+  setupOptionsPanel(game);
 
   buildingPopover = new BuildingPopover(game);
 
@@ -396,10 +396,11 @@ function setupGameUI(game: Game): void {
   });
 }
 
-function setupOptionsPanel(): void {
+function setupOptionsPanel(game: Game): void {
   const panel = document.getElementById('options-panel')!;
   const autosaveToggle = document.getElementById('opt-autosave') as HTMLInputElement;
   const debugToggle = document.getElementById('opt-debug-info') as HTMLInputElement;
+  const buildingLabelsToggle = document.getElementById('opt-building-labels') as HTMLInputElement;
   const navigatorToggle = document.getElementById('opt-navigator') as HTMLInputElement;
 
   document.getElementById('btn-options')?.addEventListener('click', () => {
@@ -425,6 +426,10 @@ function setupOptionsPanel(): void {
   debugToggle.addEventListener('change', () => {
     const debugInfo = document.getElementById('debug-info');
     if (debugInfo) debugInfo.style.display = debugToggle.checked ? '' : 'none';
+  });
+
+  buildingLabelsToggle.addEventListener('change', () => {
+    game.renderSystem.showBuildingLabels = buildingLabelsToggle.checked;
   });
 
   navigatorToggle.addEventListener('change', () => {

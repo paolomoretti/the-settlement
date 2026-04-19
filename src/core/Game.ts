@@ -220,13 +220,16 @@ export class Game {
       if (!entity) continue;
       const worker = entity.getComponent(Worker);
       if (!worker || !worker.transportTask) continue;
+      const task = worker.transportTask;
       if (worker.carryingResource) {
         const p = entity.getComponent(Position);
         if (p) {
-          const dest = worker.transportTask.destEntityId ?? null;
+          const dest = task.destEntityId ?? null;
           transportManager.addJunctionItem(Math.floor(p.x), Math.floor(p.y), worker.carryingResource, dest);
         }
         worker.carryingResource = undefined;
+      } else if (task.phase === 'to_pickup' && task.sourceEntityId === null) {
+        transportManager.addJunctionItem(task.pickupPos.x, task.pickupPos.y, task.resourceType, task.destEntityId);
       }
       worker.transportTask = null;
     }
@@ -543,13 +546,16 @@ export class Game {
 
     const workerComp = entity.getComponent(Worker);
     if (workerComp?.transportTask) {
+      const task = workerComp.transportTask;
       if (workerComp.carryingResource) {
         const p = entity.getComponent(Position);
         if (p) {
-          const dest = workerComp.transportTask.destEntityId ?? null;
+          const dest = task.destEntityId ?? null;
           transportManager.addJunctionItem(Math.floor(p.x), Math.floor(p.y), workerComp.carryingResource, dest);
         }
         workerComp.carryingResource = undefined;
+      } else if (task.phase === 'to_pickup' && task.sourceEntityId === null) {
+        transportManager.addJunctionItem(task.pickupPos.x, task.pickupPos.y, task.resourceType, task.destEntityId);
       }
       workerComp.transportTask = null;
     }
@@ -754,36 +760,36 @@ export class Game {
         }
       }
 
-      // Check junction items at this endpoint
-      const junctionItem = transportManager.peekJunctionItemForDirection(ep.x, ep.y, segment.id, pickupIdx);
+      // Check junction items at this endpoint — take immediately to prevent race conditions
+      const junctionItem = transportManager.takeJunctionItemForDirection(ep.x, ep.y, segment.id, pickupIdx);
       if (junctionItem) {
-        const dirIdx = transportManager.getDirectionIndex(segment.id, junctionItem.destinationEntityId);
-        if (dirIdx !== undefined && dirIdx !== pickupIdx) {
-          worker.transportTask = {
-            phase: 'to_pickup',
-            pickupPos: { x: ep.x, y: ep.y },
-            dropoffPos: { x: dropoffEp.x, y: dropoffEp.y },
-            resourceType: junctionItem.resourceType,
-            sourceEntityId: null,
-            destEntityId: junctionItem.destinationEntityId,
-          };
-          const path = this.getSegmentPath(segment, pos, ep.x, ep.y);
-          if (path.length > 0) {
-            movable.setPath(path);
-            worker.setState('walking');
-          }
-          return;
+        worker.transportTask = {
+          phase: 'to_pickup',
+          pickupPos: { x: ep.x, y: ep.y },
+          dropoffPos: { x: dropoffEp.x, y: dropoffEp.y },
+          resourceType: junctionItem.resourceType,
+          sourceEntityId: null,
+          destEntityId: junctionItem.destinationEntityId,
+        };
+        const path = this.getSegmentPath(segment, pos, ep.x, ep.y);
+        if (path.length > 0) {
+          movable.setPath(path);
+          worker.setState('walking');
         }
+        return;
       }
     }
 
-    // Check for stranded items anywhere along the segment (dropped during recalc)
+    // Check for stranded items anywhere along the segment (dropped during recalc) — take immediately
     for (const tile of segment.tiles) {
       if (!transportManager.hasJunctionItems(tile.x, tile.y)) continue;
-      const item = transportManager.peekJunctionItem(tile.x, tile.y);
+      const item = transportManager.takeJunctionItem(tile.x, tile.y);
       if (!item) continue;
       const dirIdx = transportManager.getDirectionIndex(segment.id, item.destinationEntityId);
-      if (dirIdx === undefined) continue;
+      if (dirIdx === undefined) {
+        transportManager.addJunctionItem(tile.x, tile.y, item.resourceType, item.destinationEntityId);
+        continue;
+      }
       const dropoffEp = segment.endpoints[dirIdx];
       worker.transportTask = {
         phase: 'to_pickup',
@@ -823,23 +829,9 @@ export class Game {
             }
           }
         } else {
-          const epIdx = segment.endpoints.findIndex(
-            ep => ep.x === task.pickupPos.x && ep.y === task.pickupPos.y
-          );
-          let item;
-          if (epIdx >= 0) {
-            item = transportManager.takeJunctionItemForDirection(
-              task.pickupPos.x, task.pickupPos.y, segment.id, epIdx
-            );
-          } else {
-            item = transportManager.takeJunctionItem(task.pickupPos.x, task.pickupPos.y);
-          }
-          if (item) {
-            worker.pickUpResource(item.resourceType);
-            task.resourceType = item.resourceType;
-            task.destEntityId = item.destinationEntityId;
-            taken = true;
-          }
+          // Item was already claimed from the junction when the task was created
+          worker.pickUpResource(task.resourceType);
+          taken = true;
         }
         if (!taken) {
           worker.transportTask = null;

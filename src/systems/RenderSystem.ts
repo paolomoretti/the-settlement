@@ -144,6 +144,13 @@ export class RenderSystem extends System {
       '/assets/resources/shield.png',
       '/assets/resources/bow.png',
     ]);
+
+    // Preload terrain sprites
+    this.preloadSprites([
+      '/assets/terrain/tree_single.png',
+      '/assets/terrain/tree_forest.png',
+      '/assets/terrain/rock.png',
+    ]);
   }
 
   private preloadSprites(paths: string[]): void {

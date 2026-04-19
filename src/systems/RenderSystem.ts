@@ -15,6 +15,7 @@ import { Tile } from '@/map/Tile';
 import { Production } from '@/components/Production';
 import { dataManager } from '@/data/DataManager';
 import { TerrainTextures } from '@/rendering/TerrainTextures';
+import { transportManager } from '@/economics/TransportManager';
 
 // Construction phase sprites per building type (excluding the completed sprite).
 // During build, total frames = stages.length + 1 (the completed sprite is the last frame).
@@ -259,6 +260,9 @@ export class RenderSystem extends System {
       this.ctx.fillStyle = 'rgba(200, 60, 60, 0.2)';
       this.ctx.fill();
     }
+
+    // Render junction items on road tiles
+    this.renderJunctionItems(viewportBounds);
 
     // Depth-sorted rendering: interleave trees, mountains, and entities
     this.renderDepthSorted(sortedEntities, viewportBounds);
@@ -1343,6 +1347,49 @@ export class RenderSystem extends System {
     this.ctx.globalAlpha = 1;
   }
 
+  private renderJunctionItems(viewportBounds: { minX: number; maxX: number; minY: number; maxY: number }): void {
+    const junctionMap = transportManager.getJunctionItemsMap();
+
+    for (const [key, items] of junctionMap) {
+      if (items.length === 0) continue;
+      const [x, y] = key.split(',').map(Number);
+      if (x < viewportBounds.minX || x > viewportBounds.maxX ||
+          y < viewportBounds.minY || y > viewportBounds.maxY) continue;
+
+      const center = this.iso.gridToScreen(x, y);
+      const count = Math.min(items.length, 5);
+
+      const offsets = [
+        { x: 0, y: -2 },
+        { x: -8, y: 2 },
+        { x: 8, y: 2 },
+        { x: -4, y: -6 },
+        { x: 5, y: -6 },
+      ];
+
+      for (let i = 0; i < count; i++) {
+        const ix = center.x + offsets[i].x;
+        const iy = center.y + offsets[i].y;
+
+        const resSprite = this.loadSprite(`/assets/resources/${items[i].resourceType}.png`);
+        if (resSprite) {
+          this.ctx.drawImage(resSprite, ix - 5, iy - 5, 10, 10);
+        } else {
+          // Small package: 3D crate look
+          this.ctx.fillStyle = '#6b5020';
+          this.ctx.fillRect(ix - 4, iy - 1, 8, 4);
+          this.ctx.fillStyle = '#8b6914';
+          this.ctx.fillRect(ix - 4, iy - 4, 8, 4);
+          this.ctx.fillStyle = '#a07818';
+          this.ctx.fillRect(ix - 3, iy - 4, 6, 2);
+          this.ctx.strokeStyle = '#4a3510';
+          this.ctx.lineWidth = 0.5;
+          this.ctx.strokeRect(ix - 4, iy - 4, 8, 7);
+        }
+      }
+    }
+  }
+
   private drawRoadMissingIcon(): void {
     // Isometric road diamond
     const dw = 14;
@@ -1544,7 +1591,16 @@ export class RenderSystem extends System {
     let rightArmX = 3;
     let extraDraw: (() => void) | null = null;
 
-    if (!isMoving) {
+    const isCarrying = !!worker.carryingResource;
+
+    if (isCarrying) {
+      leftArmY = -13;
+      rightArmY = -13;
+      leftHandY = -15;
+      rightHandY = -15;
+      leftArmX = -3;
+      rightArmX = 2;
+    } else if (!isMoving) {
       if (anim === 'scratch_head') {
         // Right arm raised to head
         rightArmY = -13;
@@ -1629,6 +1685,16 @@ export class RenderSystem extends System {
         px(-2 + headShift, -13, 5, 1, '#3a2a1a');
       }
       px(1 + headShift, -12, 1, 1, '#1a1008');
+    }
+
+    if (isCarrying) {
+      const resSprite = this.loadSprite(`/assets/resources/${worker.carryingResource}.png`);
+      if (resSprite) {
+        this.ctx.drawImage(resSprite, -4 * s, -22 * s, 8 * s, 8 * s);
+      } else {
+        px(-2, -19, 5, 4, '#d4a03c');
+        px(-1, -20, 3, 1, '#f0c060');
+      }
     }
 
     this.ctx.restore();

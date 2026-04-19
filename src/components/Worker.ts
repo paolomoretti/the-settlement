@@ -48,12 +48,21 @@ export const WORKER_DEFS: Record<WorkerRole, WorkerDef> = {
   },
 };
 
+export interface TransportTask {
+  phase: 'to_pickup' | 'to_dropoff' | 'to_center';
+  pickupPos: { x: number; y: number };
+  dropoffPos: { x: number; y: number };
+  resourceType: string;
+  sourceEntityId: number | null;
+  destEntityId: number | null;
+}
+
 export type IdleAnim = 'none' | 'look_around' | 'scratch_head' | 'read' | 'stretch' | 'hands_on_hips';
 
 export class Worker extends Component {
   public state: WorkerState = 'idle';
   public carryingResource?: string;
-  public currentJob?: any;
+  public transportTask: TransportTask | null = null;
   public role: WorkerRole;
   public appearance: WorkerAppearance;
 

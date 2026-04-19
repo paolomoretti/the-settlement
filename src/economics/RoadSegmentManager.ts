@@ -111,7 +111,7 @@ export class RoadSegmentManager {
     const adjacentBuildingId = this.isAdjacentToBuilding(x, y, tileMap);
 
     if (neighbors.length === 0) {
-      return { x, y, type: 'dead_end' };
+      return { x, y, type: adjacentBuildingId !== undefined ? 'building' : 'dead_end', entityId: adjacentBuildingId };
     }
     if (neighbors.length === 1) {
       return { x, y, type: adjacentBuildingId !== undefined ? 'building' : 'dead_end', entityId: adjacentBuildingId };

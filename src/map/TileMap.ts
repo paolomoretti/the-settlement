@@ -5,6 +5,14 @@
 import { Tile, TerrainType } from './Tile';
 import { NoiseGenerator } from '@/utils/NoiseGenerator';
 
+const TERRAIN_CODES: Record<TerrainType, string> = {
+  grass: 'g', water: 'w', mountain: 'm', forest: 'f', tree: 't', hill: 'h', desert: 'd'
+};
+const CODE_TO_TERRAIN: Record<string, TerrainType> = {};
+for (const [terrain, code] of Object.entries(TERRAIN_CODES)) {
+  CODE_TO_TERRAIN[code] = terrain as TerrainType;
+}
+
 export class TileMap {
   private tiles: Tile[][] = [];
   public readonly width: number;
@@ -15,14 +23,14 @@ export class TileMap {
     this.width = width;
     this.height = height;
     this.seed = seed || Date.now();
-    this.initialize();
+    this.generate();
   }
 
   public getSeed(): number {
     return this.seed;
   }
 
-  private initialize(): void {
+  private generate(): void {
     const noise = new NoiseGenerator(this.seed);
 
     for (let y = 0; y < this.height; y++) {
@@ -39,6 +47,15 @@ export class TileMap {
     this.removeIsolatedWater();
     this.clearBaseCampArea();
     this.removeIslands();
+  }
+
+  private initEmpty(): void {
+    for (let y = 0; y < this.height; y++) {
+      this.tiles[y] = [];
+      for (let x = 0; x < this.width; x++) {
+        this.tiles[y][x] = new Tile(x, y, 'grass');
+      }
+    }
   }
 
   private generateTerrain(x: number, y: number, noise: NoiseGenerator): TerrainType {
@@ -73,10 +90,10 @@ export class TileMap {
   }
 
   private generateRivers(noise: NoiseGenerator): void {
-    const numRivers = Math.floor(Math.random() * 2) + 2;
+    const numRivers = 2 + Math.floor(noise.noise(10000, 10000, 0.1) * 2);
 
     for (let r = 0; r < numRivers; r++) {
-      const startX = Math.floor(Math.random() * this.width);
+      const startX = Math.floor(noise.noise(10000 + r * 199, 10001, 0.1) * this.width);
       let x = startX;
       let y = 0;
 
@@ -135,7 +152,6 @@ export class TileMap {
     for (let r = 0; r < numRocks; r++) {
       let rx: number, ry: number;
 
-      // First 30 rocks guaranteed within 80 tiles of base camp
       if (r < 30) {
         const angle = noise.noise(r * 97 + 777, 6001, 0.1) * Math.PI * 2;
         const dist = 20 + noise.noise(6001, r * 97 + 777, 0.1) * 60;
@@ -236,6 +252,51 @@ export class TileMap {
     }
   }
 
+  // RLE encode terrain: "500g20w30f" = 500 grass, 20 water, 30 forest
+  private encodeTerrain(): string {
+    const parts: string[] = [];
+    let prev = TERRAIN_CODES[this.tiles[0][0].terrain];
+    let count = 1;
+
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        if (y === 0 && x === 0) continue;
+        const code = TERRAIN_CODES[this.tiles[y][x].terrain];
+        if (code === prev) {
+          count++;
+        } else {
+          parts.push(`${count}${prev}`);
+          prev = code;
+          count = 1;
+        }
+      }
+    }
+    parts.push(`${count}${prev}`);
+    return parts.join('');
+  }
+
+  // Decode RLE terrain string and apply to tiles
+  private decodeTerrain(encoded: string): void {
+    const matches = encoded.match(/(\d+)([a-z])/g);
+    if (!matches) return;
+
+    let idx = 0;
+    for (const match of matches) {
+      const count = parseInt(match.slice(0, -1));
+      const code = match.slice(-1);
+      const terrain = CODE_TO_TERRAIN[code];
+      if (!terrain) continue;
+
+      for (let i = 0; i < count && idx < this.width * this.height; i++, idx++) {
+        const y = Math.floor(idx / this.width);
+        const x = idx % this.width;
+        const tile = this.tiles[y][x];
+        tile.terrain = terrain;
+        tile.walkable = terrain !== 'water' && terrain !== 'mountain';
+      }
+    }
+  }
+
   getTile(x: number, y: number): Tile | null {
     if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
       return null;
@@ -282,7 +343,6 @@ export class TileMap {
     return neighbors;
   }
 
-  // Serialize for saving - COMPRESSED FORMAT
   serialize(): any {
     const roads: string[] = [];
     const explored: string[] = [];
@@ -310,6 +370,7 @@ export class TileMap {
       seed: this.seed,
       width: this.width,
       height: this.height,
+      terrain: this.encodeTerrain(),
       roads: roads.join(';'),
       explored: explored.join(';'),
       occupied
@@ -317,7 +378,19 @@ export class TileMap {
   }
 
   static deserialize(data: any): TileMap {
-    const map = new TileMap(data.width, data.height, data.seed);
+    const map = Object.create(TileMap.prototype) as TileMap;
+    (map as any).width = data.width;
+    (map as any).height = data.height;
+    (map as any).seed = data.seed;
+    (map as any).tiles = [];
+
+    if (data.terrain) {
+      map.initEmpty();
+      map.decodeTerrain(data.terrain);
+    } else {
+      // Legacy save without terrain data — regenerate from seed
+      map.generate();
+    }
 
     if (data.roads) {
       const roadCoords = data.roads.split(';').filter((s: string) => s);

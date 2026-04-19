@@ -42,7 +42,7 @@ npm run preview  # Preview production build
 - **EventBus:** Decoupled pub/sub communication between systems
 - **Map:** 1000x1000 tiles, procedurally generated from a seed using Perlin-like noise
 - **Rendering:** Viewport culling, isometric depth sorting (back-to-front), minimap with offscreen canvas cache
-- **Save/Load:** localStorage - stores seed (regenerates terrain), explored tiles, roads, buildings
+- **Save/Load:** localStorage - stores RLE-encoded terrain, explored tiles, roads, buildings. Terrain is generated once on new game and persisted; loads restore exact saved terrain without regeneration
 - **Input modes:** view, build_road, build_warehouse, build_lumberjack, select (drag)
 
 ## Current State
@@ -62,6 +62,7 @@ Not yet implemented: item carrying by road workers (data layer ready, behavior n
 - [Performance Guidelines](.claude/PERFORMANCE.md) - Mandatory rules for rendering, textures, and canvas performance
 - [Keyboard Shortcuts](.claude/KEYBOARD_SHORTCUTS.md) - Centralized shortcut system using hotkeys-js, all bindings and how to add more
 - [Toast Notifications](.claude/TOAST.md) - Reusable short-lived messages via `showToast()` or EventBus `'toast'` event
+- [World Generation](.claude/WORLD_GENERATION.md) - Terrain generation pipeline, RLE persistence, deterministic seeding
 
 **Convention**: Every time new logic is added to the game, document it in `.claude/` and reference it here. Future agents and chats rely on these docs to understand how systems work without re-explanation.
 

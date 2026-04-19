@@ -19,7 +19,7 @@ export type ResourceType =
 
   // Refined Materials
   | 'iron_bar'
-  | 'gold_bar'
+  | 'gold_coin'
 
   // Food
   | 'grain'
@@ -28,8 +28,10 @@ export type ResourceType =
   | 'water'
   | 'fish'
   | 'meat'
+  | 'ham'
+  | 'beer'
 
-  // Tools (simplified set)
+  // Tools
   | 'hammer'
   | 'axe'
   | 'saw'
@@ -37,11 +39,15 @@ export type ResourceType =
   | 'shovel'
   | 'fishing_rod'
   | 'scythe'
+  | 'rolling_pin'
+  | 'crucible'
+  | 'tongs'
+  | 'cleaver'
+  | 'bow'
 
   // Weapons
   | 'sword'
-  | 'shield'
-  | 'bow';
+  | 'shield';
 
 export interface ResourceDefinition {
   id: ResourceType;
@@ -59,48 +65,53 @@ export interface ResourceDefinition {
 export type BuildingType =
   // Core Buildings
   | 'base_camp'
-  | 'warehouse'
   | 'storehouse'
 
   // Residential
   | 'hut'
   | 'house'
 
-  // Wood Industry
+  // Construction Resources
   | 'lumberjack'
   | 'sawmill'
   | 'forester'
-
-  // Stone Industry
   | 'quarry'
   | 'granite_mine'
 
-  // Mining
+  // Mining & Smelting
   | 'coal_mine'
   | 'iron_mine'
   | 'gold_mine'
-
-  // Smelting
   | 'iron_smelter'
   | 'mint'
+
+  // Industry
+  | 'metalworks'
+  | 'armory'
 
   // Food Production
   | 'farm'
   | 'mill'
   | 'bakery'
+  | 'brewery'
   | 'well'
   | 'fisher'
   | 'hunter'
-
-  // Tool & Weapon Production
-  | 'tool_smithy'
-  | 'weapon_smithy'
+  | 'pig_farm'
+  | 'slaughterhouse'
 
   // Military
   | 'barracks'
-  | 'guard_tower'
+  | 'guardhouse'
   | 'watchtower'
   | 'fortress'
+  | 'catapult'
+  | 'lookout_tower'
+
+  // Transport
+  | 'donkey_breeder'
+  | 'shipyard'
+  | 'harbor'
 
   // Infrastructure
   | 'road';
@@ -164,6 +175,9 @@ export interface BuildingDefinition {
     requires?: number;  // Workers: needs this many workers to operate
   };
 
+  // Worker requirements
+  requiredTool?: ResourceType; // Tool the worker needs to operate this building
+
   // Special flags
   isHeadquarters?: boolean; // Starting building
   canUpgrade?: BuildingType; // Can upgrade to this type
@@ -171,6 +185,12 @@ export interface BuildingDefinition {
   // Metadata
   category: 'core' | 'residential' | 'production' | 'military' | 'infrastructure';
   tier: 1 | 2 | 3; // Tech tier
+  plotType?: 'small' | 'medium' | 'large' | 'mine'; // Terrain placement type (future)
+
+  // Military (for military buildings)
+  military?: {
+    soldierCapacity: number; // Max soldiers garrisoned
+  };
 }
 
 // ============================================================================

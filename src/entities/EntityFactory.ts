@@ -70,7 +70,7 @@ export function createBuilding(
 
   const SPRITE_PATHS: Record<string, string> = {
     base_camp: '/assets/buildings/base_camp.png',
-    warehouse: '/assets/buildings/warehouse.png',
+    storehouse: '/assets/buildings/warehouse.png',
     lumberjack: '/assets/buildings/lumberjack.png',
     sawmill: '/assets/buildings/sawmill.png',
     forester: '/assets/buildings/forester.png',
@@ -134,9 +134,6 @@ export function createBaseCamp(x: number, y: number): Entity {
   return createBuilding('base_camp', x, y);
 }
 
-export function createWarehouse(x: number, y: number): Entity {
-  return createBuilding('warehouse', x, y);
-}
 
 export function createRoad(x: number, y: number): Entity {
   const entity = new Entity();

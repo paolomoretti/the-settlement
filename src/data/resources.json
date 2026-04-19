@@ -9,7 +9,7 @@
   },
   "wood_plank": {
     "id": "wood_plank",
-    "name": "Wood Plank",
+    "name": "Board",
     "category": "refined",
     "description": "Processed timber for construction",
     "stackSize": 50,
@@ -55,19 +55,19 @@
     "stackSize": 50,
     "icon": "/assets/ui/icons/gold_ore.png"
   },
-  "gold_bar": {
-    "id": "gold_bar",
-    "name": "Gold Bar",
+  "gold_coin": {
+    "id": "gold_coin",
+    "name": "Gold Coin",
     "category": "refined",
-    "description": "Smelted gold coins",
+    "description": "Minted gold coins for military upgrades",
     "stackSize": 50,
-    "icon": "/assets/ui/icons/gold_bar.png"
+    "icon": "/assets/ui/icons/gold_coin.png"
   },
   "granite": {
     "id": "granite",
     "name": "Granite",
     "category": "raw",
-    "description": "High-quality building stone",
+    "description": "High-quality building stone from terrain",
     "stackSize": 50,
     "icon": "/assets/ui/icons/granite.png"
   },
@@ -91,7 +91,7 @@
     "id": "bread",
     "name": "Bread",
     "category": "food",
-    "description": "Baked bread to feed workers",
+    "description": "Baked bread to feed miners",
     "stackSize": 100,
     "icon": "/assets/ui/icons/bread.png"
   },
@@ -115,15 +115,31 @@
     "id": "meat",
     "name": "Meat",
     "category": "food",
-    "description": "Hunted from wildlife",
+    "description": "Raw meat from pig farms",
     "stackSize": 100,
     "icon": "/assets/ui/icons/meat.png"
+  },
+  "ham": {
+    "id": "ham",
+    "name": "Ham",
+    "category": "food",
+    "description": "Processed meat from hunter or slaughterhouse, feeds miners",
+    "stackSize": 100,
+    "icon": "/assets/ui/icons/ham.png"
+  },
+  "beer": {
+    "id": "beer",
+    "name": "Beer",
+    "category": "food",
+    "description": "Brewed from grain and water, for military",
+    "stackSize": 100,
+    "icon": "/assets/ui/icons/beer.png"
   },
   "hammer": {
     "id": "hammer",
     "name": "Hammer",
     "category": "tool",
-    "description": "For construction workers",
+    "description": "For armorer and shipwright",
     "stackSize": 20,
     "icon": "/assets/ui/icons/hammer.png"
   },
@@ -131,7 +147,7 @@
     "id": "axe",
     "name": "Axe",
     "category": "tool",
-    "description": "For lumberjacks",
+    "description": "For woodcutters",
     "stackSize": 20,
     "icon": "/assets/ui/icons/axe.png"
   },
@@ -139,7 +155,7 @@
     "id": "saw",
     "name": "Saw",
     "category": "tool",
-    "description": "For sawmill workers",
+    "description": "For sawmill carpenters",
     "stackSize": 20,
     "icon": "/assets/ui/icons/saw.png"
   },
@@ -147,7 +163,7 @@
     "id": "pickaxe",
     "name": "Pickaxe",
     "category": "tool",
-    "description": "For miners",
+    "description": "For stonemasons and miners",
     "stackSize": 20,
     "icon": "/assets/ui/icons/pickaxe.png"
   },
@@ -155,7 +171,7 @@
     "id": "shovel",
     "name": "Shovel",
     "category": "tool",
-    "description": "For various workers",
+    "description": "For foresters",
     "stackSize": 20,
     "icon": "/assets/ui/icons/shovel.png"
   },
@@ -175,6 +191,46 @@
     "stackSize": 20,
     "icon": "/assets/ui/icons/scythe.png"
   },
+  "rolling_pin": {
+    "id": "rolling_pin",
+    "name": "Rolling Pin",
+    "category": "tool",
+    "description": "For bakers",
+    "stackSize": 20,
+    "icon": "/assets/ui/icons/rolling_pin.png"
+  },
+  "crucible": {
+    "id": "crucible",
+    "name": "Crucible",
+    "category": "tool",
+    "description": "For iron founders and minters",
+    "stackSize": 20,
+    "icon": "/assets/ui/icons/crucible.png"
+  },
+  "tongs": {
+    "id": "tongs",
+    "name": "Tongs",
+    "category": "tool",
+    "description": "For metalworkers",
+    "stackSize": 20,
+    "icon": "/assets/ui/icons/tongs.png"
+  },
+  "cleaver": {
+    "id": "cleaver",
+    "name": "Cleaver",
+    "category": "tool",
+    "description": "For butchers",
+    "stackSize": 20,
+    "icon": "/assets/ui/icons/cleaver.png"
+  },
+  "bow": {
+    "id": "bow",
+    "name": "Bow",
+    "category": "tool",
+    "description": "For hunters",
+    "stackSize": 20,
+    "icon": "/assets/ui/icons/bow.png"
+  },
   "sword": {
     "id": "sword",
     "name": "Sword",
@@ -190,13 +246,5 @@
     "description": "For soldiers",
     "stackSize": 20,
     "icon": "/assets/ui/icons/shield.png"
-  },
-  "bow": {
-    "id": "bow",
-    "name": "Bow",
-    "category": "weapon",
-    "description": "For archers",
-    "stackSize": 20,
-    "icon": "/assets/ui/icons/bow.png"
   }
 }

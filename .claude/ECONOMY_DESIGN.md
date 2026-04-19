@@ -70,7 +70,7 @@ Starting Resources (Base Camp)
 |----------|--------|------------|-------|
 | Wood Plank | Sawmill (from logs) | 50 | Advanced construction |
 | Iron Bar | Iron Smelter (ore + coal) | 50 | Tools, weapons |
-| Gold Bar | Mint (ore + coal) | 50 | Economy, trade |
+| Gold Coin | Mint (ore + coal) | 50 | Economy, trade |
 
 #### 3. Food
 | Resource | Source | Stack Size | Usage |
@@ -81,24 +81,30 @@ Starting Resources (Base Camp)
 | Water | Well | 100 | Bakery input, consumption |
 | Fish | Fisher | 100 | Worker consumption |
 | Meat | Hunter | 100 | Worker consumption |
+| Ham | Slaughterhouse (from meat) | 100 | Processed meat, feeds miners |
+| Beer | Brewery (grain + water) | 100 | Brewed from grain+water, for military |
 
 #### 4. Tools
 | Resource | Source | Stack Size | Usage |
 |----------|--------|------------|-------|
-| Hammer | Tool Smithy | 20 | Builder equipment |
-| Axe | Tool Smithy | 20 | Lumberjack equipment |
-| Saw | Tool Smithy | 20 | Sawmill equipment |
-| Pickaxe | Tool Smithy | 20 | Miner equipment |
-| Shovel | Tool Smithy | 20 | Various workers |
-| Fishing Rod | Tool Smithy | 20 | Fisher equipment |
-| Scythe | Tool Smithy | 20 | Farmer equipment |
+| Hammer | Metalworks | 20 | Builder equipment |
+| Axe | Metalworks | 20 | Lumberjack equipment |
+| Saw | Metalworks | 20 | Sawmill equipment |
+| Pickaxe | Metalworks | 20 | Miner equipment |
+| Shovel | Metalworks | 20 | Various workers |
+| Fishing Rod | Metalworks | 20 | Fisher equipment |
+| Scythe | Metalworks | 20 | Farmer equipment |
+| Rolling Pin | Metalworks | 20 | Baker equipment |
+| Crucible | Metalworks | 20 | Smelter equipment |
+| Tongs | Metalworks | 20 | Metalworker equipment |
+| Cleaver | Metalworks | 20 | Butcher equipment |
+| Bow | Metalworks | 20 | Hunter equipment |
 
 #### 5. Weapons
 | Resource | Source | Stack Size | Usage |
 |----------|--------|------------|-------|
-| Sword | Weapon Smithy | 20 | Soldier equipment |
-| Shield | Weapon Smithy | 20 | Soldier equipment |
-| Bow | Weapon Smithy | 20 | Archer equipment |
+| Sword | Armory | 20 | Soldier equipment |
+| Shield | Armory | 20 | Soldier equipment |
 
 ### Starting Inventory
 ```json
@@ -136,7 +142,7 @@ Starting Resources (Base Camp)
 ```
 Forest/Trees → Lumberjack (20s) → Wood Logs
                                       ↓
-                           Sawmill (15s, 1 log) → 2 Wood Planks
+                           Sawmill (120s, 1 log) → 1 Wood Plank
 ```
 - **Worker Requirements**: 1 lumberjack, 1 sawmill worker
 - **Purpose**: Basic construction material
@@ -152,11 +158,11 @@ Mountains/Rocks → Quarry (25s) → Stone
 
 #### Food Chain (Tier 1-2)
 ```
-Farm (45s) → Grain → Mill (20s, 1 grain) → 2 Flour
+Farm (45s) → Grain → Mill (20s, 1 grain) → 1 Flour
                                               ↓
                               Well (15s) → Water
                                               ↓
-                         Bakery (25s, 1 flour + 1 water) → 3 Bread
+                         Bakery (25s, 1 flour + 1 water) → 1 Bread
 ```
 - **Worker Requirements**: 1 farmer, 1 miller, 1 baker, 1 well worker = 4 total
 - **Purpose**: Worker sustenance (future feature)
@@ -170,7 +176,7 @@ Coal Mine (30s) → Coal
                      ↓
 Iron Smelter (25s, 1 ore + 1 coal) → 1 Iron Bar
                                          ↓
-                      Tool Smithy (30s, 1 bar) → 1 Tool
+                      Metalworks (30s, 1 bar) → 1 Tool
 ```
 - **Worker Requirements**: 2 miners (iron + coal), 1 smelter, 1 smithy = 4 total
 - **Purpose**: Tools for specialized workers
@@ -182,7 +188,7 @@ Gold Mine (40s) → Gold Ore
                      ↓
 Coal Mine (30s) → Coal
                      ↓
-Mint (30s, 1 ore + 1 coal) → 1 Gold Bar
+Mint (30s, 1 ore + 1 coal) → 1 Gold Coin
 ```
 - **Worker Requirements**: 2 miners, 1 minter = 3 total
 - **Purpose**: Economy, trade (future), military upgrades
@@ -200,7 +206,7 @@ Mint (30s, 1 ore + 1 coal) → 1 Gold Bar
 | Building | Population Provided | Build Cost |
 |----------|-------------------|------------|
 | Base Camp | +15 | Free (starting) |
-| Hut | +3 | 2 logs, 1 stone |
+| Hut | +3 | 2 planks, 1 stone |
 | House | +6 | 4 planks, 3 stone |
 
 ### Population Formula
@@ -232,45 +238,44 @@ When a production building is constructed:
 | Building | Cost | Capacity | Cost/Capacity | Upgrade Path |
 |----------|------|----------|---------------|--------------|
 | Base Camp | Free | +15 | Free | - |
-| Hut | 2 logs, 1 stone | +3 | 0.67 logs/pop | → House |
+| Hut | 2 planks, 1 stone | +3 | 0.67 planks/pop | → House |
 | House | 4 planks, 3 stone | +6 | 0.67 planks/pop | - |
 
 **Balance Notes**:
-- Huts use raw logs (cheap, early game)
-- Houses use planks (requires sawmill, mid-game)
+- All build costs use wood_plank (boards) and stone only, no wood_log in build costs
 - Same cost/population ratio maintains balance
 
 ### Production Buildings (Tier 1)
 | Building | Cost | Output | Production Time | Workers |
 |----------|------|--------|----------------|---------|
-| Lumberjack | 3 logs, 1 stone | 1 log | 20s | 1 |
-| Sawmill | 4 logs, 2 stone | 2 planks (1 log) | 15s | 1 |
-| Quarry | 2 logs, 2 stone | 1 stone | 25s | 1 |
-| Farm | 3 planks, 2 stone | 2 grain | 45s | 1 |
-| Well | 3 stone | 2 water | 15s | 1 |
-| Fisher | 2 logs, 1 stone | 1 fish | 30s | 1 |
+| Lumberjack | 3 planks, 1 stone | 1 log | 20s | 1 |
+| Sawmill | 4 planks, 2 stone | 1 plank (1 log) | 120s | 1 |
+| Quarry | 2 planks, 2 stone | 1 stone | 25s | 1 |
+| Farm | 3 planks, 2 stone | 1 grain | 45s | 1 |
+| Well | 3 stone | 1 water | 15s | 1 |
+| Fisher | 2 planks, 1 stone | 1 fish | 30s | 1 |
 
 **Balance Rationale**:
+- All build costs use wood_plank (boards) and stone only, no wood_log in build costs
 - Basic production (lumberjack, quarry) has low costs
-- Processing buildings (sawmill) cost more but multiply output
-- Farm has high production time but yields 2 units
+- Processing buildings (sawmill) cost more but have long production times
 - Water is fastest (15s) because it's needed for bakery
 
 ### Production Buildings (Tier 2)
 | Building | Cost | Output | Production Time | Workers |
 |----------|------|--------|----------------|---------|
-| Mill | 4 planks, 3 stone | 2 flour (1 grain) | 20s | 1 |
-| Bakery | 3 planks, 3 stone | 3 bread (1 flour + 1 water) | 25s | 1 |
+| Mill | 4 planks, 3 stone | 1 flour (1 grain) | 20s | 1 |
+| Bakery | 3 planks, 3 stone | 1 bread (1 flour + 1 water) | 25s | 1 |
 | Coal Mine | 4 planks, 4 stone | 1 coal | 30s | 2 |
 | Iron Mine | 4 planks, 5 stone | 1 iron ore | 35s | 2 |
 | Iron Smelter | 4 planks, 6 stone | 1 iron bar (1 ore + 1 coal) | 25s | 1 |
-| Tool Smithy | 4 planks, 4 stone | 1 tool (1 iron bar) | 30s | 1 |
+| Metalworks | 4 planks, 4 stone | 1 tool (1 iron bar) | 30s | 1 |
 
 **Balance Rationale**:
 - Mines cost more stone (excavation infrastructure)
 - Mines require 2 workers (dangerous work)
 - Smelter has faster production than mines (bottleneck is ore supply)
-- Tool smithy makes 1:1 conversion (tools are valuable)
+- Metalworks makes 1:1 conversion (tools are valuable)
 
 ### Storage Buildings
 | Building | Cost | Capacity | Cost/100 Storage |
@@ -298,13 +303,13 @@ Buildings are organized into 3 tiers representing technological advancement:
 
 #### Tier 2: Industry (Requires Tier 1 Production)
 - **Residential**: House
-- **Production**: Sawmill, Mill, Bakery, Coal Mine, Iron Mine, Iron Smelter, Tool Smithy
+- **Production**: Sawmill, Mill, Bakery, Coal Mine, Iron Mine, Iron Smelter, Metalworks
 - **Infrastructure**: Warehouse
 - **Purpose**: Refine resources, create tools
 
 #### Tier 3: Advanced (Future Expansion)
 - **Military**: Barracks, Towers, Fortress
-- **Production**: Weapon Smithy, Gold Mine, Mint
+- **Production**: Armory, Gold Mine, Mint
 - **Infrastructure**: Market, Trading Post
 - **Purpose**: Military, economy, trade
 
@@ -319,7 +324,7 @@ Consider gating advanced buildings behind prerequisites:
 Sawmill: Requires 1 Lumberjack built
 Mine: Requires 1 Quarry built
 Smelter: Requires 1 Mine built
-Tool Smithy: Requires 1 Iron Smelter built
+Metalworks: Requires 1 Iron Smelter built
 ```
 
 ---
@@ -424,7 +429,7 @@ Located in: `src/data/buildings.json`
 ```json
 {
   "buildCost": {
-    "wood_log": 3,    // ← Adjust quantities
+    "wood_plank": 3,    // ← Adjust quantities
     "stone": 1
   }
 }
@@ -434,8 +439,7 @@ Located in: `src/data/buildings.json`
 - Tier 1: 2-4 total resources
 - Tier 2: 6-10 total resources
 - Tier 3: 10-15 total resources
-- Use raw materials (logs) for early buildings
-- Use refined (planks) for advanced buildings
+- All build costs use wood_plank (boards) and stone only, no wood_log in build costs
 
 #### Starting Resources
 Located in: `src/data/game-config.json`

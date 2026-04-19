@@ -20,7 +20,7 @@ import { transportManager } from '@/economics/TransportManager';
 // Construction phase sprites per building type (excluding the completed sprite).
 // During build, total frames = stages.length + 1 (the completed sprite is the last frame).
 const CONSTRUCTION_SPRITES: Record<string, string[]> = {
-  warehouse: [
+  storehouse: [
     '/assets/buildings/warehouse_build_0.png',
     '/assets/buildings/warehouse_build_1.png',
   ],
@@ -105,7 +105,7 @@ export class RenderSystem extends System {
     // Preload all known building sprites (completed + construction phases)
     const allSprites = [
       '/assets/buildings/base_camp.png',
-      '/assets/buildings/warehouse.png',
+      '/assets/buildings/warehouse.png', // used for storehouse
       '/assets/buildings/lumberjack.png',
       '/assets/buildings/sawmill.png',
       '/assets/buildings/quarry.png',
@@ -126,7 +126,7 @@ export class RenderSystem extends System {
       '/assets/resources/gold_ore.png',
       '/assets/resources/granite.png',
       '/assets/resources/iron_bar.png',
-      '/assets/resources/gold_bar.png',
+      '/assets/resources/gold_coin.png',
       '/assets/resources/grain.png',
       '/assets/resources/flour.png',
       '/assets/resources/bread.png',

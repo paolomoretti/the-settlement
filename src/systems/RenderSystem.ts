@@ -178,10 +178,6 @@ export class RenderSystem extends System {
     // Render tiles
     this.renderTiles();
 
-    // Render mountains with 3D elevation, then trees
-    this.renderMountainsOnTiles();
-    this.renderTreesOnTiles();
-
     // Get viewport bounds for entity culling
     const viewportBounds = this.getViewportBounds();
 
@@ -194,16 +190,13 @@ export class RenderSystem extends System {
       const width = building ? building.width : 1;
       const height = building ? building.height : 1;
 
-      // Check if entity is within viewport bounds (with padding)
       return pos.x + width >= viewportBounds.minX &&
              pos.x <= viewportBounds.maxX &&
              pos.y + height >= viewportBounds.minY &&
              pos.y <= viewportBounds.maxY;
     });
 
-    // Sort for isometric depth: higher x+y = closer to camera = drawn later.
-    // Buildings sort by their front tile edge. Workers at the same depth draw
-    // on top of buildings so they remain visible on roads in front of structures.
+    // Sort entities by depth
     const sortedEntities = visibleEntities.sort((a, b) => {
       const posA = a.getComponent(Position)!;
       const posB = b.getComponent(Position)!;
@@ -214,13 +207,12 @@ export class RenderSystem extends System {
       const depthB = posB.y + posB.x + (buildingB ? buildingB.width + buildingB.height - 2 : 0);
 
       if (depthA !== depthB) return depthA - depthB;
-      // At same depth, workers draw on top of buildings
       if (buildingA && !buildingB) return -1;
       if (!buildingA && buildingB) return 1;
       return 0;
     });
 
-    // Render road stub for disconnected buildings (before entities so it's behind sprites)
+    // Render road stub for disconnected buildings (before depth-sorted pass)
     for (const entity of visibleEntities) {
       const building = entity.getComponent(Building);
       if (!building || building.isActive) continue;
@@ -231,13 +223,10 @@ export class RenderSystem extends System {
       const ey = pos.y + entrance.dy;
       const outX = ex + 1;
       const outY = ey;
-      // Draw road on entrance tile (will be hidden under sprite)
       const entranceCenter = this.iso.gridToScreen(ex, ey);
       this.terrainTextures.drawRoad(this.ctx, 4, entranceCenter.x, entranceCenter.y);
-      // Draw road on out tile connecting back to entrance
       const outCenter = this.iso.gridToScreen(outX, outY);
       this.terrainTextures.drawRoad(this.ctx, 1, outCenter.x, outCenter.y);
-      // Subtle highlight on the out tile
       const corners = this.iso.getTileCorners(outX, outY);
       this.ctx.beginPath();
       this.ctx.moveTo(corners[0].x, corners[0].y);
@@ -249,8 +238,8 @@ export class RenderSystem extends System {
       this.ctx.fill();
     }
 
-    // Render entities
-    sortedEntities.forEach(entity => this.renderEntity(entity));
+    // Depth-sorted rendering: interleave trees, mountains, and entities
+    this.renderDepthSorted(sortedEntities, viewportBounds);
 
     // Render selection outline for selected entity
     if (this.selectedEntityId !== null) {
@@ -614,16 +603,61 @@ export class RenderSystem extends System {
     return h / 4294967296;
   }
 
-  private renderMountainsOnTiles(): void {
-    const viewportBounds = this.getViewportBounds();
+  private renderDepthSorted(
+    sortedEntities: Entity[],
+    viewportBounds: { minX: number; maxX: number; minY: number; maxY: number }
+  ): void {
+    const minDepth = viewportBounds.minX + viewportBounds.minY;
+    const maxDepth = viewportBounds.maxX + viewportBounds.maxY;
 
-    for (let y = viewportBounds.minY; y <= viewportBounds.maxY; y++) {
-      for (let x = viewportBounds.minX; x <= viewportBounds.maxX; x++) {
+    // Index entities by integer depth
+    const entitiesByDepth = new Map<number, Entity[]>();
+    for (const entity of sortedEntities) {
+      const pos = entity.getComponent(Position)!;
+      const building = entity.getComponent(Building);
+      const depth = Math.round(pos.y + pos.x + (building ? building.width + building.height - 2 : 0));
+      const list = entitiesByDepth.get(depth);
+      if (list) {
+        list.push(entity);
+      } else {
+        entitiesByDepth.set(depth, [entity]);
+      }
+    }
+
+    for (let d = minDepth; d <= maxDepth; d++) {
+      const xMin = Math.max(viewportBounds.minX, d - viewportBounds.maxY);
+      const xMax = Math.min(viewportBounds.maxX, d - viewportBounds.minY);
+
+      // Mountains at this depth
+      for (let x = xMin; x <= xMax; x++) {
+        const y = d - x;
+        const tile = this.tileMap.getTile(x, y);
+        if (!tile || !tile.isExplored() || tile.terrain !== 'mountain') continue;
+        this.renderMountainTile(x, y);
+      }
+
+      // Trees at this depth
+      for (let x = xMin; x <= xMax; x++) {
+        const y = d - x;
         const tile = this.tileMap.getTile(x, y);
         if (!tile || !tile.isExplored()) continue;
-        if (tile.terrain !== 'mountain') continue;
+        if (tile.terrain !== 'tree' && tile.terrain !== 'forest') continue;
+        if (tile.isOccupied() || tile.hasRoad) continue;
 
-        this.renderMountainTile(x, y);
+        const center = this.iso.gridToScreen(x, y);
+        if (tile.terrain === 'tree') {
+          this.renderSingleTree(center.x, center.y, x, y);
+        } else {
+          this.renderForestCluster(center.x, center.y, x, y);
+        }
+      }
+
+      // Entities at this depth
+      const entities = entitiesByDepth.get(d);
+      if (entities) {
+        for (const entity of entities) {
+          this.renderEntity(entity);
+        }
       }
     }
   }
@@ -708,27 +742,6 @@ export class RenderSystem extends System {
       ctx.beginPath();
       ctx.ellipse(cx + dx, cy - h * 0.3 + dy, dSize, dSize * 0.5, this.tileHash(tileX, tileY, 150 + i) * Math.PI, 0, Math.PI * 2);
       ctx.fill();
-    }
-  }
-
-  private renderTreesOnTiles(): void {
-    const viewportBounds = this.getViewportBounds();
-
-    for (let y = viewportBounds.minY; y <= viewportBounds.maxY; y++) {
-      for (let x = viewportBounds.minX; x <= viewportBounds.maxX; x++) {
-        const tile = this.tileMap.getTile(x, y);
-        if (!tile || !tile.isExplored()) continue;
-        if (tile.terrain !== 'tree' && tile.terrain !== 'forest') continue;
-        if (tile.isOccupied() || tile.hasRoad) continue;
-
-        const center = this.iso.gridToScreen(x, y);
-
-        if (tile.terrain === 'tree') {
-          this.renderSingleTree(center.x, center.y, x, y);
-        } else {
-          this.renderForestCluster(center.x, center.y, x, y);
-        }
-      }
     }
   }
 

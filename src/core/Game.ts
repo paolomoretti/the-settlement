@@ -90,6 +90,12 @@ export class Game {
       moveWorker: (id, seg) => this.moveSegmentWorker(id, seg),
     });
 
+    // Load sound effects
+    audioManager.loadSound('road_build', '/audio/road_build.mp3');
+    audioManager.loadSound('build_placed', '/audio/build_placed.mp3');
+    audioManager.loadSound('demolish', '/audio/demolish.mp3');
+    audioManager.loadSound('building_complete', '/audio/building_complete.mp3');
+
     // Setup event listeners
     this.setupEventListeners();
 
@@ -252,6 +258,7 @@ export class Game {
 
     if (this.roadDragMode === 'delete') {
       if (!isExistingRoad) return;
+      audioManager.playSound('demolish');
       tile.hasRoad = false;
       roadSegmentManager.removeRoad(x, y);
       this.scheduleSegmentRecalc();
@@ -259,7 +266,7 @@ export class Game {
       this.rerouteReturningWorkers();
     } else {
       if (this.tileMap.buildRoad(x, y)) {
-        audioManager.playSound('build_placed');
+        audioManager.playSound('road_build');
         roadSegmentManager.addRoad(x, y);
         this.scheduleSegmentRecalc();
         this.updateBuildingRoadConnections();
@@ -1037,6 +1044,7 @@ export class Game {
       if (building && building.state === 'under_construction') {
         building.updateConstruction();
         if (building.isComplete()) {
+          audioManager.playSound('building_complete');
           const production = entity.getComponent(Production);
           if (production && production.hasInputs()) {
             transportManager.computeRoutesToBuilding(roadSegmentManager.getSegments(), entity.id);
@@ -1175,6 +1183,7 @@ export class Game {
         if (tile) tile.hasRoad = false;
       }
 
+      audioManager.playSound('demolish');
       resourceManager.onBuildingDestroyed(this.selectedEntity.id);
       console.log(`Deleted entity #${this.selectedEntity.id}`);
       this.removeEntity(this.selectedEntity);

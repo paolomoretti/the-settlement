@@ -7,6 +7,9 @@ import { Howl, Howler } from 'howler';
 
 export type SoundEvent =
   | 'build_placed'
+  | 'road_build'
+  | 'demolish'
+  | 'building_complete'
   | 'worker_spawn'
   | 'footstep'
   | 'chop_wood'

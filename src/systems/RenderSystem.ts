@@ -162,6 +162,7 @@ export class RenderSystem extends System {
       '/assets/terrain/rock_single_0.png',
       '/assets/terrain/rock_single_1.png',
       '/assets/terrain/rock_single_2.png',
+      '/assets/terrain/mountain.png',
     ]);
   }
 
@@ -758,11 +759,22 @@ export class RenderSystem extends System {
     const neighbors = this.tileMap.getNeighbors(tileX, tileY);
     const mountainNeighbors = neighbors.filter(t => t.terrain === 'mountain').length;
 
+    if (mountainNeighbors >= 3) {
+      const mSprite = this.loadSprite('/assets/terrain/mountain.png');
+      if (mSprite && mSprite.naturalWidth > 0) {
+        const scale = 2.2;
+        const drawW = tileW * scale;
+        const drawH = (mSprite.naturalHeight / mSprite.naturalWidth) * drawW;
+        ctx.drawImage(mSprite, cx - drawW / 2, cy - drawH / 2 - tileH * 0.25, drawW, drawH);
+        return;
+      }
+    }
+
     const variant = Math.floor(this.tileHash(tileX, tileY, 110) * 3);
     const spritePath = `/assets/terrain/rock_single_${variant}.png`;
     const sprite = this.loadSprite(spritePath);
     if (sprite && sprite.naturalWidth > 0) {
-      const scale = mountainNeighbors <= 2 ? 1.6 : 2.0;
+      const scale = 1.6;
       const drawW = tileW * scale;
       const drawH = (sprite.naturalHeight / sprite.naturalWidth) * drawW;
       ctx.drawImage(sprite, cx - drawW / 2, cy - drawH / 2 - tileH * 0.15, drawW, drawH);

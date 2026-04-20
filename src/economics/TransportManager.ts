@@ -7,6 +7,7 @@ export interface JunctionItem {
 
 export class TransportManager {
   private junctionItems = new Map<string, JunctionItem[]>();
+  private pendingPickupVisuals = new Map<string, JunctionItem[]>();
   private baseCampDirection = new Map<number, number>();
   private buildingDirections = new Map<number, Map<number, number>>();
   private baseCampEntityId: number | null = null;
@@ -65,8 +66,28 @@ export class TransportManager {
     return null;
   }
 
+  addPendingPickupVisual(x: number, y: number, resourceType: string, destinationEntityId: number | null): void {
+    const key = `${x},${y}`;
+    const items = this.pendingPickupVisuals.get(key) || [];
+    items.push({ resourceType, destinationEntityId });
+    this.pendingPickupVisuals.set(key, items);
+  }
+
+  removePendingPickupVisual(x: number, y: number, resourceType: string): void {
+    const key = `${x},${y}`;
+    const items = this.pendingPickupVisuals.get(key);
+    if (!items) return;
+    const idx = items.findIndex(i => i.resourceType === resourceType);
+    if (idx !== -1) items.splice(idx, 1);
+    if (items.length === 0) this.pendingPickupVisuals.delete(key);
+  }
+
   getJunctionItemsMap(): ReadonlyMap<string, JunctionItem[]> {
     return this.junctionItems;
+  }
+
+  getPendingPickupVisualsMap(): ReadonlyMap<string, JunctionItem[]> {
+    return this.pendingPickupVisuals;
   }
 
   getDirectionIndex(segmentId: number, destEntityId: number | null): number | undefined {
@@ -180,6 +201,7 @@ export class TransportManager {
 
   reset(): void {
     this.junctionItems.clear();
+    this.pendingPickupVisuals.clear();
     this.baseCampDirection.clear();
     this.buildingDirections.clear();
     this.baseCampEntityId = null;

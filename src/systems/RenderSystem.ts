@@ -20,7 +20,7 @@ import { transportManager } from '@/economics/TransportManager';
 // Construction phase sprites per building type (excluding the completed sprite).
 // During build, total frames = stages.length + 1 (the completed sprite is the last frame).
 const CONSTRUCTION_SPRITES: Record<string, string[]> = {
-  warehouse: [
+  storehouse: [
     '/assets/buildings/warehouse_build_0.png',
     '/assets/buildings/warehouse_build_1.png',
   ],
@@ -105,7 +105,7 @@ export class RenderSystem extends System {
     // Preload all known building sprites (completed + construction phases)
     const allSprites = [
       '/assets/buildings/base_camp.png',
-      '/assets/buildings/warehouse.png',
+      '/assets/buildings/warehouse.png', // used for storehouse
       '/assets/buildings/lumberjack.png',
       '/assets/buildings/sawmill.png',
       '/assets/buildings/quarry.png',
@@ -126,7 +126,7 @@ export class RenderSystem extends System {
       '/assets/resources/gold_ore.png',
       '/assets/resources/granite.png',
       '/assets/resources/iron_bar.png',
-      '/assets/resources/gold_bar.png',
+      '/assets/resources/gold_coin.png',
       '/assets/resources/grain.png',
       '/assets/resources/flour.png',
       '/assets/resources/bread.png',
@@ -1002,7 +1002,7 @@ export class RenderSystem extends System {
     this.ctx.save();
 
     const isInactive = building && !building.isActive;
-    const isUnderConstruction = building && building.state === 'under_construction';
+    const isUnderConstruction = building && (building.state === 'under_construction' || building.state === 'awaiting_materials');
 
     // Apply fade effect for selected buildings
     if (isSelected && building) {
@@ -1075,7 +1075,8 @@ export class RenderSystem extends System {
       this.ctx.fillStyle = 'white';
       this.ctx.font = '10px monospace';
       this.ctx.textAlign = 'center';
-      this.ctx.fillText(building.buildingType, 0, -building.height - 10);
+      const buildingDef = dataManager.getBuilding(building.buildingType);
+      this.ctx.fillText(buildingDef?.name || building.buildingType, 0, -building.height - 10);
     }
 
     // Reset filter before drawing status indicators
@@ -1083,8 +1084,8 @@ export class RenderSystem extends System {
       this.ctx.filter = 'none';
     }
 
-    // Construction overlay for buildings under construction
-    if (building && building.state === 'under_construction') {
+    // Construction overlay for buildings under construction or awaiting materials
+    if (building && (building.state === 'under_construction' || building.state === 'awaiting_materials')) {
       this.ctx.globalAlpha = 1;
       this.renderConstructionOverlay(building);
     }
@@ -1113,7 +1114,7 @@ export class RenderSystem extends System {
   }
 
   private getConstructionSpritePath(building: Building, renderable: Renderable): string | undefined {
-    if (building.state !== 'under_construction' || !renderable.spritePath) return renderable.spritePath;
+    if ((building.state !== 'under_construction' && building.state !== 'awaiting_materials') || !renderable.spritePath) return renderable.spritePath;
     const stages = CONSTRUCTION_SPRITES[building.buildingType];
     if (!stages || stages.length === 0) return renderable.spritePath;
     const totalFrames = stages.length + 1;
@@ -1401,15 +1402,24 @@ export class RenderSystem extends System {
 
   private renderJunctionItems(viewportBounds: { minX: number; maxX: number; minY: number; maxY: number }): void {
     const junctionMap = transportManager.getJunctionItemsMap();
+    const pendingMap = transportManager.getPendingPickupVisualsMap();
 
-    for (const [key, items] of junctionMap) {
-      if (items.length === 0) continue;
+    const allKeys = new Set<string>();
+    for (const key of junctionMap.keys()) allKeys.add(key);
+    for (const key of pendingMap.keys()) allKeys.add(key);
+
+    for (const key of allKeys) {
+      const junctionItems = junctionMap.get(key) || [];
+      const pendingItems = pendingMap.get(key) || [];
+      const combined = [...junctionItems, ...pendingItems];
+      if (combined.length === 0) continue;
+
       const [x, y] = key.split(',').map(Number);
       if (x < viewportBounds.minX || x > viewportBounds.maxX ||
           y < viewportBounds.minY || y > viewportBounds.maxY) continue;
 
       const center = this.iso.gridToScreen(x, y);
-      const count = Math.min(items.length, 5);
+      const count = Math.min(combined.length, 5);
 
       const offsets = [
         { x: 0, y: -2 },
@@ -1423,11 +1433,10 @@ export class RenderSystem extends System {
         const ix = center.x + offsets[i].x;
         const iy = center.y + offsets[i].y;
 
-        const resSprite = this.loadSprite(`/assets/resources/${items[i].resourceType}.png`);
+        const resSprite = this.loadSprite(`/assets/resources/${combined[i].resourceType}.png`);
         if (resSprite) {
           this.ctx.drawImage(resSprite, ix - 5, iy - 5, 10, 10);
         } else {
-          // Small package: 3D crate look
           this.ctx.fillStyle = '#6b5020';
           this.ctx.fillRect(ix - 4, iy - 1, 8, 4);
           this.ctx.fillStyle = '#8b6914';

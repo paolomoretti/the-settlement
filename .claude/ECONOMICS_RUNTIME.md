@@ -289,7 +289,7 @@ When `createBuilding()` is called:
 - If building def has `production` with non-empty `outputs` → attach `Production` component
 - If building def has `storage` → attach `Storage` component (with `isHeadquarters` flag)
 
-Buildings that get Production: lumberjack, sawmill, quarry, farm, mill, bakery, well, fisher, coal_mine, iron_mine, iron_smelter, tool_smithy
+Buildings that get Production: lumberjack, sawmill, quarry, farm, mill, bakery, well, fisher, coal_mine, iron_mine, iron_smelter, metalworks
 
 Buildings that get Storage: base_camp, warehouse, storehouse
 

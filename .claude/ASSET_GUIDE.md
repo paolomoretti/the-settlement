@@ -636,13 +636,13 @@ All three locations use the same path pattern `/assets/resources/{resourceId}.pn
 
 **Raw Materials:** `wood_log`, `stone`, `coal`, `iron_ore`, `gold_ore`, `granite`
 
-**Refined Materials:** `wood_plank`, `iron_bar`, `gold_bar`
+**Refined Materials:** `wood_plank`, `iron_bar`, `gold_coin`
 
 **Food:** `grain`, `flour`, `bread`, `water`, `fish`, `meat`
 
-**Tools:** `hammer`, `axe`, `saw`, `pickaxe`, `shovel`, `fishing_rod`, `scythe`
+**Tools:** `hammer`, `axe`, `saw`, `pickaxe`, `shovel`, `fishing_rod`, `scythe`, `bow`
 
-**Weapons:** `sword`, `shield`, `bow`
+**Weapons:** `sword`, `shield`
 
 ### Sprite image requirements
 

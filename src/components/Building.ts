@@ -7,7 +7,7 @@ import { BuildingType } from '@/types/GameData';
 
 export type { BuildingType };
 
-export type BuildingState = 'planning' | 'under_construction' | 'complete';
+export type BuildingState = 'awaiting_materials' | 'under_construction' | 'complete';
 
 export class Building extends Component {
   public state: BuildingState = 'complete';
@@ -21,6 +21,15 @@ export class Building extends Component {
   public passable: boolean; // Can workers walk through?
   public requiresRoad: boolean;
   public isActive: boolean = true;
+
+  // Construction material delivery tracking
+  public constructionMaterials: Record<string, number> | null = null;
+  public materialsSent: Record<string, number> = {};
+  public materialsDelivered: Record<string, number> = {};
+  public builderEntityId: number | null = null;
+  public builderArrived: boolean = false;
+  public hasOperator: boolean = true;
+  public animationWorkerId: number | null = null;
 
   constructor(
     public buildingType: BuildingType,
@@ -69,6 +78,47 @@ export class Building extends Component {
       this.constructionStartedAt = null;
       this.completedAt = Date.now();
     }
+  }
+
+  startAwaitingMaterials(buildTimeSec: number, materials: Record<string, number>): void {
+    this.state = 'awaiting_materials';
+    this.buildTimeSec = buildTimeSec;
+    this.constructionMaterials = { ...materials };
+    this.materialsSent = {};
+    this.materialsDelivered = {};
+    this.constructionProgress = 0;
+  }
+
+  deliverMaterial(resourceType: string): boolean {
+    if (!this.constructionMaterials) return false;
+    const required = this.constructionMaterials[resourceType] || 0;
+    const delivered = this.materialsDelivered[resourceType] || 0;
+    if (delivered >= required) return false;
+    this.materialsDelivered[resourceType] = delivered + 1;
+    return true;
+  }
+
+  areMaterialsDelivered(): boolean {
+    if (!this.constructionMaterials) return true;
+    for (const [res, required] of Object.entries(this.constructionMaterials)) {
+      if ((this.materialsDelivered[res] || 0) < required) return false;
+    }
+    return true;
+  }
+
+  canStartConstruction(): boolean {
+    return this.state === 'awaiting_materials' &&
+           this.builderArrived &&
+           this.areMaterialsDelivered();
+  }
+
+  beginConstruction(): void {
+    this.state = 'under_construction';
+    this.constructionStartedAt = Date.now();
+    this.constructionProgress = 0;
+    this.constructionMaterials = null;
+    this.materialsSent = {};
+    this.materialsDelivered = {};
   }
 
   getProductionProgress(productionTimeSec: number): number {

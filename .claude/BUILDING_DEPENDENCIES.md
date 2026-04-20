@@ -180,9 +180,17 @@ The system is general — any building with `production.inputs` and `storage` au
 | Flour milling | Farm | Mill | grain → flour |
 | Baking | Mill | Bakery | flour → bread |
 | Iron smelting | Iron Mine + Coal Mine | Iron Smelter | iron_ore + coal → iron_bar |
-| Tool smithing | Iron Smelter + Sawmill | Tool Smithy | iron_bar + wood_plank → hammer |
+| Tool smithing | Iron Smelter + Sawmill | Metalworks | iron_bar + wood_plank → hammer |
+| Brewing | Brewery | brewery | grain + water → beer |
+| Meat processing | Pig Farm | Slaughterhouse | meat → ham |
+| Pig breeding | Farm + Well | Pig Farm | grain + water → meat |
+| Coal mining | Bakery | Coal Mine | bread → coal |
+| Iron mining | Bakery | Iron Mine | bread → iron_ore |
+| Gold mining | Bakery | Gold Mine | bread → gold_ore |
+| Gold minting | Iron Smelter pattern | Mint | coal + gold_ore → gold_coin |
+| Weapon forging | Iron Smelter pattern | Armory | coal + iron_bar → sword |
 
-Multi-input buildings (iron smelter, tool smithy) demand each input independently. Each input type is routed from its own source.
+Multi-input buildings (iron smelter, metalworks) demand each input independently. Each input type is routed from its own source.
 
 ---
 

@@ -309,6 +309,35 @@ export class TileMap {
     return tile ? tile.isWalkable() : false;
   }
 
+  setTerrain(x: number, y: number, terrain: TerrainType): void {
+    const tile = this.getTile(x, y);
+    if (!tile) return;
+    tile.terrain = terrain;
+    tile.walkable = terrain !== 'water' && terrain !== 'mountain';
+  }
+
+  findNearbyTerrain(cx: number, cy: number, radius: number, types: string[], exclude?: Set<string>): { x: number; y: number } | null {
+    let best: { x: number; y: number; dist: number } | null = null;
+
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const x = cx + dx;
+        const y = cy + dy;
+        const tile = this.getTile(x, y);
+        if (!tile) continue;
+        if (!types.includes(tile.terrain)) continue;
+        if (tile.hasRoad || tile.isOccupied()) continue;
+        if (exclude && exclude.has(`${x},${y}`)) continue;
+        const dist = Math.abs(dx) + Math.abs(dy);
+        if (!best || dist < best.dist) {
+          best = { x, y, dist };
+        }
+      }
+    }
+
+    return best ? { x: best.x, y: best.y } : null;
+  }
+
   isInBounds(x: number, y: number): boolean {
     return x >= 0 && x < this.width && y >= 0 && y < this.height;
   }

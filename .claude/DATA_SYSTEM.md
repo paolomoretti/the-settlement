@@ -28,10 +28,10 @@ All resources are defined in `src/data/resources.json`.
 ### Resource Categories
 
 1. **Raw Materials**: `wood_log`, `stone`, `coal`, `iron_ore`, `gold_ore`, `granite`
-2. **Refined Materials**: `wood_plank`, `iron_bar`, `gold_bar`
+2. **Refined Materials**: `wood_plank`, `iron_bar`, `gold_coin`
 3. **Food**: `grain`, `flour`, `bread`, `water`, `fish`, `meat`
-4. **Tools**: `hammer`, `axe`, `saw`, `pickaxe`, `shovel`, `fishing_rod`, `scythe`
-5. **Weapons**: `sword`, `shield`, `bow`
+4. **Tools**: `hammer`, `axe`, `saw`, `pickaxe`, `shovel`, `fishing_rod`, `scythe`, `bow`
+5. **Weapons**: `sword`, `shield`
 
 ### Resource Schema
 
@@ -63,7 +63,7 @@ All buildings are defined in `src/data/buildings.json`.
 1. **Core**: `headquarters`, `warehouse`, `storehouse`
 2. **Residential**: `hut`, `house`
 3. **Production**: `lumberjack`, `sawmill`, `quarry`, `farm`, `mill`, `bakery`, etc.
-4. **Military**: `barracks`, `guard_tower`, `watchtower`, `fortress`
+4. **Military**: `barracks`, `guardhouse`, `watchtower`, `fortress`
 5. **Infrastructure**: `well`
 
 ### Building Schema
@@ -89,7 +89,7 @@ All buildings are defined in `src/data/buildings.json`.
   
   // Construction requirements
   "buildCost": {
-    "wood_log": 3,
+    "wood_plank": 3,
     "stone": 1
   },
   "buildTime": 35,        // Seconds
@@ -141,9 +141,9 @@ Buildings can have production rules:
 **Processing** (inputs → outputs):
 ```json
 "production": {
-  "outputs": { "wood_plank": 2 },
+  "outputs": { "wood_plank": 1 },
   "inputs": { "wood_log": 1 },
-  "productionTime": 15,
+  "productionTime": 120,
   "continuous": true
 }
 ```
@@ -151,7 +151,7 @@ Buildings can have production rules:
 **Multi-input**:
 ```json
 "production": {
-  "outputs": { "bread": 3 },
+  "outputs": { "bread": 1 },
   "inputs": { 
     "flour": 1,
     "water": 1
@@ -175,7 +175,7 @@ Farm → Grain → Mill → Flour + (Well → Water) → Bakery → Bread
 
 **Iron Chain**:
 ```
-Iron Mine → Iron Ore + (Coal Mine → Coal) → Iron Smelter → Iron Bars → Tool Smithy → Tools
+Iron Mine → Iron Ore + (Coal Mine → Coal) → Iron Smelter → Iron Bars → Metalworks → Tools
 ```
 
 ### Adding a New Building
@@ -305,7 +305,7 @@ const startingPop = dataManager.getStartingPopulation();
 
 Residential buildings provide population capacity:
 
-- **Hut**: +3 max population (costs: 2 wood logs, 1 stone)
+- **Hut**: +3 max population (costs: 2 wood planks, 1 stone)
 - **House**: +6 max population (costs: 4 wood planks, 3 stone)
 - **Headquarters**: +10 max population (starting building)
 

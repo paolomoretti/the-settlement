@@ -65,6 +65,7 @@ export class Game {
   private builderWorkers = new Map<number, number>(); // builderEntityId → buildingEntityId
   private returningBuilders = new Set<number>();
   private toolWorkers = new Map<number, number>(); // toolWorkerEntityId → buildingEntityId
+  private pendingBuildingPickups = new Set<number>(); // building entity IDs with workers en route
   private roadDragMode: 'create' | 'delete' | null = null;
 
   constructor(canvas: HTMLCanvasElement, skipInit = false) {
@@ -208,7 +209,7 @@ export class Game {
 
   private recomputeTransportRoutes(): void {
     if (!this.baseCampEntity) return;
-    this.cancelAllTransportTasks();
+    this.cancelInvalidTransportTasks();
     const segments = roadSegmentManager.getSegments();
     transportManager.computeRoutes(segments, this.baseCampEntity.id);
     transportManager.clearBuildingRoutes();
@@ -230,7 +231,7 @@ export class Game {
     }
   }
 
-  private cancelAllTransportTasks(): void {
+  private cancelInvalidTransportTasks(): void {
     for (const segment of roadSegmentManager.getSegments()) {
       if (segment.assignedWorkerId === null) continue;
       const entity = this.entities.find(e => e.id === segment.assignedWorkerId && e.active);
@@ -238,17 +239,30 @@ export class Game {
       const worker = entity.getComponent(Worker);
       if (!worker || !worker.transportTask) continue;
       const task = worker.transportTask;
+
+      // Check if task positions still match this segment's endpoints
+      const ep0 = segment.endpoints[0];
+      const ep1 = segment.endpoints[1];
+      const pickupMatch = (task.pickupPos.x === ep0.x && task.pickupPos.y === ep0.y) ||
+                          (task.pickupPos.x === ep1.x && task.pickupPos.y === ep1.y);
+      const dropoffMatch = (task.dropoffPos.x === ep0.x && task.dropoffPos.y === ep0.y) ||
+                           (task.dropoffPos.x === ep1.x && task.dropoffPos.y === ep1.y);
+
+      if (pickupMatch && dropoffMatch) continue;
+
+      // Task is invalid — cancel it
       if (worker.carryingResource) {
         const p = entity.getComponent(Position);
         if (p) {
-          const dest = task.destEntityId ?? null;
-          transportManager.addJunctionItem(Math.floor(p.x), Math.floor(p.y), worker.carryingResource, dest);
+          transportManager.addJunctionItem(Math.floor(p.x), Math.floor(p.y), worker.carryingResource, task.destEntityId);
         }
         worker.carryingResource = undefined;
       } else if (task.phase === 'to_pickup' && task.sourceEntityId === null) {
+        transportManager.removePendingPickupVisual(task.pickupPos.x, task.pickupPos.y, task.resourceType);
         transportManager.addJunctionItem(task.pickupPos.x, task.pickupPos.y, task.resourceType, task.destEntityId);
       }
       worker.transportTask = null;
+      worker.setState('idle');
     }
   }
 
@@ -785,17 +799,51 @@ export class Game {
       return;
     }
 
+    const builderX = Math.floor(bPos.x);
+    const builderY = Math.floor(bPos.y);
+    const currentTile = this.tileMap.getTile(builderX, builderY);
+
+    let prefixPath: Position[] = [];
+    let pathStartX = builderX;
+    let pathStartY = builderY;
+
+    if (!currentTile || !currentTile.hasRoad) {
+      const roadTile = this.findBuildingAdjacentRoadTile(buildingEntity);
+      if (!roadTile) {
+        this.removeEntity(builderEntity);
+        building.builderEntityId = null;
+        return;
+      }
+
+      const pos = buildingEntity.getComponent(Position);
+      if (pos) {
+        const bx = Math.floor(pos.x);
+        const by = Math.floor(pos.y);
+        const perimeterTiles = this.getBuildingPerimeterTiles(bx, by, building.width, building.height);
+        prefixPath = this.findPerimeterPath(builderX, builderY, roadTile.x, roadTile.y, perimeterTiles);
+      }
+
+      if (prefixPath.length === 0) {
+        prefixPath = [new Position(roadTile.x, roadTile.y)];
+      }
+
+      pathStartX = roadTile.x;
+      pathStartY = roadTile.y;
+    }
+
     const path = this.pathFinder.findPath(
-      new Position(Math.floor(bPos.x), Math.floor(bPos.y)),
+      new Position(pathStartX, pathStartY),
       new Position(spawnTile.x, spawnTile.y),
       this.tileMap
     );
 
     if (path.length > 0) {
+      const fullPath = [...prefixPath, ...path];
       const movable = builderEntity.getComponent(Movable);
       const worker = builderEntity.getComponent(Worker);
       if (movable && worker) {
-        movable.setPath(path);
+        movable.speed = 1.8;
+        movable.setPath(fullPath);
         worker.setState('walking');
         this.returningBuilders.add(builderEntity.id);
       }
@@ -804,6 +852,105 @@ export class Game {
     }
 
     building.builderEntityId = null;
+  }
+
+  private getBuildingPerimeterTiles(bx: number, by: number, w: number, h: number): { x: number; y: number }[] {
+    const tiles: { x: number; y: number }[] = [];
+    for (let x = bx - 1; x <= bx + w; x++) {
+      for (let y = by - 1; y <= by + h; y++) {
+        if (x >= bx && x < bx + w && y >= by && y < by + h) continue;
+        const tile = this.tileMap.getTile(x, y);
+        if (tile && tile.isWalkable()) {
+          tiles.push({ x, y });
+        }
+      }
+    }
+    return tiles;
+  }
+
+  private findPerimeterPath(
+    startX: number, startY: number,
+    endX: number, endY: number,
+    perimeterTiles: { x: number; y: number }[]
+  ): Position[] {
+    const key = (x: number, y: number) => `${x},${y}`;
+    const tileSet = new Set(perimeterTiles.map(t => key(t.x, t.y)));
+    tileSet.add(key(endX, endY));
+
+    const visited = new Set<string>();
+    const queue: { x: number; y: number; path: Position[] }[] = [
+      { x: startX, y: startY, path: [] }
+    ];
+    visited.add(key(startX, startY));
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (current.x === endX && current.y === endY) {
+        return current.path;
+      }
+
+      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+        const nx = current.x + dx;
+        const ny = current.y + dy;
+        const nk = key(nx, ny);
+        if (!visited.has(nk) && tileSet.has(nk)) {
+          visited.add(nk);
+          queue.push({ x: nx, y: ny, path: [...current.path, new Position(nx, ny)] });
+        }
+      }
+    }
+
+    return [];
+  }
+
+  private updateBuilderPatrol(): void {
+    for (const entity of this.entities) {
+      if (!entity.active) continue;
+      const building = entity.getComponent(Building);
+      if (!building) continue;
+      if (building.state !== 'under_construction') continue;
+      if (building.builderEntityId === null) continue;
+
+      const builderEntity = this.entities.find(e => e.id === building.builderEntityId && e.active);
+      if (!builderEntity) continue;
+
+      const movable = builderEntity.getComponent(Movable);
+      if (!movable || movable.isMoving) continue;
+
+      const builderPos = builderEntity.getComponent(Position);
+      if (!builderPos) continue;
+
+      const pos = entity.getComponent(Position);
+      if (!pos) continue;
+
+      const bx = Math.floor(pos.x);
+      const by = Math.floor(pos.y);
+      const perimeterTiles = this.getBuildingPerimeterTiles(bx, by, building.width, building.height);
+      if (perimeterTiles.length === 0) continue;
+
+      const cx = Math.floor(builderPos.x);
+      const cy = Math.floor(builderPos.y);
+      const adjacent = perimeterTiles.filter(t =>
+        Math.abs(t.x - cx) + Math.abs(t.y - cy) === 1
+      );
+
+      if (adjacent.length > 0) {
+        const edgeAdjacent = adjacent.filter(t => {
+          for (let ix = bx; ix < bx + building.width; ix++) {
+            for (let iy = by; iy < by + building.height; iy++) {
+              if (Math.abs(t.x - ix) + Math.abs(t.y - iy) === 1) return true;
+            }
+          }
+          return false;
+        });
+        const candidates = edgeAdjacent.length > 0 ? edgeAdjacent : adjacent;
+        const target = candidates[Math.floor(Math.random() * candidates.length)];
+        movable.speed = 0.9;
+        movable.setPath([new Position(target.x, target.y)]);
+        const worker = builderEntity.getComponent(Worker);
+        if (worker) worker.setState('walking');
+      }
+    }
   }
 
   private spawnToolWorker(buildingEntity: Entity, tool: string): void {
@@ -962,6 +1109,19 @@ export class Game {
 
   private updateTransport(): void {
     const segments = roadSegmentManager.getSegments();
+
+    // Rebuild pending building pickups from actual worker state to prevent stale entries
+    this.pendingBuildingPickups.clear();
+    for (const seg of segments) {
+      if (seg.assignedWorkerId === null) continue;
+      const e = this.entities.find(ent => ent.id === seg.assignedWorkerId && ent.active);
+      if (!e) continue;
+      const w = e.getComponent(Worker);
+      if (w?.transportTask?.sourceEntityId != null && w.transportTask.phase === 'to_pickup') {
+        this.pendingBuildingPickups.add(w.transportTask.sourceEntityId);
+      }
+    }
+
     for (const segment of segments) {
       if (segment.assignedWorkerId === null) continue;
       const entity = this.entities.find(e => e.id === segment.assignedWorkerId && e.active);
@@ -1041,7 +1201,7 @@ export class Game {
       const dropoffEp = segment.endpoints[dropoffIdx];
 
       // Check building output at this endpoint
-      if (ep.type === 'building' && ep.entityId != null) {
+      if (ep.type === 'building' && ep.entityId != null && !this.pendingBuildingPickups.has(ep.entityId)) {
         const output = this.checkBuildingForOutput(ep.entityId);
         if (output) {
           let destEntityId: number | null = this.baseCampEntity?.id ?? null;
@@ -1058,6 +1218,7 @@ export class Game {
           const dirCheck = transportManager.getDirectionIndex(segment.id, destEntityId);
           if (dirCheck === undefined || dirCheck === pickupIdx) continue;
 
+          this.pendingBuildingPickups.add(ep.entityId);
           worker.transportTask = {
             phase: 'to_pickup',
             pickupPos: { x: ep.x, y: ep.y },
@@ -1075,9 +1236,10 @@ export class Game {
         }
       }
 
-      // Check junction items at this endpoint — take immediately to prevent race conditions
+      // Check junction items at this endpoint
       const junctionItem = transportManager.takeJunctionItemForDirection(ep.x, ep.y, segment.id, pickupIdx);
       if (junctionItem) {
+        transportManager.addPendingPickupVisual(ep.x, ep.y, junctionItem.resourceType, junctionItem.destinationEntityId);
         worker.transportTask = {
           phase: 'to_pickup',
           pickupPos: { x: ep.x, y: ep.y },
@@ -1095,7 +1257,7 @@ export class Game {
       }
     }
 
-    // Check for stranded items anywhere along the segment (dropped during recalc) — take immediately
+    // Check for stranded items anywhere along the segment (dropped during recalc)
     for (const tile of segment.tiles) {
       if (!transportManager.hasJunctionItems(tile.x, tile.y)) continue;
       const item = transportManager.takeJunctionItem(tile.x, tile.y);
@@ -1105,6 +1267,7 @@ export class Game {
         transportManager.addJunctionItem(tile.x, tile.y, item.resourceType, item.destinationEntityId);
         continue;
       }
+      transportManager.addPendingPickupVisual(tile.x, tile.y, item.resourceType, item.destinationEntityId);
       const dropoffEp = segment.endpoints[dirIdx];
       worker.transportTask = {
         phase: 'to_pickup',
@@ -1129,6 +1292,7 @@ export class Game {
       case 'to_pickup': {
         let taken = false;
         if (task.sourceEntityId != null) {
+          this.pendingBuildingPickups.delete(task.sourceEntityId);
           const bldgEntity = this.entities.find(e => e.id === task.sourceEntityId && e.active);
           if (bldgEntity) {
             const production = bldgEntity.getComponent(Production);
@@ -1144,7 +1308,7 @@ export class Game {
             }
           }
         } else {
-          // Item was already claimed from the junction when the task was created
+          transportManager.removePendingPickupVisual(task.pickupPos.x, task.pickupPos.y, task.resourceType);
           worker.pickUpResource(task.resourceType);
           taken = true;
         }
@@ -1350,6 +1514,9 @@ export class Game {
 
     // Update construction delivery (builder arrivals, material checks)
     this.updateConstructionDelivery();
+
+    // Move builders around the building during construction
+    this.updateBuilderPatrol();
 
     // Update building construction progress
     this.updateConstruction();
@@ -1742,6 +1909,7 @@ export class Game {
     this.builderWorkers.clear();
     this.returningBuilders.clear();
     this.toolWorkers.clear();
+    this.pendingBuildingPickups.clear();
 
     this.initializeWorld();
     this.rebuildMinimapFromLoadedMap();
@@ -1767,6 +1935,7 @@ export class Game {
       this.returningBuilders.clear();
       this.returningWorkers.clear();
       this.toolWorkers.clear();
+      this.pendingBuildingPickups.clear();
 
       this.population = saveData.population || { current: 0, max: 0 };
       this.baseCampEntity = null;

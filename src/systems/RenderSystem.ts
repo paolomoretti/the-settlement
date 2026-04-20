@@ -1401,15 +1401,24 @@ export class RenderSystem extends System {
 
   private renderJunctionItems(viewportBounds: { minX: number; maxX: number; minY: number; maxY: number }): void {
     const junctionMap = transportManager.getJunctionItemsMap();
+    const pendingMap = transportManager.getPendingPickupVisualsMap();
 
-    for (const [key, items] of junctionMap) {
-      if (items.length === 0) continue;
+    const allKeys = new Set<string>();
+    for (const key of junctionMap.keys()) allKeys.add(key);
+    for (const key of pendingMap.keys()) allKeys.add(key);
+
+    for (const key of allKeys) {
+      const junctionItems = junctionMap.get(key) || [];
+      const pendingItems = pendingMap.get(key) || [];
+      const combined = [...junctionItems, ...pendingItems];
+      if (combined.length === 0) continue;
+
       const [x, y] = key.split(',').map(Number);
       if (x < viewportBounds.minX || x > viewportBounds.maxX ||
           y < viewportBounds.minY || y > viewportBounds.maxY) continue;
 
       const center = this.iso.gridToScreen(x, y);
-      const count = Math.min(items.length, 5);
+      const count = Math.min(combined.length, 5);
 
       const offsets = [
         { x: 0, y: -2 },
@@ -1423,11 +1432,10 @@ export class RenderSystem extends System {
         const ix = center.x + offsets[i].x;
         const iy = center.y + offsets[i].y;
 
-        const resSprite = this.loadSprite(`/assets/resources/${items[i].resourceType}.png`);
+        const resSprite = this.loadSprite(`/assets/resources/${combined[i].resourceType}.png`);
         if (resSprite) {
           this.ctx.drawImage(resSprite, ix - 5, iy - 5, 10, 10);
         } else {
-          // Small package: 3D crate look
           this.ctx.fillStyle = '#6b5020';
           this.ctx.fillRect(ix - 4, iy - 1, 8, 4);
           this.ctx.fillStyle = '#8b6914';

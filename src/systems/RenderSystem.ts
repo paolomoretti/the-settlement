@@ -64,6 +64,8 @@ export class RenderSystem extends System {
   public hoveredEntityId: number | null = null;
   public showBuildingLabels = true;
   private toast: { text: string; x: number; y: number; startTime: number } | null = null;
+  private fishJumps: Array<{ x: number; y: number; startTime: number }> = [];
+  private nextFishSpawn: number = 0;
 
   // Minimap
   private minimapCanvas: HTMLCanvasElement;
@@ -236,6 +238,7 @@ export class RenderSystem extends System {
 
     // Render tiles
     this.renderTiles();
+    this.renderFishJumps();
 
     // Get viewport bounds for entity culling
     const viewportBounds = this.getViewportBounds();
@@ -959,6 +962,22 @@ export class RenderSystem extends System {
     if (se?.terrain === 'water') config |= 4;
     const sw = this.tileMap.getTile(x, y + 1);
     if (sw?.terrain === 'water') config |= 8;
+    if ((config & 3) === 3) {
+      const d = this.tileMap.getTile(x - 1, y - 1);
+      if (d?.terrain === 'water') config |= 16;
+    }
+    if ((config & 6) === 6) {
+      const d = this.tileMap.getTile(x + 1, y - 1);
+      if (d?.terrain === 'water') config |= 32;
+    }
+    if ((config & 12) === 12) {
+      const d = this.tileMap.getTile(x + 1, y + 1);
+      if (d?.terrain === 'water') config |= 64;
+    }
+    if ((config & 9) === 9) {
+      const d = this.tileMap.getTile(x - 1, y + 1);
+      if (d?.terrain === 'water') config |= 128;
+    }
     return config;
   }
 
@@ -973,8 +992,32 @@ export class RenderSystem extends System {
       this.terrainTextures.drawTile(this.ctx, 'grass', tile.x, tile.y, center.x, center.y);
       const waterConfig = this.getWaterConfig(tile.x, tile.y);
       this.terrainTextures.drawWater(this.ctx, waterConfig, tile.x, tile.y, center.x, center.y);
+      if (tile.waterDepth > 1) {
+        const darken = Math.min((tile.waterDepth - 1) * 0.04, 0.3);
+        this.ctx.fillStyle = `rgba(0, 8, 25, ${darken})`;
+        const c = this.iso.getTileCorners(tile.x, tile.y);
+        this.ctx.beginPath();
+        this.ctx.moveTo(c[0].x, c[0].y);
+        this.ctx.lineTo(c[1].x, c[1].y);
+        this.ctx.lineTo(c[2].x, c[2].y);
+        this.ctx.lineTo(c[3].x, c[3].y);
+        this.ctx.closePath();
+        this.ctx.fill();
+      }
     } else {
       this.terrainTextures.drawTile(this.ctx, tile.terrain, tile.x, tile.y, center.x, center.y);
+      if (tile.forestDepth > 1) {
+        const darken = Math.min((tile.forestDepth - 1) * 0.07, 0.35);
+        this.ctx.fillStyle = `rgba(0, 12, 3, ${darken})`;
+        const c = this.iso.getTileCorners(tile.x, tile.y);
+        this.ctx.beginPath();
+        this.ctx.moveTo(c[0].x, c[0].y);
+        this.ctx.lineTo(c[1].x, c[1].y);
+        this.ctx.lineTo(c[2].x, c[2].y);
+        this.ctx.lineTo(c[3].x, c[3].y);
+        this.ctx.closePath();
+        this.ctx.fill();
+      }
     }
 
     if (tile.hasRoad) {
@@ -983,6 +1026,128 @@ export class RenderSystem extends System {
     }
   }
 
+  private isDeepWater(x: number, y: number): boolean {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const t = this.tileMap.getTile(x + dx, y + dy);
+        if (!t || t.terrain !== 'water') return false;
+      }
+    }
+    return true;
+  }
+
+  private renderFishJumps(): void {
+    const now = Date.now();
+    const JUMP_DURATION = 1200;
+
+    if (now >= this.nextFishSpawn) {
+      this.spawnFish();
+      this.nextFishSpawn = now + 5000 + Math.random() * 25000;
+    }
+
+    const bounds = this.getViewportBounds();
+    for (let i = this.fishJumps.length - 1; i >= 0; i--) {
+      const fish = this.fishJumps[i];
+      const elapsed = now - fish.startTime;
+      if (elapsed >= JUMP_DURATION) {
+        this.fishJumps.splice(i, 1);
+        continue;
+      }
+      if (fish.x < bounds.minX || fish.x > bounds.maxX ||
+          fish.y < bounds.minY || fish.y > bounds.maxY) continue;
+      const hash = ((fish.x * 7919 + fish.y * 104729 + 1) >>> 0) % 10000 / 10000;
+      this.renderFish(fish.x, fish.y, elapsed / JUMP_DURATION, hash);
+    }
+  }
+
+  private spawnFish(): void {
+    const bounds = this.getViewportBounds();
+    const w = bounds.maxX - bounds.minX + 1;
+    const h = bounds.maxY - bounds.minY + 1;
+    for (let attempt = 0; attempt < 15; attempt++) {
+      const x = bounds.minX + Math.floor(Math.random() * w);
+      const y = bounds.minY + Math.floor(Math.random() * h);
+      const tile = this.tileMap.getTile(x, y);
+      if (!tile || tile.terrain !== 'water' || !tile.isExplored()) continue;
+      if (!this.isDeepWater(x, y)) continue;
+      this.fishJumps.push({ x, y, startTime: Date.now() });
+      return;
+    }
+  }
+
+  private renderFish(tileX: number, tileY: number, progress: number, hash: number): void {
+    const center = this.iso.gridToScreen(tileX, tileY);
+    const ctx = this.ctx;
+    const dir = hash > 0.01 ? 1 : -1;
+
+    const baseX = center.x + (hash * 14 - 7) * dir;
+    const baseY = center.y;
+    const travelX = (progress - 0.5) * 14 * dir;
+    const arcHeight = 16;
+    const jumpY = -arcHeight * 4 * progress * (1 - progress);
+
+    const fishX = baseX + travelX;
+    const fishY = baseY + jumpY;
+
+    const tangentY = -arcHeight * 4 * (1 - 2 * progress);
+    const angle = Math.atan2(tangentY, 14 * dir);
+
+    ctx.save();
+    ctx.translate(fishX, fishY);
+    ctx.rotate(angle);
+
+    ctx.fillStyle = '#a0b5c5';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 5, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#c5d4e0';
+    ctx.beginPath();
+    ctx.ellipse(0, 0.8, 4, 1, 0, 0, Math.PI);
+    ctx.fill();
+
+    ctx.fillStyle = '#8a9fb0';
+    ctx.beginPath();
+    ctx.moveTo(-5, 0);
+    ctx.lineTo(-8, -2.5);
+    ctx.lineTo(-8, 2.5);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(-1, -2);
+    ctx.lineTo(2, -3.5);
+    ctx.lineTo(2, -2);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#1a1a1a';
+    ctx.beginPath();
+    ctx.arc(3, -0.5, 0.7, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+
+    if (progress < 0.12 || progress > 0.88) {
+      const entering = progress < 0.12;
+      const sp = entering ? progress / 0.12 : (1 - progress) / 0.12;
+      const splashX = entering ? baseX : baseX + 14 * dir;
+      const r1 = 3 + sp * 6;
+      ctx.strokeStyle = `rgba(200, 225, 245, ${(1 - sp) * 0.5})`;
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.ellipse(splashX, baseY, r1, r1 * 0.35, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      if (sp > 0.3) {
+        const r2 = 2 + sp * 9;
+        ctx.strokeStyle = `rgba(200, 225, 245, ${(1 - sp) * 0.3})`;
+        ctx.beginPath();
+        ctx.ellipse(splashX, baseY, r2, r2 * 0.35, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  }
 
   private renderEntity(entity: Entity): void {
     const pos = entity.getComponent(Position)!;

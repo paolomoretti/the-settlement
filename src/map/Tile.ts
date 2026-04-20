@@ -9,6 +9,8 @@ export class Tile {
   public hasRoad: boolean = false;
   public walkable: boolean = true;
   public explored: boolean = false; // Fog of war - has player seen this tile?
+  public waterDepth: number = 0;
+  public forestDepth: number = 0;
 
   constructor(
     public x: number,

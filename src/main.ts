@@ -12,6 +12,8 @@ let buildingMenu: BuildingMenu | null = null;
 let buildingPopover: BuildingPopover | null = null;
 let currentSaveSlot: number | null = null;
 let autoSaveInterval: ReturnType<typeof setInterval> | null = null;
+let autoSaveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let autoSaveEventCleanup: (() => void) | null = null;
 
 const SAVE_SLOT_PREFIX = 'settler_save_';
 const LAST_SAVE_KEY = 'settler_last_save_slot';
@@ -399,7 +401,7 @@ function setupGameUI(game: Game): void {
 }
 
 function loadOptions(): { autosave: boolean; debugInfo: boolean; buildingLabels: boolean; navigator: boolean; soundEffects: boolean } {
-  const defaults = { autosave: false, debugInfo: true, buildingLabels: true, navigator: true, soundEffects: true };
+  const defaults = { autosave: true, debugInfo: true, buildingLabels: true, navigator: true, soundEffects: true };
   try {
     const raw = localStorage.getItem(OPTIONS_KEY);
     if (raw) return { ...defaults, ...JSON.parse(raw) };
@@ -484,26 +486,59 @@ function setupOptionsPanel(game: Game): void {
   });
 }
 
+function performAutoSave(): void {
+  if (currentSaveSlot !== null) {
+    const meta = getSlotMeta(currentSaveSlot);
+    if (meta) {
+      saveToSlot(currentSaveSlot, meta.name);
+      showToast('Auto saved');
+      return;
+    }
+  }
+  saveToSlot(currentSaveSlot ?? 0, 'Auto Save');
+  showToast('Auto saved');
+}
+
+function resetAutoSaveInterval(): void {
+  if (autoSaveInterval !== null) clearInterval(autoSaveInterval);
+  autoSaveInterval = setInterval(performAutoSave, 2 * 60 * 1000);
+}
+
+function scheduleAutoSaveDebounce(): void {
+  if (autoSaveDebounceTimer !== null) clearTimeout(autoSaveDebounceTimer);
+  autoSaveDebounceTimer = setTimeout(() => {
+    autoSaveDebounceTimer = null;
+    performAutoSave();
+    resetAutoSaveInterval();
+  }, 5 * 1000);
+}
+
+const AUTO_SAVE_EVENTS = [
+  'build:success', 'build:road', 'delete:selected', 'drag:end', 'road:drag_end',
+] as const;
+
 function startAutoSave(): void {
   stopAutoSave();
-  autoSaveInterval = setInterval(() => {
-    if (currentSaveSlot !== null) {
-      const meta = getSlotMeta(currentSaveSlot);
-      if (meta) {
-        saveToSlot(currentSaveSlot, meta.name);
-        showToast('Auto saved');
-        return;
-      }
-    }
-    saveToSlot(currentSaveSlot ?? 0, `Auto Save`);
-    showToast('Auto saved');
-  }, 2 * 60 * 1000);
+  resetAutoSaveInterval();
+  const handler = () => scheduleAutoSaveDebounce();
+  for (const evt of AUTO_SAVE_EVENTS) eventBus.on(evt, handler);
+  autoSaveEventCleanup = () => {
+    for (const evt of AUTO_SAVE_EVENTS) eventBus.off(evt, handler);
+  };
 }
 
 function stopAutoSave(): void {
   if (autoSaveInterval !== null) {
     clearInterval(autoSaveInterval);
     autoSaveInterval = null;
+  }
+  if (autoSaveDebounceTimer !== null) {
+    clearTimeout(autoSaveDebounceTimer);
+    autoSaveDebounceTimer = null;
+  }
+  if (autoSaveEventCleanup) {
+    autoSaveEventCleanup();
+    autoSaveEventCleanup = null;
   }
 }
 

@@ -159,7 +159,6 @@ export class RenderSystem extends System {
     this.preloadSprites([
       '/assets/terrain/tree_single.png',
       '/assets/terrain/tree_forest.png',
-      '/assets/terrain/rock.png',
       '/assets/terrain/rock_single_0.png',
       '/assets/terrain/rock_single_1.png',
       '/assets/terrain/rock_single_2.png',
@@ -759,16 +758,11 @@ export class RenderSystem extends System {
     const neighbors = this.tileMap.getNeighbors(tileX, tileY);
     const mountainNeighbors = neighbors.filter(t => t.terrain === 'mountain').length;
 
-    let spritePath: string;
-    if (mountainNeighbors === 0) {
-      const variant = Math.floor(this.tileHash(tileX, tileY, 110) * 3);
-      spritePath = `/assets/terrain/rock_single_${variant}.png`;
-    } else {
-      spritePath = '/assets/terrain/rock.png';
-    }
+    const variant = Math.floor(this.tileHash(tileX, tileY, 110) * 3);
+    const spritePath = `/assets/terrain/rock_single_${variant}.png`;
     const sprite = this.loadSprite(spritePath);
     if (sprite && sprite.naturalWidth > 0) {
-      const scale = mountainNeighbors === 0 ? 1.6 : 1.1;
+      const scale = mountainNeighbors <= 2 ? 1.6 : 2.0;
       const drawW = tileW * scale;
       const drawH = (sprite.naturalHeight / sprite.naturalWidth) * drawW;
       ctx.drawImage(sprite, cx - drawW / 2, cy - drawH / 2 - tileH * 0.15, drawW, drawH);

@@ -1075,7 +1075,8 @@ export class RenderSystem extends System {
       this.ctx.fillStyle = 'white';
       this.ctx.font = '10px monospace';
       this.ctx.textAlign = 'center';
-      this.ctx.fillText(building.buildingType, 0, -building.height - 10);
+      const buildingDef = dataManager.getBuilding(building.buildingType);
+      this.ctx.fillText(buildingDef?.name || building.buildingType, 0, -building.height - 10);
     }
 
     // Reset filter before drawing status indicators

@@ -137,6 +137,14 @@ export interface ProductionRule {
   maxOutputBuffer?: number;
 }
 
+export interface AnimationConfig {
+  type: 'gather';
+  targetTerrain: string[];
+  searchRadius: number;
+  terrainTransition: Record<string, string>;
+  workerSpeed: number;
+}
+
 export interface BuildingDefinition {
   id: BuildingType;
   name: string;
@@ -177,6 +185,9 @@ export interface BuildingDefinition {
 
   // Worker requirements
   requiredTool?: ResourceType; // Tool the worker needs to operate this building
+
+  // Production animation (worker leaves building during production cycle)
+  animation?: AnimationConfig;
 
   // Special flags
   isHeadquarters?: boolean; // Starting building

@@ -2,6 +2,10 @@
 
 A browser-based city-building game heavily inspired by Settlers of Catan / The Settlers II (1996). Built with TypeScript, HTML5 Canvas 2D, and Vite.
 
+## Important Rules
+
+- **Never start a dev server** (`npm run dev`, `npm run preview`, etc.) — the user will start servers manually when needed.
+
 ## Tech Stack
 
 - **Language:** TypeScript (strict mode)
@@ -47,7 +51,7 @@ npm run preview  # Preview production build
 
 ## Current State
 
-Working: terrain generation, isometric rendering, camera pan/zoom, building placement/selection/deletion/drag, road building with toggle (click to place or remove, drag mode locking), building entrance system (≥2×2 buildings get auto-placed entrance on front/bottom-right side), road segment computation with automatic worker assignment (one worker per segment, walks to center, **only on base-camp-connected segments**), freed workers walk back to base camp on road deletion, A* pathfinding on roads, fog of war, minimap, save/load, touch support, resource production system (buildings produce into output buffers), storage system (inventory lives in Storage components on warehouses/base camp), **transport relay chain** (workers relay items from buildings to base camp through segment junctions, with carrying visual), **building dependencies** (production buildings with inputs have local storage, demand-based routing sends materials to consumer buildings instead of base camp — e.g., wood_log → sawmill), **construction material delivery** (boards/stones deducted from base camp and physically delivered via road network; builder worker walks to site; construction starts when both materials and builder arrive), disconnected building indicator (road stub at entrance), disconnected roads allowed.
+Working: terrain generation, isometric rendering, camera pan/zoom, building placement/selection/deletion/drag, road building with toggle (click to place or remove, drag mode locking), building entrance system (≥2×2 buildings get auto-placed entrance on front/bottom-right side), road segment computation with automatic worker assignment (one worker per segment, walks to center, **only on base-camp-connected segments**), freed workers walk back to base camp on road deletion, A* pathfinding on roads + off-road pathfinding, fog of war, minimap, save/load, touch support, resource production system (buildings produce into output buffers), storage system (inventory lives in Storage components on warehouses/base camp), **transport relay chain** (workers relay items from buildings to base camp through segment junctions, with carrying visual), **building dependencies** (production buildings with inputs have local storage, demand-based routing sends materials to consumer buildings instead of base camp — e.g., wood_log → sawmill), **construction material delivery** (boards/stones deducted from base camp and physically delivered via road network; builder worker walks to site; construction starts when both materials and builder arrive), **production animation** (woodcutter worker leaves building during production, walks off-road to tree, chops it, terrain changes at 90% progress, returns carrying wood_log), disconnected building indicator (road stub at entrance), disconnected roads allowed.
 
 Not yet implemented: tool requirements for workers, mine food system (bread/fish/ham OR-input), metalworks tool priority system, production UX indicators (stop/pickup icons, progress bars), worker job assignment to buildings, resource consumption (food), trading, military, audio, building upgrades, weather/seasons.
 
@@ -65,6 +69,7 @@ Not yet implemented: tool requirements for workers, mine food system (bread/fish
 - [Construction Delivery](.claude/CONSTRUCTION_DELIVERY.md) - **Material delivery to construction sites** — builder workers, material dispatch, construction flow
 - [Toast Notifications](.claude/TOAST.md) - Reusable short-lived messages via `showToast()` or EventBus `'toast'` event
 - [World Generation](.claude/WORLD_GENERATION.md) - Terrain generation pipeline, RLE persistence, deterministic seeding
+- [Production Animation](.claude/PRODUCTION_ANIMATION.md) - **Worker animation during production** — woodcutter leaves building, chops tree, terrain changes, returns
 
 **Convention**: Every time new logic is added to the game, document it in `.claude/` and reference it here. Future agents and chats rely on these docs to understand how systems work without re-explanation.
 

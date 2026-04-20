@@ -34,10 +34,6 @@ export class PathFinder {
       }
     }
 
-    console.log(`Grid created: ${tileMap.width}x${tileMap.height}`);
-    console.log(`Start: (${Math.floor(start.x)}, ${Math.floor(start.y)})`);
-    console.log(`End: (${Math.floor(end.x)}, ${Math.floor(end.y)})`);
-
     // Find path
     const path = this.finder.findPath(
       Math.floor(start.x),
@@ -46,8 +42,6 @@ export class PathFinder {
       Math.floor(end.y),
       grid
     );
-
-    console.log(`Raw path result: ${path.length} points`);
 
     // Convert to Position array (skip first point as it's the current position)
     return path.slice(1).map(([x, y]) => new Position(x, y));
@@ -62,6 +56,38 @@ export class PathFinder {
     end: Position,
     tileMap: TileMap
   ): Position[] {
-    return this.findPath(start, end, tileMap, false);
+    const sx = Math.floor(start.x);
+    const sy = Math.floor(start.y);
+    const ex = Math.floor(end.x);
+    const ey = Math.floor(end.y);
+
+    const margin = 5;
+    const minX = Math.max(0, Math.min(sx, ex) - margin);
+    const minY = Math.max(0, Math.min(sy, ey) - margin);
+    const maxX = Math.min(tileMap.width - 1, Math.max(sx, ex) + margin);
+    const maxY = Math.min(tileMap.height - 1, Math.max(sy, ey) + margin);
+    const w = maxX - minX + 1;
+    const h = maxY - minY + 1;
+
+    const grid = new PF.Grid(w, h);
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const tile = tileMap.getTile(minX + x, minY + y);
+        const walkable = tile ? (tile.walkable && !tile.isOccupied()) : false;
+        grid.setWalkableAt(x, y, walkable);
+      }
+    }
+
+    grid.setWalkableAt(sx - minX, sy - minY, true);
+    grid.setWalkableAt(ex - minX, ey - minY, true);
+
+    const path = this.finder.findPath(
+      sx - minX, sy - minY,
+      ex - minX, ey - minY,
+      grid
+    );
+
+    return path.slice(1).map(([x, y]) => new Position(minX + x, minY + y));
   }
 }

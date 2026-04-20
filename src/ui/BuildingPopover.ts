@@ -18,6 +18,7 @@ export class BuildingPopover {
   private progressContainer: HTMLElement | null = null;
   private stoppedLabel: HTMLElement | null = null;
   private bufferContainer: HTMLElement | null = null;
+  private requirementsContainer: HTMLElement | null = null;
   private productionTimeSec: number = 0;
 
   constructor(game: Game) {
@@ -36,6 +37,7 @@ export class BuildingPopover {
       this.progressContainer = null;
       this.stoppedLabel = null;
       this.bufferContainer = null;
+      this.requirementsContainer = null;
     };
   }
 
@@ -61,6 +63,7 @@ export class BuildingPopover {
       this.popover.setTemporaryHidden(this.game.isDraggingEntity);
       this.updateProgressBar();
       this.updateBufferDisplay();
+      this.updateRequirements();
 
       const p = entity.getComponent(Position);
       if (!p) return { x: 0, y: 0 };
@@ -81,6 +84,7 @@ export class BuildingPopover {
     this.progressContainer = null;
     this.stoppedLabel = null;
     this.bufferContainer = null;
+    this.requirementsContainer = null;
     this.popover.hide();
   }
 
@@ -171,6 +175,43 @@ export class BuildingPopover {
       (isFull ? `<span style="color:#f44336;margin-left:4px">⚠ Full</span>` : '');
   }
 
+  private updateRequirements(): void {
+    if (!this.requirementsContainer || !this.currentEntity) return;
+    const building = this.currentEntity.getComponent(Building);
+    if (!building) return;
+    const def = dataManager.getBuilding(building.buildingType as BuildingType);
+
+    const lines: string[] = [];
+
+    if (building.state === 'awaiting_materials' && building.constructionMaterials) {
+      for (const [res, required] of Object.entries(building.constructionMaterials)) {
+        const delivered = building.materialsDelivered[res] || 0;
+        const resName = dataManager.getResource(res as any)?.name || res;
+        const done = delivered >= required;
+        const color = done ? '#4caf50' : '#ffb74d';
+        lines.push(`<span style="color:${color}">${resName}: ${delivered}/${required}</span>`);
+      }
+      const builderColor = building.builderArrived ? '#4caf50' : '#ffb74d';
+      const builderText = building.builderArrived ? 'Builder: Arrived' : 'Builder: En route...';
+      lines.push(`<span style="color:${builderColor}">${builderText}</span>`);
+    }
+
+    if (building.isComplete() && !building.hasOperator && def?.requiredTool) {
+      const toolName = dataManager.getResource(def.requiredTool as any)?.name || def.requiredTool;
+      lines.push(`<span style="color:#ffb74d">${toolName} worker: En route...</span>`);
+    }
+
+    if (lines.length === 0) {
+      this.requirementsContainer.style.display = 'none';
+      return;
+    }
+
+    this.requirementsContainer.style.display = '';
+    this.requirementsContainer.innerHTML =
+      `<span class="popover-label">Needs:</span><br>` +
+      lines.map(l => `&nbsp;&nbsp;${l}`).join('<br>');
+  }
+
   private buildContent(building: Building, def?: BuildingDefinition): HTMLElement {
     const el = document.createElement('div');
 
@@ -183,7 +224,9 @@ export class BuildingPopover {
 
     const status = document.createElement('div');
     status.className = 'popover-row';
-    if (building.state === 'under_construction') {
+    if (building.state === 'awaiting_materials') {
+      status.innerHTML = `<span class="popover-label">Status:</span> <span style="color:#ffb74d">Awaiting materials</span>`;
+    } else if (building.state === 'under_construction') {
       const pct = Math.floor(building.constructionProgress * 100);
       status.innerHTML = `<span class="popover-label">Status:</span> Under construction (${pct}%)`;
     } else {
@@ -199,6 +242,14 @@ export class BuildingPopover {
         : '<span class="popover-label">Road:</span> <span style="color:#f44336">Not connected</span>';
       el.appendChild(road);
     }
+
+    const reqRow = document.createElement('div');
+    reqRow.className = 'popover-row';
+    reqRow.style.display = 'none';
+    reqRow.style.fontSize = '11px';
+    reqRow.style.lineHeight = '1.5';
+    this.requirementsContainer = reqRow;
+    el.appendChild(reqRow);
 
     if (def?.production) {
       const prod = document.createElement('div');

@@ -74,9 +74,16 @@
     "requiredTool": "axe",
     "production": {
       "outputs": { "wood_log": 1 },
-      "productionTime": 20,
+      "productionTime": 240,
       "continuous": true,
       "maxOutputBuffer": 6
+    },
+    "animation": {
+      "type": "gather",
+      "targetTerrain": ["tree", "forest"],
+      "searchRadius": 10,
+      "terrainTransition": { "tree": "grass", "forest": "tree" },
+      "workerSpeed": 1.2
     },
     "population": { "requires": 1 },
     "category": "production",

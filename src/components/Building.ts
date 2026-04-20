@@ -29,6 +29,7 @@ export class Building extends Component {
   public builderEntityId: number | null = null;
   public builderArrived: boolean = false;
   public hasOperator: boolean = true;
+  public animationWorkerId: number | null = null;
 
   constructor(
     public buildingType: BuildingType,

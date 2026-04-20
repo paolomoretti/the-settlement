@@ -679,12 +679,71 @@ export class RenderSystem extends System {
     return h / 4294967296;
   }
 
+  private findMountainBlocks(
+    viewportBounds: { minX: number; maxX: number; minY: number; maxY: number }
+  ): { blocks: { x: number; y: number }[]; covered: Set<string> } {
+    const blocks: { x: number; y: number }[] = [];
+    const covered = new Set<string>();
+    const blockSize = 4;
+
+    for (let y = viewportBounds.minY; y <= viewportBounds.maxY - blockSize + 1; y++) {
+      for (let x = viewportBounds.minX; x <= viewportBounds.maxX - blockSize + 1; x++) {
+        let allMountain = true;
+        let anyAlreadyCovered = false;
+        for (let dy = 0; dy < blockSize && allMountain; dy++) {
+          for (let dx = 0; dx < blockSize && allMountain; dx++) {
+            const key = `${x + dx},${y + dy}`;
+            if (covered.has(key)) { anyAlreadyCovered = true; allMountain = false; break; }
+            const tile = this.tileMap.getTile(x + dx, y + dy);
+            if (!tile || tile.terrain !== 'mountain') allMountain = false;
+          }
+        }
+        if (allMountain && !anyAlreadyCovered) {
+          blocks.push({ x, y });
+          for (let dy = 0; dy < blockSize; dy++) {
+            for (let dx = 0; dx < blockSize; dx++) {
+              covered.add(`${x + dx},${y + dy}`);
+            }
+          }
+        }
+      }
+    }
+    return { blocks, covered };
+  }
+
+  private renderMountainBlock(blockX: number, blockY: number): void {
+    const sprite = this.loadSprite('/assets/terrain/mountain.png');
+    if (!sprite || sprite.naturalWidth === 0) return;
+
+    const blockSize = 4;
+    const centerX = blockX + blockSize / 2;
+    const centerY = blockY + blockSize / 2;
+    const screen = this.iso.gridToScreen(centerX, centerY);
+
+    const footprintW = (blockSize + blockSize) * 32;
+    const drawW = footprintW;
+    const drawH = (sprite.naturalHeight / sprite.naturalWidth) * drawW;
+
+    this.ctx.drawImage(sprite, screen.x - drawW / 2, screen.y - drawH + this.iso.tileHeight * 0.5, drawW, drawH);
+  }
+
   private renderDepthSorted(
     sortedEntities: Entity[],
     viewportBounds: { minX: number; maxX: number; minY: number; maxY: number }
   ): void {
     const minDepth = viewportBounds.minX + viewportBounds.minY;
     const maxDepth = viewportBounds.maxX + viewportBounds.maxY;
+
+    const { blocks: mountainBlocks, covered: mountainCovered } = this.findMountainBlocks(viewportBounds);
+
+    // Index mountain blocks by their back-corner depth for correct draw order
+    const blocksByDepth = new Map<number, { x: number; y: number }[]>();
+    for (const block of mountainBlocks) {
+      const depth = block.x + block.y + 6;
+      const list = blocksByDepth.get(depth);
+      if (list) list.push(block);
+      else blocksByDepth.set(depth, [block]);
+    }
 
     // Index entities by integer depth
     const entitiesByDepth = new Map<number, Entity[]>();
@@ -704,12 +763,21 @@ export class RenderSystem extends System {
       const xMin = Math.max(viewportBounds.minX, d - viewportBounds.maxY);
       const xMax = Math.min(viewportBounds.maxX, d - viewportBounds.minY);
 
-      // Mountains at this depth
+      // Mountains at this depth (single rocks only, skip covered tiles)
       for (let x = xMin; x <= xMax; x++) {
         const y = d - x;
         const tile = this.tileMap.getTile(x, y);
         if (!tile || !tile.isExplored() || tile.terrain !== 'mountain') continue;
+        if (mountainCovered.has(`${x},${y}`)) continue;
         this.renderMountainTile(x, y);
+      }
+
+      // Mountain blocks at this depth
+      const blocksAtDepth = blocksByDepth.get(d);
+      if (blocksAtDepth) {
+        for (const block of blocksAtDepth) {
+          this.renderMountainBlock(block.x, block.y);
+        }
       }
 
       // Trees at this depth
@@ -755,20 +823,6 @@ export class RenderSystem extends System {
     const cy = center.y;
     const h = this.getMountainHeight(tileX, tileY);
     const shade = this.tileHash(tileX, tileY, 100);
-
-    const neighbors = this.tileMap.getNeighbors(tileX, tileY);
-    const mountainNeighbors = neighbors.filter(t => t.terrain === 'mountain').length;
-
-    if (mountainNeighbors >= 3) {
-      const mSprite = this.loadSprite('/assets/terrain/mountain.png');
-      if (mSprite && mSprite.naturalWidth > 0) {
-        const scale = 2.2;
-        const drawW = tileW * scale;
-        const drawH = (mSprite.naturalHeight / mSprite.naturalWidth) * drawW;
-        ctx.drawImage(mSprite, cx - drawW / 2, cy - drawH / 2 - tileH * 0.25, drawW, drawH);
-        return;
-      }
-    }
 
     const variant = Math.floor(this.tileHash(tileX, tileY, 110) * 3);
     const spritePath = `/assets/terrain/rock_single_${variant}.png`;

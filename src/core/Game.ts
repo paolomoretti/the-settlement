@@ -1595,8 +1595,13 @@ export class Game {
       }
     }
 
-    // Check for stranded items anywhere along the segment (dropped during recalc)
+    // Check for stranded items on corridor tiles (dropped during recalc) — skip endpoints,
+    // which are handled by the direction-aware junction pickup above
+    const ep0 = segment.endpoints[0];
+    const ep1 = segment.endpoints[1];
     for (const tile of segment.tiles) {
+      if (tile.x === ep0.x && tile.y === ep0.y) continue;
+      if (tile.x === ep1.x && tile.y === ep1.y) continue;
       if (!transportManager.hasJunctionItems(tile.x, tile.y)) continue;
       const item = transportManager.takeJunctionItem(tile.x, tile.y);
       if (!item) continue;

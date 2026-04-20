@@ -13,6 +13,7 @@ export interface WorkerAppearance {
   pants: string;
   boots: string;
   variant: 'default' | 'hat' | 'tunic2' | 'dress';
+  hatColor?: string;
 }
 
 export type WorkerRole = 'peasant';
@@ -58,11 +59,13 @@ export interface TransportTask {
 }
 
 export type IdleAnim = 'none' | 'look_around' | 'scratch_head' | 'read' | 'stretch' | 'hands_on_hips';
+export type WorkAnim = 'none' | 'kneeling';
 
 export class Worker extends Component {
   public state: WorkerState = 'idle';
   public carryingResource?: string;
   public transportTask: TransportTask | null = null;
+  public workAnim: WorkAnim = 'none';
   public role: WorkerRole;
   public appearance: WorkerAppearance;
 

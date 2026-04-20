@@ -105,7 +105,7 @@ export function createBuilding(
 
   entity.addComponent(buildingComp);
 
-  if (buildingDef.production && Object.keys(buildingDef.production.outputs).length > 0) {
+  if (buildingDef.production) {
     entity.addComponent(new Production(
       buildingDef.production.productionTime,
       buildingDef.production.outputs,

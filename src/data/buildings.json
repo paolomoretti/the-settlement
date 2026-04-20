@@ -103,9 +103,20 @@
     "requiredTool": "shovel",
     "production": {
       "outputs": {},
-      "productionTime": 30,
+      "productionTime": 360,
       "continuous": true,
       "maxOutputBuffer": 6
+    },
+    "animation": {
+      "type": "plant",
+      "targetTerrain": ["grass", "tree"],
+      "searchRadius": 10,
+      "terrainTransition": { "grass": "tree", "tree": "forest" },
+      "workerSpeed": 1.0,
+      "workerAnim": "kneeling",
+      "workerAppearance": { "variant": "hat", "hatColor": "#2d6b1e", "tunic": "#5a7a3a" },
+      "spawnAtProgress": 0.17,
+      "workerDuration": 15
     },
     "population": { "requires": 1 },
     "category": "production",

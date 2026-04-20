@@ -138,11 +138,15 @@ export interface ProductionRule {
 }
 
 export interface AnimationConfig {
-  type: 'gather';
+  type: 'gather' | 'plant';
   targetTerrain: string[];
   searchRadius: number;
   terrainTransition: Record<string, string>;
   workerSpeed: number;
+  workerAnim?: string;
+  workerAppearance?: Record<string, string>;
+  spawnAtProgress?: number;
+  workerDuration?: number;
 }
 
 export interface BuildingDefinition {

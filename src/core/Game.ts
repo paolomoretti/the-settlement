@@ -65,8 +65,9 @@ export class Game {
   private builderWorkers = new Map<number, number>(); // builderEntityId → buildingEntityId
   private returningBuilders = new Set<number>();
   private toolWorkers = new Map<number, number>(); // toolWorkerEntityId → buildingEntityId
-  private animationWorkers = new Map<number, { buildingEntityId: number; phase: 'to_target' | 'chopping' | 'returning'; targetTile: { x: number; y: number }; terrainModified: boolean; entranceTile: { x: number; y: number } }>();
+  private animationWorkers = new Map<number, { buildingEntityId: number; phase: 'to_target' | 'chopping' | 'returning'; targetTile: { x: number; y: number }; terrainModified: boolean; entranceTile: { x: number; y: number }; plantStartTime?: number }>();
   private reservedTreeTiles = new Set<string>();
+  public growingTrees = new Map<string, { x: number; y: number; buildingEntityId: number; growStartProgress: number; targetTerrain: string }>();
   private pendingBuildingPickups = new Set<number>(); // building entity IDs with workers en route
   private roadDragMode: 'create' | 'delete' | null = null;
   private lastMaterialCheckTime = 0;
@@ -1090,6 +1091,16 @@ export class Game {
     const workerComp = worker.getComponent(Worker);
     if (workerComp) {
       workerComp.carryingResource = (buildingDef.requiredTool as string) || 'axe';
+      if (anim.workerAppearance) {
+        const overrides = anim.workerAppearance;
+        if (overrides.variant) workerComp.appearance.variant = overrides.variant as any;
+        if (overrides.hatColor) workerComp.appearance.hatColor = overrides.hatColor;
+        if (overrides.tunic) workerComp.appearance.tunic = overrides.tunic;
+        if (overrides.hair) workerComp.appearance.hair = overrides.hair;
+        if (overrides.skin) workerComp.appearance.skin = overrides.skin;
+        if (overrides.pants) workerComp.appearance.pants = overrides.pants;
+        if (overrides.boots) workerComp.appearance.boots = overrides.boots;
+      }
     }
 
     const movable = worker.getComponent(Movable);
@@ -1140,52 +1151,96 @@ export class Game {
           }
 
           const production = buildingEntity.getComponent(Production);
-          if (production && production.getProgress() >= 0.9 && !state.terrainModified) {
-            const bldg = buildingEntity.getComponent(Building);
-            const buildingDef = bldg ? dataManager.getBuilding(bldg.buildingType) : null;
-            const anim = buildingDef?.animation;
-            if (anim) {
+          const bldg = buildingEntity.getComponent(Building);
+          const buildingDef = bldg ? dataManager.getBuilding(bldg.buildingType) : null;
+          const anim = buildingDef?.animation;
+          const isPlant = anim?.type === 'plant';
+
+          if (isPlant) {
+            const workerDuration = (anim?.workerDuration || 15) * 1000;
+            if (!state.plantStartTime) {
+              state.plantStartTime = Date.now();
+              workerComp.workAnim = anim?.workerAnim as any || 'kneeling';
+              workerComp.setState('working');
+            }
+
+            if (Date.now() - state.plantStartTime >= workerDuration) {
+              workerComp.workAnim = 'none';
+              workerComp.carryingResource = undefined;
+              workerComp.setState('walking');
+
+              const currentProgress = production ? production.getProgress() : 0;
               const tile = this.tileMap.getTile(state.targetTile.x, state.targetTile.y);
-              if (tile) {
-                const newTerrain = anim.terrainTransition[tile.terrain];
-                if (newTerrain) {
-                  this.tileMap.setTerrain(state.targetTile.x, state.targetTile.y, newTerrain as any);
-                  this.renderSystem.updateMinimapTiles([{ x: state.targetTile.x, y: state.targetTile.y }]);
+              const targetTerrain = tile && anim ? (anim.terrainTransition[tile.terrain] || '') : '';
+              if (targetTerrain) {
+                const key = `${state.targetTile.x},${state.targetTile.y}`;
+                this.growingTrees.set(key, {
+                  x: state.targetTile.x,
+                  y: state.targetTile.y,
+                  buildingEntityId: state.buildingEntityId,
+                  growStartProgress: currentProgress,
+                  targetTerrain,
+                });
+              }
+
+              const returnPath = this.pathFinder.findOffRoadPath(
+                new Position(Math.floor(workerPos.x), Math.floor(workerPos.y)),
+                new Position(state.entranceTile.x, state.entranceTile.y),
+                this.tileMap
+              );
+              if (returnPath.length > 0) {
+                movable.speed = (anim?.workerSpeed || 1.2);
+                movable.setPath(returnPath);
+              }
+              state.phase = 'returning';
+            }
+          } else {
+            if (production && production.getProgress() >= 0.9 && !state.terrainModified) {
+              if (anim) {
+                const tile = this.tileMap.getTile(state.targetTile.x, state.targetTile.y);
+                if (tile) {
+                  const newTerrain = anim.terrainTransition[tile.terrain];
+                  if (newTerrain) {
+                    this.tileMap.setTerrain(state.targetTile.x, state.targetTile.y, newTerrain as any);
+                    this.renderSystem.updateMinimapTiles([{ x: state.targetTile.x, y: state.targetTile.y }]);
+                  }
                 }
               }
-            }
-            state.terrainModified = true;
-            workerComp.carryingResource = 'wood_log';
-            workerComp.setState('carrying');
+              state.terrainModified = true;
 
-            const returnPath = this.pathFinder.findOffRoadPath(
-              new Position(Math.floor(workerPos.x), Math.floor(workerPos.y)),
-              new Position(state.entranceTile.x, state.entranceTile.y),
-              this.tileMap
-            );
-            if (returnPath.length > 0) {
-              movable.speed = (anim?.workerSpeed || 1.2);
-              movable.setPath(returnPath);
-            }
-            state.phase = 'returning';
-          } else {
-            const tx = state.targetTile.x;
-            const ty = state.targetTile.y;
-            const cx = Math.floor(workerPos.x);
-            const cy = Math.floor(workerPos.y);
-            const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-            const walkable = dirs
-              .map(([dx, dy]) => ({ x: tx + dx, y: ty + dy }))
-              .filter(p => {
-                if (p.x === cx && p.y === cy) return false;
-                const t = this.tileMap.getTile(p.x, p.y);
-                return t && t.walkable && !t.isOccupied();
-              });
-            if (walkable.length > 0) {
-              const target = walkable[Math.floor(Math.random() * walkable.length)];
-              movable.speed = 0.6;
-              movable.setPath([new Position(target.x, target.y)]);
-              workerComp.setState('working');
+              const outputKeys = buildingDef?.production?.outputs ? Object.keys(buildingDef.production.outputs) : [];
+              workerComp.carryingResource = outputKeys[0] || 'wood_log';
+              workerComp.setState('carrying');
+
+              const returnPath = this.pathFinder.findOffRoadPath(
+                new Position(Math.floor(workerPos.x), Math.floor(workerPos.y)),
+                new Position(state.entranceTile.x, state.entranceTile.y),
+                this.tileMap
+              );
+              if (returnPath.length > 0) {
+                movable.speed = (anim?.workerSpeed || 1.2);
+                movable.setPath(returnPath);
+              }
+              state.phase = 'returning';
+            } else {
+              const tx = state.targetTile.x;
+              const ty = state.targetTile.y;
+              const cx = Math.floor(workerPos.x);
+              const cy = Math.floor(workerPos.y);
+              const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+              const walkable = dirs
+                .map(([dx, dy]) => ({ x: tx + dx, y: ty + dy }))
+                .filter(p => {
+                  if (p.x === cx && p.y === cy) return false;
+                  const t = this.tileMap.getTile(p.x, p.y);
+                  return t && t.walkable && !t.isOccupied();
+                });
+              if (walkable.length > 0) {
+                const target = walkable[Math.floor(Math.random() * walkable.length)];
+                movable.speed = 0.6;
+                movable.setPath([new Position(target.x, target.y)]);
+                workerComp.setState('working');
+              }
             }
           }
           break;
@@ -1216,7 +1271,40 @@ export class Game {
       const buildingDef = dataManager.getBuilding(building.buildingType);
       if (!buildingDef?.animation) continue;
 
+      const spawnAt = buildingDef.animation.spawnAtProgress || 0;
+      if (production.getProgress() < spawnAt) continue;
+
       this.spawnAnimationWorker(entity);
+    }
+
+    // Finalize growing trees when production cycle completes
+    for (const [key, tree] of this.growingTrees) {
+      const buildingEntity = this.entities.find(e => e.id === tree.buildingEntityId && e.active);
+      if (!buildingEntity) {
+        this.growingTrees.delete(key);
+        continue;
+      }
+      const production = buildingEntity.getComponent(Production);
+      if (!production) { this.growingTrees.delete(key); continue; }
+
+      const progress = production.getProgress();
+      if (progress < tree.growStartProgress && tree.growStartProgress > 0.3) {
+        this.tileMap.setTerrain(tree.x, tree.y, tree.targetTerrain as any);
+        this.renderSystem.updateMinimapTiles([{ x: tree.x, y: tree.y }]);
+        this.growingTrees.delete(key);
+      }
+    }
+
+    // Update growing tree growth values for rendering
+    for (const [key, tree] of this.growingTrees) {
+      const buildingEntity = this.entities.find(e => e.id === tree.buildingEntityId && e.active);
+      if (!buildingEntity) continue;
+      const production = buildingEntity.getComponent(Production);
+      if (!production) continue;
+      const progress = production.getProgress();
+      const range = 1.0 - tree.growStartProgress;
+      const growth = range > 0 ? Math.min(1, (progress - tree.growStartProgress) / range) : 0;
+      this.renderSystem.growingTrees.set(key, { x: tree.x, y: tree.y, growth });
     }
   }
 
@@ -1231,20 +1319,26 @@ export class Game {
   }
 
   private spawnToolWorker(buildingEntity: Entity, tool: string): void {
-    if (this.getAvailablePopulation() <= 0) return;
+    if (this.getAvailablePopulation() <= 0) {
+      console.warn(`[ToolWorker] No available population to spawn ${tool} worker`);
+      return;
+    }
 
     const spawnTile = this.findBaseCampSpawnTile();
-    if (!spawnTile) return;
+    if (!spawnTile) { console.warn('[ToolWorker] No spawn tile at base camp'); return; }
 
     const targetTile = this.findBuildingAdjacentRoadTile(buildingEntity);
-    if (!targetTile) return;
+    if (!targetTile) { console.warn('[ToolWorker] No adjacent road tile for building'); return; }
 
     const path = this.pathFinder.findPath(
       new Position(spawnTile.x, spawnTile.y),
       new Position(targetTile.x, targetTile.y),
       this.tileMap
     );
-    if (path.length === 0) return;
+    if (path.length === 0) {
+      console.warn(`[ToolWorker] No path from (${spawnTile.x},${spawnTile.y}) to (${targetTile.x},${targetTile.y})`);
+      return;
+    }
 
     const worker = createWorker(spawnTile.x, spawnTile.y);
     this.addEntity(worker);
@@ -1369,7 +1463,14 @@ export class Game {
       if (!entity.active) continue;
       const building = entity.getComponent(Building);
       if (!building || !building.isComplete() || building.hasOperator) continue;
-      if (!building.isActive) continue;
+
+      const buildingDef = dataManager.getBuilding(building.buildingType);
+      if (!buildingDef?.requiredTool) continue;
+
+      if (!building.isActive) {
+        console.warn(`[ToolWorker] ${building.buildingType} #${entity.id} needs operator but isActive=false (no road connection)`);
+        continue;
+      }
 
       let hasToolWorker = false;
       for (const [, bId] of this.toolWorkers) {
@@ -1377,10 +1478,8 @@ export class Game {
       }
       if (hasToolWorker) continue;
 
-      const buildingDef = dataManager.getBuilding(building.buildingType);
-      if (buildingDef?.requiredTool) {
-        this.spawnToolWorker(entity, buildingDef.requiredTool as string);
-      }
+      console.log(`[ToolWorker] Spawning ${buildingDef.requiredTool} worker for ${building.buildingType} #${entity.id}, avail pop: ${this.getAvailablePopulation()}`);
+      this.spawnToolWorker(entity, buildingDef.requiredTool as string);
     }
   }
 
@@ -2066,6 +2165,14 @@ export class Game {
         }
       }
 
+      // Remove any growing trees for this building
+      for (const [key, tree] of this.growingTrees) {
+        if (tree.buildingEntityId === this.selectedEntity!.id) {
+          this.growingTrees.delete(key);
+          this.renderSystem.growingTrees.delete(key);
+        }
+      }
+
       // Remove tool worker if in transit
       for (const [workerId, buildingId] of this.toolWorkers) {
         if (buildingId === this.selectedEntity!.id) {
@@ -2283,6 +2390,8 @@ export class Game {
     this.toolWorkers.clear();
     this.animationWorkers.clear();
     this.reservedTreeTiles.clear();
+    this.growingTrees.clear();
+    this.renderSystem.growingTrees.clear();
     this.pendingBuildingPickups.clear();
 
     this.initializeWorld();
@@ -2311,6 +2420,8 @@ export class Game {
       this.toolWorkers.clear();
       this.animationWorkers.clear();
       this.reservedTreeTiles.clear();
+      this.growingTrees.clear();
+      this.renderSystem.growingTrees.clear();
       this.pendingBuildingPickups.clear();
 
       this.population = saveData.population || { current: 0, max: 0 };

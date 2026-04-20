@@ -63,6 +63,7 @@ export class RenderSystem extends System {
   private spriteCache = new Map<string, HTMLImageElement>();
   public hoveredEntityId: number | null = null;
   public showBuildingLabels = true;
+  public growingTrees = new Map<string, { x: number; y: number; growth: number }>();
   private toast: { text: string; x: number; y: number; startTime: number } | null = null;
   private fishJumps: Array<{ x: number; y: number; startTime: number }> = [];
   private nextFishSpawn: number = 0;
@@ -706,6 +707,16 @@ export class RenderSystem extends System {
         const y = d - x;
         const tile = this.tileMap.getTile(x, y);
         if (!tile || !tile.isExplored()) continue;
+
+        // Growing trees (saplings)
+        const growKey = `${x},${y}`;
+        const growing = this.growingTrees.get(growKey);
+        if (growing) {
+          const center = this.iso.gridToScreen(x, y);
+          this.renderGrowingTree(center.x, center.y, x, y, growing.growth);
+          continue;
+        }
+
         if (tile.terrain !== 'tree' && tile.terrain !== 'forest') continue;
         if (tile.isOccupied() || tile.hasRoad) continue;
 
@@ -860,6 +871,17 @@ export class RenderSystem extends System {
       const scale = 1.1 + this.tileHash(tileX, tileY, 40 + i) * 0.7;
       const shade = this.tileHash(tileX, tileY, 50 + i);
       this.renderTreePlaceholder(cx + ox, cy + oy, scale, shade);
+    }
+  }
+
+  private renderGrowingTree(cx: number, cy: number, tileX: number, tileY: number, growth: number): void {
+    const scale = 0.08 + growth * 0.25;
+    const sprite = this.loadSprite('/assets/terrain/tree_single.png');
+    if (sprite && sprite.naturalWidth > 0) {
+      this.renderTreeSprite(cx, cy, sprite, scale);
+    } else {
+      const s = 0.5 + growth * 2.0;
+      this.renderTreePlaceholder(cx, cy, s, this.tileHash(tileX, tileY, 1));
     }
   }
 
@@ -1746,6 +1768,11 @@ export class RenderSystem extends System {
       }
     }
 
+    if (!isMoving && worker.workAnim === 'kneeling') {
+      this.renderKneelingWorker(worker);
+      return;
+    }
+
     let facing: number;
     if (isMoving) {
       if (dirX > 0 && dirY >= 0) facing = 0;
@@ -1884,9 +1911,9 @@ export class RenderSystem extends System {
     if (showBack) {
       if (a.variant === 'hat') {
         px(-2 + headShift, -14, 5, 5, a.hair);
-        px(-4 + headShift, -14, 9, 1, '#c8a868');
-        px(-3 + headShift, -15, 7, 1, '#c8a868');
-        px(-1 + headShift, -16, 3, 1, '#b89858');
+        px(-4 + headShift, -14, 9, 1, a.hatColor || '#c8a868');
+        px(-3 + headShift, -15, 7, 1, a.hatColor || '#c8a868');
+        px(-1 + headShift, -16, 3, 1, a.hatColor ? this.darkenColor(a.hatColor.replace('#', ''), 0.85) : '#b89858');
       } else if (isDress) {
         px(-2 + headShift, -14, 5, 5, a.hair);
         px(-1 + headShift, -9, 3, 2, a.hair);
@@ -1898,10 +1925,10 @@ export class RenderSystem extends System {
       px(-2 + headShift, -13, 5, 4, a.skin);
 
       if (a.variant === 'hat') {
-        px(-4 + headShift, -14, 9, 1, '#c8a868');
-        px(-3 + headShift, -15, 7, 1, '#c8a868');
-        px(-1 + headShift, -16, 3, 1, '#b89858');
-        px(-3 + headShift, -14, 7, 1, '#7a5a30');
+        px(-4 + headShift, -14, 9, 1, a.hatColor || '#c8a868');
+        px(-3 + headShift, -15, 7, 1, a.hatColor || '#c8a868');
+        px(-1 + headShift, -16, 3, 1, a.hatColor ? this.darkenColor(a.hatColor.replace('#', ''), 0.85) : '#b89858');
+        px(-3 + headShift, -14, 7, 1, a.hatColor ? this.darkenColor(a.hatColor.replace('#', ''), 0.6) : '#7a5a30');
       } else if (isDress) {
         px(-2 + headShift, -15, 5, 3, a.hair);
         px(-3 + headShift, -13, 1, 3, a.hair);
@@ -1922,6 +1949,66 @@ export class RenderSystem extends System {
         px(-1, -20, 3, 1, '#f0c060');
       }
     }
+
+    this.ctx.restore();
+  }
+
+  private renderKneelingWorker(worker: Worker): void {
+    const s = 2;
+    const a = worker.appearance;
+    const now = Date.now();
+    const animT = (now % 2000) / 2000;
+    const handBob = Math.sin(animT * Math.PI * 4) > 0 ? 1 : 0;
+
+    this.ctx.save();
+
+    const px = (x: number, y: number, w: number, h: number, color: string) => {
+      this.ctx.fillStyle = color;
+      this.ctx.fillRect(x * s, y * s, w * s, h * s);
+    };
+
+    // Shadow
+    this.ctx.globalAlpha = 0.2;
+    this.ctx.fillStyle = '#000';
+    this.ctx.beginPath();
+    this.ctx.ellipse(0, 0, 5 * s, 2 * s, 0, 0, Math.PI * 2);
+    this.ctx.fill();
+    this.ctx.globalAlpha = 1;
+
+    // Kneeling legs (folded under, low profile)
+    px(-3, -2, 2, 2, a.boots);
+    px(2, -2, 2, 2, a.boots);
+    px(-3, -3, 2, 1, a.pants);
+    px(2, -3, 2, 1, a.pants);
+
+    // Body (shifted down compared to standing)
+    px(-2, -7, 5, 4, a.tunic);
+    px(-2, -4, 5, 1, '#2a1f14');
+
+    // Arms reaching down to ground, with planting motion
+    px(-4, -6, 2, 3, a.tunic);
+    px(3, -6, 2, 3, a.tunic);
+    px(-4, -3 + handBob, 2, 1, a.skin);
+    px(3, -3 + handBob, 2, 1, a.skin);
+
+    // Head
+    px(-2, -11, 5, 4, a.skin);
+
+    if (a.variant === 'hat') {
+      const hc = a.hatColor || '#c8a868';
+      px(-4, -12, 9, 1, hc);
+      px(-3, -13, 7, 1, hc);
+      px(-1, -14, 3, 1, a.hatColor ? this.darkenColor(a.hatColor.replace('#', ''), 0.85) : '#b89858');
+      px(-3, -12, 7, 1, a.hatColor ? this.darkenColor(a.hatColor.replace('#', ''), 0.6) : '#7a5a30');
+    } else {
+      px(-2, -13, 5, 3, a.hair);
+      px(-2, -11, 5, 1, '#3a2a1a');
+    }
+    px(1, -10, 1, 1, '#1a1008');
+
+    // Small dirt/soil mound being worked on
+    px(-1, 0, 3, 1, '#8b7355');
+    px(0, -1, 1, 1, '#6b5335');
 
     this.ctx.restore();
   }

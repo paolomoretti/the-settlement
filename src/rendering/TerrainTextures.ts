@@ -93,15 +93,14 @@ function genWater(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: F
 }
 
 function genMountain(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: Float64Array, b: Float64Array, i: number): void {
-  const n1 = tileNoise(n, x, y, 1.0);
-  const n2 = tileNoise(n, x, y, 2.5, 37, 53);
-  const n3 = tileNoise(n, x, y, 5.0, 73, 91);
-  const t = (n1 - 0.5) * 35 + (n2 - 0.5) * 20;
-  r[i] = MOUNTAIN.r + t;
-  g[i] = MOUNTAIN.g + t * 0.9;
-  b[i] = MOUNTAIN.b + t * 0.8;
-  if (n3 > 0.65) { const s = (n3 - 0.65) * 250; r[i] += s; g[i] += s; b[i] += s; }
-  if (n2 < 0.25) { const d = (0.25 - n2) * 60; r[i] -= d; g[i] -= d; b[i] -= d; }
+  genGrass(x, y, n, r, g, b, i);
+  const cn = tileNoise(n, x, y, 2.5, 37, 53);
+  if (cn > 0.5) {
+    const mix = (cn - 0.5) * 0.2;
+    r[i] = r[i] * (1 - mix) + MOUNTAIN.r * mix;
+    g[i] = g[i] * (1 - mix) + MOUNTAIN.g * mix;
+    b[i] = b[i] * (1 - mix) + MOUNTAIN.b * mix;
+  }
 }
 
 function genForest(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: Float64Array, b: Float64Array, i: number): void {

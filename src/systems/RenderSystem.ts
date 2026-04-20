@@ -686,19 +686,20 @@ export class RenderSystem extends System {
     const covered = new Set<string>();
     const blockSize = 4;
 
-    for (let y = viewportBounds.minY; y <= viewportBounds.maxY - blockSize + 1; y++) {
-      for (let x = viewportBounds.minX; x <= viewportBounds.maxX - blockSize + 1; x++) {
+    // Align scan to fixed grid so blocks don't shift when panning
+    const startY = Math.floor(viewportBounds.minY / blockSize) * blockSize;
+    const startX = Math.floor(viewportBounds.minX / blockSize) * blockSize;
+
+    for (let y = startY; y <= viewportBounds.maxY - blockSize + 1; y += blockSize) {
+      for (let x = startX; x <= viewportBounds.maxX - blockSize + 1; x += blockSize) {
         let allMountain = true;
-        let anyAlreadyCovered = false;
         for (let dy = 0; dy < blockSize && allMountain; dy++) {
           for (let dx = 0; dx < blockSize && allMountain; dx++) {
-            const key = `${x + dx},${y + dy}`;
-            if (covered.has(key)) { anyAlreadyCovered = true; allMountain = false; break; }
             const tile = this.tileMap.getTile(x + dx, y + dy);
             if (!tile || tile.terrain !== 'mountain') allMountain = false;
           }
         }
-        if (allMountain && !anyAlreadyCovered) {
+        if (allMountain) {
           blocks.push({ x, y });
           for (let dy = 0; dy < blockSize; dy++) {
             for (let dx = 0; dx < blockSize; dx++) {

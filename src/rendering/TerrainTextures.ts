@@ -267,11 +267,25 @@ function buildRoadAtlas(noise: NoiseGenerator): HTMLCanvasElement {
 // --- Water shore overlay atlas ---
 // 16 shore configs (4x4) + 4 deep water variants (row 5) = 4x5 grid
 
-const WATER_COLS = 4;
-const WATER_ROWS = 5;
+const WATER_COLS = 16;
+const WATER_ROWS = 17;
 const WATER_ATLAS_W = WATER_COLS * TILE_W;
 const WATER_ATLAS_H = WATER_ROWS * TILE_H;
-const DEEP_WATER_OFFSET = 16;
+const DEEP_WATER_OFFSET = 256;
+
+const CORNERS = [
+  { x: 32, y: 0 },
+  { x: 64, y: 16 },
+  { x: 32, y: 32 },
+  { x: 0, y: 16 },
+];
+const CORNER_PAIRS = [3, 6, 12, 9];
+const CORNER_R = 18;
+
+function smin(a: number, b: number, k: number): number {
+  const h = Math.max(k - Math.abs(a - b), 0) / k;
+  return Math.min(a, b) - h * h * k * 0.25;
+}
 
 function renderWaterCell(
   data: Uint8ClampedArray, noise: NoiseGenerator,
@@ -279,6 +293,9 @@ function renderWaterCell(
 ): void {
   const col = cellIndex % WATER_COLS;
   const row = Math.floor(cellIndex / WATER_COLS);
+
+  const cardinals = config & 0xF;
+  const diagonals = (config >> 4) & 0xF;
 
   for (let py = 0; py < TILE_H; py++) {
     for (let px = 0; px < TILE_W; px++) {
@@ -292,14 +309,28 @@ function renderWaterCell(
       const fSE = (96 - cpx - 2 * cpy) / 32;
       const fSW = (cpx + 32 - 2 * cpy) / 32;
 
-      const eFNW = (config & 1) ? 99 : fNW;
-      const eFNE = (config & 2) ? 99 : fNE;
-      const eFSE = (config & 4) ? 99 : fSE;
-      const eFSW = (config & 8) ? 99 : fSW;
+      const eFNW = (cardinals & 1) ? 99 : fNW;
+      const eFNE = (cardinals & 2) ? 99 : fNE;
+      const eFSE = (cardinals & 4) ? 99 : fSE;
+      const eFSW = (cardinals & 8) ? 99 : fSW;
 
       const shoreNoise = noise.noise(cpx * 2.5 + noiseOx, cpy * 2.5 + noiseOy, 0.18);
-      const noiseOffset = (shoreNoise - 0.5) * 0.1;
-      const minF = Math.min(eFNW, eFNE, eFSE, eFSW) + noiseOffset;
+      const shoreNoise2 = noise.noise(cpx * 5 + noiseOx + 200, cpy * 5 + noiseOy + 200, 0.25);
+      const noiseOffset = (shoreNoise - 0.5) * 0.18 + (shoreNoise2 - 0.5) * 0.08;
+
+      const k = 0.55;
+      let minF = smin(smin(eFNW, eFNE, k), smin(eFSE, eFSW, k), k);
+
+      for (let c = 0; c < 4; c++) {
+        if ((cardinals & CORNER_PAIRS[c]) === CORNER_PAIRS[c] && !(diagonals & (1 << c))) {
+          const dx = cpx - CORNERS[c].x;
+          const dy = cpy - CORNERS[c].y;
+          const fCorner = Math.sqrt(dx * dx + dy * dy) / CORNER_R;
+          minF = smin(minF, fCorner, k);
+        }
+      }
+
+      minF += noiseOffset;
 
       if (minF <= 0.13) continue;
 
@@ -384,14 +415,14 @@ function buildWaterAtlas(noise: NoiseGenerator): HTMLCanvasElement {
   const imageData = ctx.createImageData(WATER_ATLAS_W, WATER_ATLAS_H);
   const data = imageData.data;
 
-  // 16 shore configurations
-  for (let config = 0; config < 16; config++) {
+  // 256 shore configurations (4 cardinal + 4 diagonal bits)
+  for (let config = 0; config < 256; config++) {
     renderWaterCell(data, noise, config, config, config * 97, config * 53);
   }
 
-  // 4 deep water variants (all edges connected, different noise offsets)
+  // 4 deep water variants (all neighbors water, different noise offsets)
   for (let v = 0; v < 4; v++) {
-    renderWaterCell(data, noise, DEEP_WATER_OFFSET + v, 15, v * 211 + 500, v * 173 + 700);
+    renderWaterCell(data, noise, DEEP_WATER_OFFSET + v, 255, v * 211 + 500, v * 173 + 700);
   }
 
   ctx.putImageData(imageData, 0, 0);
@@ -476,7 +507,7 @@ export class TerrainTextures {
 
   drawWater(ctx: CanvasRenderingContext2D, config: number, tileX: number, tileY: number, screenCenterX: number, screenCenterY: number): void {
     let cell: number;
-    if (config === 15) {
+    if (config === 255) {
       cell = DEEP_WATER_OFFSET + ((tileX + tileY) & 3);
     } else {
       cell = config;
@@ -490,4 +521,5 @@ export class TerrainTextures {
       screenCenterX - TILE_W / 2, screenCenterY - TILE_H / 2, TILE_W, TILE_H
     );
   }
+
 }

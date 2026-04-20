@@ -47,6 +47,8 @@ export class TileMap {
     this.removeIsolatedWater();
     this.clearBaseCampArea();
     this.removeIslands();
+    this.computeWaterDepth();
+    this.computeForestDepth();
   }
 
   private initEmpty(): void {
@@ -252,6 +254,95 @@ export class TileMap {
     }
   }
 
+  private computeWaterDepth(): void {
+    const queue: number[] = [];
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        const tile = this.tiles[y][x];
+        if (tile.terrain !== 'water') {
+          tile.waterDepth = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (dx === 0 && dy === 0) continue;
+              const nx = x + dx, ny = y + dy;
+              if (nx >= 0 && nx < this.width && ny >= 0 && ny < this.height) {
+                const n = this.tiles[ny][nx];
+                if (n.terrain === 'water' && n.waterDepth === 0) {
+                  n.waterDepth = 1;
+                  queue.push(nx, ny);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    let head = 0;
+    while (head < queue.length) {
+      const x = queue[head++];
+      const y = queue[head++];
+      const d = this.tiles[y][x].waterDepth;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const nx = x + dx, ny = y + dy;
+          if (nx >= 0 && nx < this.width && ny >= 0 && ny < this.height) {
+            const n = this.tiles[ny][nx];
+            if (n.terrain === 'water' && n.waterDepth === 0) {
+              n.waterDepth = d + 1;
+              queue.push(nx, ny);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private computeForestDepth(): void {
+    const isForest = (t: Tile) => t.terrain === 'forest' || t.terrain === 'tree';
+    const queue: number[] = [];
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        const tile = this.tiles[y][x];
+        if (!isForest(tile)) {
+          tile.forestDepth = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (dx === 0 && dy === 0) continue;
+              const nx = x + dx, ny = y + dy;
+              if (nx >= 0 && nx < this.width && ny >= 0 && ny < this.height) {
+                const n = this.tiles[ny][nx];
+                if (isForest(n) && n.forestDepth === 0) {
+                  n.forestDepth = 1;
+                  queue.push(nx, ny);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    let head = 0;
+    while (head < queue.length) {
+      const x = queue[head++];
+      const y = queue[head++];
+      const d = this.tiles[y][x].forestDepth;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const nx = x + dx, ny = y + dy;
+          if (nx >= 0 && nx < this.width && ny >= 0 && ny < this.height) {
+            const n = this.tiles[ny][nx];
+            if (isForest(n) && n.forestDepth === 0) {
+              n.forestDepth = d + 1;
+              queue.push(nx, ny);
+            }
+          }
+        }
+      }
+    }
+  }
+
   // RLE encode terrain: "500g20w30f" = 500 grass, 20 water, 30 forest
   private encodeTerrain(): string {
     const parts: string[] = [];
@@ -417,9 +508,10 @@ export class TileMap {
       map.initEmpty();
       map.decodeTerrain(data.terrain);
     } else {
-      // Legacy save without terrain data — regenerate from seed
       map.generate();
     }
+    map.computeWaterDepth();
+    map.computeForestDepth();
 
     if (data.roads) {
       const roadCoords = data.roads.split(';').filter((s: string) => s);

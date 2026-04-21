@@ -64,6 +64,12 @@ const CONSTRUCTION_SPRITES: Record<string, string[]> = {
   well: [
     '/assets/buildings/well_build_0.png',
   ],
+  // Stage 1 = site, 2 = frame, 3 = partial walls/roof; completed sprite is house.png (stage 4).
+  house: [
+    '/assets/buildings/house_build_0.png',
+    '/assets/buildings/house_build_1.png',
+    '/assets/buildings/house_build_2.png',
+  ],
 };
 
 export class RenderSystem extends System {
@@ -128,6 +134,7 @@ export class RenderSystem extends System {
       '/assets/buildings/sawmill.png',
       '/assets/buildings/quarry.png',
       '/assets/buildings/farm.png',
+      '/assets/buildings/house.png',
     ];
     for (const stages of Object.values(CONSTRUCTION_SPRITES)) {
       allSprites.push(...stages);
@@ -2523,6 +2530,7 @@ export class RenderSystem extends System {
   // Update tilemap reference (used when loading a saved game)
   updateTileMap(newTileMap: TileMap): void {
     this.tileMap = newTileMap;
+    this.cachedViewportBounds = null;
     // Reset minimap offscreen canvas
     this.minimapOffscreenCtx.fillStyle = '#1a1a1a';
     this.minimapOffscreenCtx.fillRect(0, 0, 200, 200);

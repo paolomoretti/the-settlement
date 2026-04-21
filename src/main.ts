@@ -3,6 +3,7 @@ import { eventBus } from './core/EventBus';
 import { dataManager } from '@/data/DataManager';
 import { BuildingMenu } from '@/ui/BuildingMenu';
 import { BuildingPopover } from '@/ui/BuildingPopover';
+import { CanvasHoverTooltip } from '@/ui/CanvasHoverTooltip';
 import { setupKeyboardShortcuts } from '@/input/KeyboardShortcuts';
 import { showToast, setupToastListener } from '@/ui/Toast';
 import { audioManager } from '@/audio/AudioManager';
@@ -13,6 +14,8 @@ import 'tippy.js/dist/tippy.css';
 let game: Game | null = null;
 let buildingMenu: BuildingMenu | null = null;
 let buildingPopover: BuildingPopover | null = null;
+let canvasHoverTooltip: CanvasHoverTooltip | null = null;
+let unregisterHoverFrameHook: (() => void) | null = null;
 
 const OPTIONS_KEY = 'settler_options';
 
@@ -166,6 +169,8 @@ function setupDialogs(): void {
 }
 
 function setupGameUI(game: Game): void {
+  const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
+
   setupKeyboardShortcuts(game);
   setupToastListener();
   buildingMenu = new BuildingMenu(game);
@@ -261,6 +266,20 @@ function setupGameUI(game: Game): void {
   setupOptionsPanel(game);
 
   buildingPopover = new BuildingPopover(game);
+
+  if (unregisterHoverFrameHook) {
+    unregisterHoverFrameHook();
+    unregisterHoverFrameHook = null;
+  }
+  canvasHoverTooltip?.destroy();
+  canvasHoverTooltip = new CanvasHoverTooltip(canvas, {
+    getGame: () => game,
+    shouldSuppressBuildingHover: (entity) =>
+      Boolean(buildingPopover?.isVisible() && game.selectedEntity === entity),
+  });
+  unregisterHoverFrameHook = game.registerFrameHook(() => {
+    canvasHoverTooltip?.tick();
+  });
 
   eventBus.on('building:selected', (data) => {
     buildingPopover!.show(data.entity);

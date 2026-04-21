@@ -13,6 +13,8 @@ export class Tile {
   public forestDepth: number = 0;
   /** Remaining quarry harvests on this rock tile before `terrainTransition` clears it (lazy-init). */
   public rockHarvestsRemaining?: number;
+  /** Remaining fish catches this water tile can yield (fisher); undefined = full capacity; `0` = depleted. */
+  public waterFishRemaining?: number;
 
   constructor(
     public x: number,

@@ -463,6 +463,39 @@ export class TileMap {
     return best ? { x: best.x, y: best.y } : null;
   }
 
+  /**
+   * Nearest water tile still yielding fish (closest Manhattan distance first).
+   */
+  findNearestHarvestableWater(
+    cx: number,
+    cy: number,
+    radius: number,
+    fishPerFull: number,
+    exclude?: Set<string>
+  ): { x: number; y: number } | null {
+    let best: { x: number; y: number; dist: number } | null = null;
+
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const x = cx + dx;
+        const y = cy + dy;
+        const tile = this.getTile(x, y);
+        if (!tile) continue;
+        if (tile.terrain !== 'water') continue;
+        if (tile.hasRoad || tile.isOccupied()) continue;
+        if (exclude && exclude.has(`${x},${y}`)) continue;
+        const remaining = tile.waterFishRemaining ?? fishPerFull;
+        if (remaining <= 0) continue;
+        const dist = Math.abs(dx) + Math.abs(dy);
+        if (!best || dist < best.dist) {
+          best = { x, y, dist };
+        }
+      }
+    }
+
+    return best ? { x: best.x, y: best.y } : null;
+  }
+
   isInBounds(x: number, y: number): boolean {
     return x >= 0 && x < this.width && y >= 0 && y < this.height;
   }
@@ -503,6 +536,7 @@ export class TileMap {
     const occupied: { x: number; y: number; id: number }[] = [];
 
     const rockHarvests: { x: number; y: number; r: number }[] = [];
+    const waterFish: { x: number; y: number; f: number }[] = [];
 
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
@@ -523,6 +557,10 @@ export class TileMap {
         if (tile.rockHarvestsRemaining !== undefined) {
           rockHarvests.push({ x, y, r: tile.rockHarvestsRemaining });
         }
+
+        if (tile.waterFishRemaining !== undefined) {
+          waterFish.push({ x, y, f: tile.waterFishRemaining });
+        }
       }
     }
 
@@ -535,6 +573,7 @@ export class TileMap {
       explored: explored.join(';'),
       occupied,
       rockHarvests,
+      waterFish,
     };
   }
 
@@ -590,6 +629,15 @@ export class TileMap {
         const tile = map.getTile(entry.x, entry.y);
         if (tile) {
           tile.rockHarvestsRemaining = entry.r;
+        }
+      }
+    }
+
+    if (data.waterFish && Array.isArray(data.waterFish)) {
+      for (const entry of data.waterFish as { x: number; y: number; f: number }[]) {
+        const tile = map.getTile(entry.x, entry.y);
+        if (tile) {
+          tile.waterFishRemaining = entry.f;
         }
       }
     }

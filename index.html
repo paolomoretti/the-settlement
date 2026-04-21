@@ -865,6 +865,34 @@
       opacity: 1;
       transform: translateY(0);
     }
+
+    /* Canvas delayed hover (buildings, rock tiles, …) */
+    .canvas-hover-tooltip {
+      position: fixed;
+      z-index: 60;
+      max-width: 320px;
+      padding: 8px 10px;
+      background: rgba(12, 12, 12, 0.94);
+      border: 1px solid #4a6741;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #e8e8e8;
+      pointer-events: none;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+    }
+
+    .canvas-hover-tooltip-title {
+      font-weight: bold;
+      color: #c8e6c9;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+
+    .canvas-hover-tooltip-line + .canvas-hover-tooltip-line {
+      margin-top: 2px;
+    }
   </style>
 </head>
 <body>

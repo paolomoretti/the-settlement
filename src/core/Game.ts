@@ -27,6 +27,8 @@ import { Inventory, BuildingType } from '@/types/GameData';
 // Entity factories
 import { createWorker, createBuilding, createBaseCamp } from '@/entities/EntityFactory';
 import { GameWorkerRegistry } from '@/workers';
+import { isInsightAltHeld } from '@/input/InsightAltKey';
+import { isInsightRockTile } from '@/ui/hoverInsight/buildHoverLines';
 
 export class Game {
   private entities: Entity[] = [];
@@ -70,6 +72,8 @@ export class Game {
   /** Full transport heal (segment graph + route maps + junction rescue); mirrors road `scheduleSegmentRecalc`. */
   private lastPeriodicTransportHealTime = 0;
   private lastOutputTransportKickTime = 0;
+
+  private readonly frameHooks: Array<() => void> = [];
 
   constructor(canvas: HTMLCanvasElement, skipInit = false) {
     this.canvas = canvas;
@@ -1386,6 +1390,49 @@ export class Game {
       this.renderSystem.hoveredEntityId = null;
     }
 
+    // Alt/Option insight: full tile grid while held; building / rock highlight only in view + stable hover
+    this.renderSystem.showInsightGrid = isInsightAltHeld();
+    const insightHoverOk =
+      isInsightAltHeld() &&
+      mode === 'view' &&
+      !this.isDraggingEntity &&
+      !this.inputSystem.isSpacebarPanning() &&
+      Boolean(this.inputSystem.hoverGridPos);
+
+    if (insightHoverOk && this.inputSystem.hoverGridPos) {
+      const hx = this.inputSystem.hoverGridPos.x;
+      const hy = this.inputSystem.hoverGridPos.y;
+      const tile = this.tileMap.getTile(hx, hy);
+      if (tile?.isExplored()) {
+        const bEnt = this.getBuildingEntityAtGrid(hx, hy);
+        if (bEnt) {
+          this.renderSystem.insightHighlightEntityId = bEnt.id;
+          this.renderSystem.insightHighlightRock = null;
+          this.renderSystem.insightHighlightWater = null;
+        } else {
+          this.renderSystem.insightHighlightEntityId = null;
+          if (isInsightRockTile(tile)) {
+            this.renderSystem.insightHighlightRock = { x: hx, y: hy };
+            this.renderSystem.insightHighlightWater = null;
+          } else if (tile.terrain === 'water') {
+            this.renderSystem.insightHighlightRock = null;
+            this.renderSystem.insightHighlightWater = { x: hx, y: hy };
+          } else {
+            this.renderSystem.insightHighlightRock = null;
+            this.renderSystem.insightHighlightWater = null;
+          }
+        }
+      } else {
+        this.renderSystem.insightHighlightEntityId = null;
+        this.renderSystem.insightHighlightRock = null;
+        this.renderSystem.insightHighlightWater = null;
+      }
+    } else {
+      this.renderSystem.insightHighlightEntityId = null;
+      this.renderSystem.insightHighlightRock = null;
+      this.renderSystem.insightHighlightWater = null;
+    }
+
     this.workers.tickReturnLegs();
 
     // Update construction delivery (builder arrivals, material checks)
@@ -1434,6 +1481,10 @@ export class Game {
 
     // Keep inventory in sync with storage components
     this.syncInventory();
+
+    for (const hook of this.frameHooks) {
+      hook();
+    }
 
     requestAnimationFrame(this.gameLoop);
   };
@@ -1506,6 +1557,19 @@ export class Game {
 
   public getViewportBounds() {
     return this.renderSystem['getViewportBounds']();
+  }
+
+  /** Register a callback invoked once per frame after core simulation (UI overlays, hover tooltips). */
+  registerFrameHook(cb: () => void): () => void {
+    this.frameHooks.push(cb);
+    return () => {
+      const i = this.frameHooks.indexOf(cb);
+      if (i !== -1) this.frameHooks.splice(i, 1);
+    };
+  }
+
+  public getBuildingEntityAtGrid(x: number, y: number): Entity | null {
+    return this.findBuildingEntityAt(x, y);
   }
 
   // Selection and editing functionality

@@ -30,6 +30,7 @@ type GatherAnimState = {
   terrainModified: boolean;
   entranceTile: { x: number; y: number };
   rockGather: boolean;
+  waterGather: boolean;
   digUntilMs?: number;
 };
 
@@ -646,7 +647,7 @@ export class GameWorkerRegistry {
         case 'to_target': {
           gather.phase = 'chopping';
           workerComp.setState('working');
-          if (gather.rockGather) {
+          if (gather.rockGather || gather.waterGather) {
             workerComp.visualActivity = 'production_gather';
           }
           break;
@@ -662,7 +663,7 @@ export class GameWorkerRegistry {
           const bDef = bldg ? dataManager.getBuilding(bldg.buildingType) : null;
           const anim = bDef?.animation;
 
-          if (gather.rockGather && anim?.type === 'gather') {
+          if ((gather.rockGather || gather.waterGather) && anim?.type === 'gather') {
             const nowMs = Date.now();
             if (gather.digUntilMs === undefined) {
               const digSec = anim.digAtSiteSec ?? 4;
@@ -675,30 +676,54 @@ export class GameWorkerRegistry {
 
             if (!gather.terrainModified) {
               const productionRule = bDef?.production;
-              const stonesPer = productionRule?.stonesPerRockTile ?? 10;
-              const carried =
-                anim.carriedResource ??
-                (Object.keys(productionRule?.outputs ?? {}).find(
-                  k => !dataManager.getResource(k as ResourceType)?.virtualOutput
-                ) as ResourceType | undefined) ??
-                'stone';
               const tile = tileMap.getTile(gather.targetTile.x, gather.targetTile.y);
-              if (tile) {
-                let rem = tile.rockHarvestsRemaining ?? stonesPer;
-                rem--;
-                if (rem <= 0) {
-                  const newTerrain = anim.terrainTransition[tile.terrain];
-                  if (newTerrain) {
-                    tileMap.setTerrain(gather.targetTile.x, gather.targetTile.y, newTerrain as never);
-                    delete tile.rockHarvestsRemaining;
-                    render.updateMinimapTiles([{ x: gather.targetTile.x, y: gather.targetTile.y }]);
+
+              if (gather.rockGather) {
+                const stonesPer = productionRule?.stonesPerRockTile ?? 10;
+                const carried =
+                  anim.carriedResource ??
+                  (Object.keys(productionRule?.outputs ?? {}).find(
+                    k => !dataManager.getResource(k as ResourceType)?.virtualOutput
+                  ) as ResourceType | undefined) ??
+                  'stone';
+                if (tile) {
+                  let rem = tile.rockHarvestsRemaining ?? stonesPer;
+                  rem--;
+                  if (rem <= 0) {
+                    const newTerrain = anim.terrainTransition[tile.terrain];
+                    if (newTerrain) {
+                      tileMap.setTerrain(gather.targetTile.x, gather.targetTile.y, newTerrain as never);
+                      delete tile.rockHarvestsRemaining;
+                      render.updateMinimapTiles([{ x: gather.targetTile.x, y: gather.targetTile.y }]);
+                    }
+                  } else {
+                    tile.rockHarvestsRemaining = rem;
                   }
-                } else {
-                  tile.rockHarvestsRemaining = rem;
                 }
+                gather.terrainModified = true;
+                workerComp.pickUpResource(carried, 'overhead');
+              } else if (gather.waterGather) {
+                const fishPer = productionRule?.fishPerWaterTile ?? 15;
+                const carried =
+                  anim.carriedResource ??
+                  (Object.keys(productionRule?.outputs ?? {}).find(
+                    k => !dataManager.getResource(k as ResourceType)?.virtualOutput
+                  ) as ResourceType | undefined) ??
+                  'fish';
+                if (tile && tile.terrain === 'water') {
+                  let rem = tile.waterFishRemaining ?? fishPer;
+                  rem--;
+                  if (rem <= 0) {
+                    tile.waterFishRemaining = 0;
+                  } else {
+                    tile.waterFishRemaining = rem;
+                  }
+                  render.updateMinimapTiles([{ x: gather.targetTile.x, y: gather.targetTile.y }]);
+                }
+                gather.terrainModified = true;
+                workerComp.pickUpResource(carried, 'overhead');
               }
-              gather.terrainModified = true;
-              workerComp.pickUpResource(carried, 'overhead');
+
               workerComp.setState('carrying');
               workerComp.visualActivity = 'general';
 
@@ -779,7 +804,7 @@ export class GameWorkerRegistry {
           if (buildingEntity) {
             const building = buildingEntity.getComponent(Building);
             if (building) building.animationWorkerId = null;
-            if (gather.rockGather) {
+            if (gather.rockGather || gather.waterGather) {
               const prod = buildingEntity.getComponent(Production);
               applyProductionCycleOutputs(buildingEntity);
               if (prod && prod.continuous) {
@@ -1366,7 +1391,8 @@ export class GameWorkerRegistry {
     const anim = buildingDef.animation;
 
     const rockGather = anim.gatherMode === 'rock_depletion';
-    if (rockGather) {
+    const waterGather = anim.gatherMode === 'water_depletion';
+    if (rockGather || waterGather) {
       if (!production) return;
       const departBuffer = (anim.walkLeadSec ?? 0) + (anim.digAtSiteSec ?? 0);
       if (departBuffer > 0 && production.timer < production.productionTime - departBuffer) return;
@@ -1380,12 +1406,13 @@ export class GameWorkerRegistry {
     const pathFinder = this.world.getPathFinder();
 
     const stonesPer = buildingDef.production?.stonesPerRockTile ?? 10;
-    const gatherRadius = rockGather
+    const fishPer = buildingDef.production?.fishPerWaterTile ?? 15;
+    const gatherRadius = rockGather || waterGather
       ? (buildingDef.production?.maxGatherRadius ?? anim.searchRadius)
       : anim.searchRadius;
 
     const gatherExclude = new Set(this.reservedTreeTiles);
-    if (rockGather) {
+    if (rockGather || waterGather) {
       for (let dy = 0; dy < building.height; dy++) {
         for (let dx = 0; dx < building.width; dx++) {
           gatherExclude.add(`${pos.x + dx},${pos.y + dy}`);
@@ -1402,13 +1429,21 @@ export class GameWorkerRegistry {
           stonesPer,
           gatherExclude
         )
-      : tileMap.findNearbyTerrain(
-          entranceX,
-          entranceY,
-          gatherRadius,
-          anim.targetTerrain,
-          this.reservedTreeTiles
-        );
+      : waterGather
+        ? tileMap.findNearestHarvestableWater(
+            entranceX,
+            entranceY,
+            gatherRadius,
+            fishPer,
+            gatherExclude
+          )
+        : tileMap.findNearbyTerrain(
+            entranceX,
+            entranceY,
+            gatherRadius,
+            anim.targetTerrain,
+            this.reservedTreeTiles
+          );
     if (!sourceTile) return;
 
     const path = pathFinder.findOffRoadPath(
@@ -1425,7 +1460,10 @@ export class GameWorkerRegistry {
 
     const workerComp = worker.getComponent(Worker);
     if (workerComp) {
-      workerComp.pickUpResource((buildingDef.requiredTool as string) || (rockGather ? 'pickaxe' : 'axe'));
+      workerComp.pickUpResource(
+        (buildingDef.requiredTool as string) ||
+          (rockGather ? 'pickaxe' : waterGather ? 'fishing_rod' : 'axe')
+      );
       workerComp.visualActivity = 'production_gather';
     }
 
@@ -1445,6 +1483,7 @@ export class GameWorkerRegistry {
       terrainModified: false,
       entranceTile: { x: entranceX, y: entranceY },
       rockGather,
+      waterGather,
     });
   }
 

@@ -181,7 +181,7 @@
   "fisher": {
     "id": "fisher",
     "name": "Fisher's Hut",
-    "description": "Catches fish from nearby water.",
+    "description": "Catches fish from nearby water; each water tile yields a limited school.",
     "size": { "width": 2, "height": 2 },
     "visual": { "buildingHeight": 50, "color": "#5f9ea0" },
     "buildCost": { "wood_plank": 2 },
@@ -192,7 +192,20 @@
       "outputs": { "fish": 1 },
       "productionTime": 30,
       "continuous": true,
-      "maxOutputBuffer": 6
+      "maxOutputBuffer": 6,
+      "maxGatherRadius": 15,
+      "fishPerWaterTile": 15
+    },
+    "animation": {
+      "type": "gather",
+      "gatherMode": "water_depletion",
+      "targetTerrain": ["water"],
+      "searchRadius": 15,
+      "terrainTransition": {},
+      "workerSpeed": 1.05,
+      "walkLeadSec": 8,
+      "digAtSiteSec": 6,
+      "carriedResource": "fish"
     },
     "population": { "requires": 1 },
     "category": "production",

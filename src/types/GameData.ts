@@ -143,6 +143,8 @@ export interface ProductionRule {
   maxGatherRadius?: number;
   /** Harvests left per rock tile before terrain clears (quarry `rock_depletion` gather). */
   stonesPerRockTile?: number;
+  /** Fish catches per water tile before depleted (fisher `water_depletion` gather). */
+  fishPerWaterTile?: number;
 }
 
 export type AnimationConfig =
@@ -153,7 +155,7 @@ export type AnimationConfig =
       terrainTransition: Record<string, string>;
       workerSpeed: number;
       /** Lumberjack-style single chop vs quarry-style timed dig + partial tile depletion. */
-      gatherMode?: 'tree' | 'rock_depletion';
+      gatherMode?: 'tree' | 'rock_depletion' | 'water_depletion';
       /** With `walkLeadSec` + `digAtSiteSec`: worker departs late in the cycle (like forester). */
       walkLeadSec?: number;
       digAtSiteSec?: number;

@@ -93,6 +93,14 @@ export class RenderSystem extends System {
   private terrainTextures: TerrainTextures;
   private spriteCache = new Map<string, HTMLImageElement>();
   public hoveredEntityId: number | null = null;
+  /** While Alt/Option is held: draw the tile grid at any zoom (see Game insight sync). */
+  public showInsightGrid = false;
+  /** Alt+hover in view mode: outline this building sprite. */
+  public insightHighlightEntityId: number | null = null;
+  /** Alt+hover on a quarry rock tile (mountain / hill). */
+  public insightHighlightRock: { x: number; y: number } | null = null;
+  /** Alt+hover on a water tile (fisher fish school). */
+  public insightHighlightWater: { x: number; y: number } | null = null;
   public showBuildingLabels = true;
   private toast: { text: string; x: number; y: number; startTime: number } | null = null;
   private fishJumps: Array<{ x: number; y: number; startTime: number }> = [];
@@ -783,6 +791,8 @@ export class RenderSystem extends System {
   }
 
   private shouldShowGrid(): number {
+    // Alt/Option insight — full grid at any zoom
+    if (this.showInsightGrid) return 0.34;
     // Build or drag mode — full grid
     if (this.buildPreview || this.dragPreviewPosition) return 0.35;
     // Near max zoom (max is 2) — fade in grid between 1.7 and 2.0
@@ -1491,6 +1501,51 @@ export class RenderSystem extends System {
       const config = this.getRoadConfig(tile.x, tile.y);
       this.terrainTextures.drawRoad(this.ctx, config, center.x, center.y);
     }
+
+    if (
+      this.insightHighlightRock &&
+      this.insightHighlightRock.x === tile.x &&
+      this.insightHighlightRock.y === tile.y &&
+      tile.isExplored()
+    ) {
+      const c = this.iso.getTileCorners(tile.x, tile.y);
+      this.ctx.save();
+      this.ctx.strokeStyle = 'rgba(255, 215, 100, 0.98)';
+      this.ctx.lineWidth = 2.5;
+      this.ctx.shadowColor = 'rgba(255, 190, 60, 0.75)';
+      this.ctx.shadowBlur = 12;
+      this.ctx.beginPath();
+      this.ctx.moveTo(c[0].x, c[0].y);
+      for (let i = 1; i < c.length; i++) {
+        this.ctx.lineTo(c[i].x, c[i].y);
+      }
+      this.ctx.closePath();
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
+
+    if (
+      this.insightHighlightWater &&
+      this.insightHighlightWater.x === tile.x &&
+      this.insightHighlightWater.y === tile.y &&
+      tile.isExplored() &&
+      tile.terrain === 'water'
+    ) {
+      const c = this.iso.getTileCorners(tile.x, tile.y);
+      this.ctx.save();
+      this.ctx.strokeStyle = 'rgba(120, 200, 255, 0.95)';
+      this.ctx.lineWidth = 2.5;
+      this.ctx.shadowColor = 'rgba(80, 160, 255, 0.65)';
+      this.ctx.shadowBlur = 12;
+      this.ctx.beginPath();
+      this.ctx.moveTo(c[0].x, c[0].y);
+      for (let i = 1; i < c.length; i++) {
+        this.ctx.lineTo(c[i].x, c[i].y);
+      }
+      this.ctx.closePath();
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
   }
 
   private isDeepWater(x: number, y: number): boolean {
@@ -1677,10 +1732,11 @@ export class RenderSystem extends System {
         this.ctx.translate(-cx, -cy);
       }
 
+      const insightHighlight = entity.id === this.insightHighlightEntityId;
       if (renderable.spritePath) {
-        this.renderBuildingSprite(building, renderable, isSelected);
+        this.renderBuildingSprite(building, renderable, isSelected, insightHighlight);
       } else {
-        this.renderIsometricBuilding(building, renderable, isSelected);
+        this.renderIsometricBuilding(building, renderable, isSelected, insightHighlight);
       }
 
       if (entrance) {
@@ -1761,7 +1817,12 @@ export class RenderSystem extends System {
     return typeof s === 'number' && s > 0 && Number.isFinite(s) ? s : 1;
   }
 
-  private renderBuildingSprite(building: Building, renderable: Renderable, isSelected: boolean = false): void {
+  private renderBuildingSprite(
+    building: Building,
+    renderable: Renderable,
+    isSelected: boolean = false,
+    insightHighlight: boolean = false
+  ): void {
     const spritePath = this.getConstructionSpritePath(building, renderable);
     const sprite = spritePath ? this.loadSprite(spritePath) : null;
     if (!sprite) return;
@@ -1782,13 +1843,14 @@ export class RenderSystem extends System {
 
     this.ctx.drawImage(sprite, centerX - drawW / 2, frontY - drawH, drawW, drawH);
 
+    const baseCorners = [
+      { x: 0, y: 0 },
+      { x: width * tileW / 2, y: width * tileH / 2 },
+      { x: (width - depth) * tileW / 2, y: (width + depth) * tileH / 2 },
+      { x: -depth * tileW / 2, y: depth * tileH / 2 }
+    ];
+
     if (isSelected) {
-      const baseCorners = [
-        { x: 0, y: 0 },
-        { x: width * tileW / 2, y: width * tileH / 2 },
-        { x: (width - depth) * tileW / 2, y: (width + depth) * tileH / 2 },
-        { x: -depth * tileW / 2, y: depth * tileH / 2 }
-      ];
       this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
       this.ctx.lineWidth = 2;
       this.ctx.beginPath();
@@ -1799,9 +1861,30 @@ export class RenderSystem extends System {
       this.ctx.closePath();
       this.ctx.stroke();
     }
+
+    if (insightHighlight) {
+      this.ctx.save();
+      this.ctx.strokeStyle = 'rgba(255, 220, 120, 0.98)';
+      this.ctx.lineWidth = isSelected ? 3.5 : 4;
+      this.ctx.shadowColor = 'rgba(255, 200, 70, 0.85)';
+      this.ctx.shadowBlur = 14;
+      this.ctx.beginPath();
+      baseCorners.forEach((corner, i) => {
+        if (i === 0) this.ctx.moveTo(corner.x, corner.y);
+        else this.ctx.lineTo(corner.x, corner.y);
+      });
+      this.ctx.closePath();
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
   }
 
-  private renderIsometricBuilding(building: Building, renderable: Renderable, isSelected: boolean = false): void {
+  private renderIsometricBuilding(
+    building: Building,
+    renderable: Renderable,
+    isSelected: boolean = false,
+    insightHighlight: boolean = false
+  ): void {
     const tileW = this.iso.tileWidth;
     const tileH = this.iso.tileHeight;
 
@@ -1873,6 +1956,29 @@ export class RenderSystem extends System {
       this.ctx.lineWidth = 1.5;
     }
     this.ctx.stroke();
+
+    if (insightHighlight) {
+      this.ctx.save();
+      this.ctx.strokeStyle = 'rgba(255, 215, 100, 0.98)';
+      this.ctx.lineWidth = 3;
+      this.ctx.shadowColor = 'rgba(255, 190, 60, 0.8)';
+      this.ctx.shadowBlur = 12;
+      this.ctx.beginPath();
+      baseCorners.forEach((corner, i) => {
+        if (i === 0) this.ctx.moveTo(corner.x, corner.y);
+        else this.ctx.lineTo(corner.x, corner.y);
+      });
+      this.ctx.closePath();
+      this.ctx.stroke();
+      this.ctx.beginPath();
+      topCorners.forEach((corner, i) => {
+        if (i === 0) this.ctx.moveTo(corner.x, corner.y);
+        else this.ctx.lineTo(corner.x, corner.y);
+      });
+      this.ctx.closePath();
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
   }
 
   private renderStatusBubble(

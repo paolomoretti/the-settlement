@@ -1,6 +1,7 @@
 import hotkeys from 'hotkeys-js';
 import { Game } from '@/core/Game';
 import { eventBus } from '@/core/EventBus';
+import { registerInsightAltKeyListeners } from '@/input/InsightAltKey';
 import { Position } from '@/components/Position';
 import { Building } from '@/components/Building';
 
@@ -26,6 +27,7 @@ export const SHORTCUT_BINDINGS: ShortcutBinding[] = [
   { key: 'V', description: 'Return to view mode / Close dialog (same as Escape)', category: 'general' },
   { key: 'Escape', description: 'Return to view mode / Close dialog', category: 'general' },
   { key: 'Space (hold)', description: 'Pan mode (drag to pan)', category: 'navigation' },
+  { key: 'Alt / Option (hold)', description: 'Show tile grid; hover buildings or rock for instant info + highlight', category: 'navigation' },
 ];
 
 function isGamePanelOverlayOpen(overlayId: string): boolean {
@@ -187,4 +189,6 @@ export function setupKeyboardShortcuts(game: Game): void {
       inputSystem.setSpacebarPressed(false);
     }
   });
+
+  registerInsightAltKeyListeners();
 }

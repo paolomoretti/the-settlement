@@ -16,6 +16,8 @@ export class InputSystem {
   private lastPos = { x: 0, y: 0 };
   private touchStartDistance = 0;
   public hoverGridPos: { x: number; y: number } | null = null;
+  /** Last pointer position in viewport pixels (for canvas hover UI). */
+  public hoverClientPos: { x: number; y: number } | null = null;
   private dragStartGridPos: { x: number; y: number } | null = null;
   private spacebarPressed = false;
   private lastRoadBuildPos: { x: number; y: number } | null = null;
@@ -65,6 +67,7 @@ export class InputSystem {
   }
 
   private handlePointerDown(clientX: number, clientY: number): void {
+    this.hoverClientPos = { x: clientX, y: clientY };
     this.isDragging = true;
     this.lastPos = { x: clientX, y: clientY };
 
@@ -98,6 +101,7 @@ export class InputSystem {
   }
 
   private handlePointerMove(clientX: number, clientY: number): void {
+    this.hoverClientPos = { x: clientX, y: clientY };
     // Update hover position for build preview
     const worldPos = this.renderSystem.screenToWorld(clientX, clientY);
     this.hoverGridPos = {
@@ -197,6 +201,7 @@ export class InputSystem {
 
     if (e.touches.length === 1) {
       const touch = e.touches[0];
+      this.hoverClientPos = { x: touch.clientX, y: touch.clientY };
       this.handlePointerDown(touch.clientX, touch.clientY);
     } else if (e.touches.length === 2) {
       // Pinch to zoom
@@ -239,5 +244,13 @@ export class InputSystem {
 
   getMode(): InputMode {
     return this.mode;
+  }
+
+  getHoverClientPos(): { x: number; y: number } | null {
+    return this.hoverClientPos;
+  }
+
+  isSpacebarPanning(): boolean {
+    return this.spacebarPressed;
   }
 }

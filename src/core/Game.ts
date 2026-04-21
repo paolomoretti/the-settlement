@@ -66,7 +66,8 @@ export class Game {
   private pendingBuildingPickups = new Set<number>(); // building entity IDs with workers en route
   private roadDragMode: 'create' | 'delete' | null = null;
   private lastMaterialCheckTime = 0;
-  private lastRescueCheckTime = 0;
+  /** Full transport heal (segment graph + route maps + junction rescue); mirrors road `scheduleSegmentRecalc`. */
+  private lastPeriodicTransportHealTime = 0;
   private lastOutputTransportKickTime = 0;
 
   constructor(canvas: HTMLCanvasElement, skipInit = false) {
@@ -1315,11 +1316,13 @@ export class Game {
     // Update transport relay chain
     this.updateTransport();
 
-    // Periodically rescue stranded junction items
+    // Periodic transport heal: `rescueStrandedItems` alone does not refresh direction maps, so goods
+    // can sit on roads until the next road edit triggers `recalculate` + `recomputeTransportRoutes`.
     const now = Date.now();
-    if (now - this.lastRescueCheckTime > 5000) {
-      this.lastRescueCheckTime = now;
-      this.rescueStrandedItems();
+    if (now - this.lastPeriodicTransportHealTime > 8000) {
+      this.lastPeriodicTransportHealTime = now;
+      roadSegmentManager.recalculate(this.tileMap);
+      this.recomputeTransportRoutes();
     }
 
     // Heal stale toward-base / toward-consumer maps when goods sit in output buffers

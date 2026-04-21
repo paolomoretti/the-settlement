@@ -79,6 +79,9 @@ const CONSTRUCTION_SPRITES: Record<string, string[]> = {
   ],
 };
 
+/** Uniform draw scale for `/assets/resources/*.png` on the main canvas (workers, junctions, map bubbles). */
+const RESOURCE_ICON_DRAW_SCALE = 1.25;
+
 export class RenderSystem extends System {
   private ctx: CanvasRenderingContext2D;
   private canvas: HTMLCanvasElement;
@@ -297,21 +300,8 @@ export class RenderSystem extends System {
              pos.y <= viewportBounds.maxY;
     });
 
-    // Sort entities by depth
-    const sortedEntities = visibleEntities.sort((a, b) => {
-      const posA = a.getComponent(Position)!;
-      const posB = b.getComponent(Position)!;
-      const buildingA = a.getComponent(Building);
-      const buildingB = b.getComponent(Building);
-
-      const depthA = posA.y + posA.x + (buildingA ? buildingA.width + buildingA.height - 2 : 0);
-      const depthB = posB.y + posB.x + (buildingB ? buildingB.width + buildingB.height - 2 : 0);
-
-      if (depthA !== depthB) return depthA - depthB;
-      if (buildingA && !buildingB) return -1;
-      if (!buildingA && buildingB) return 1;
-      return 0;
-    });
+    // Sort entities by isometric draw depth (float); workers tie-break on top of buildings
+    const sortedEntities = visibleEntities.sort((a, b) => this.compareEntityDrawOrder(a, b));
 
     // Render road stub for disconnected buildings (before depth-sorted pass)
     for (const entity of visibleEntities) {
@@ -889,6 +879,35 @@ export class RenderSystem extends System {
     this.ctx.drawImage(sprite, screen.x - drawW / 2, screen.y - drawH + this.iso.tileHeight * 0.5, drawW, drawH);
   }
 
+  /**
+   * Iso draw depth: larger value = closer to the camera = should be drawn later (on top).
+   * Buildings use the front corner of the footprint; walkers use fractional tile position while moving.
+   */
+  private getEntityDrawDepthFloat(entity: Entity): number {
+    const pos = entity.getComponent(Position);
+    if (!pos) return 0;
+    const building = entity.getComponent(Building);
+    if (building && !entity.getComponent(Worker)) {
+      return pos.x + pos.y + building.width + building.height - 2;
+    }
+    return pos.x + pos.y;
+  }
+
+  /** Primary: float depth; tie: workers render after buildings so carriers are not hidden by facades. */
+  private compareEntityDrawOrder(a: Entity, b: Entity): number {
+    const da = this.getEntityDrawDepthFloat(a);
+    const db = this.getEntityDrawDepthFloat(b);
+    if (da < db) return -1;
+    if (da > db) return 1;
+    const wa = a.hasComponent(Worker);
+    const wb = b.hasComponent(Worker);
+    const bb = !!b.getComponent(Building);
+    const ba = !!a.getComponent(Building);
+    if (wa && !wb && bb) return 1;
+    if (wb && !wa && ba) return -1;
+    return 0;
+  }
+
   private renderDepthSorted(
     sortedEntities: Entity[],
     viewportBounds: { minX: number; maxX: number; minY: number; maxY: number }
@@ -907,18 +926,20 @@ export class RenderSystem extends System {
       else blocksByDepth.set(depth, [block]);
     }
 
-    // Index entities by integer depth
+    // Index entities by integer depth slice (floor of float depth, aligned with tile x+y)
     const entitiesByDepth = new Map<number, Entity[]>();
     for (const entity of sortedEntities) {
-      const pos = entity.getComponent(Position)!;
-      const building = entity.getComponent(Building);
-      const depth = Math.round(pos.y + pos.x + (building ? building.width + building.height - 2 : 0));
-      const list = entitiesByDepth.get(depth);
+      const d = Math.floor(this.getEntityDrawDepthFloat(entity));
+      const list = entitiesByDepth.get(d);
       if (list) {
         list.push(entity);
       } else {
-        entitiesByDepth.set(depth, [entity]);
+        entitiesByDepth.set(d, [entity]);
       }
+    }
+
+    for (const list of entitiesByDepth.values()) {
+      list.sort((a, b) => this.compareEntityDrawOrder(a, b));
     }
 
     for (let d = minDepth; d <= maxDepth; d++) {
@@ -1929,7 +1950,8 @@ export class RenderSystem extends System {
 
     const r = 10;
     const hasIcon = !!icon;
-    const pillW = hasIcon ? 34 : 20;
+    const iconDraw = 14 * RESOURCE_ICON_DRAW_SCALE;
+    const pillW = hasIcon ? Math.round(34 * RESOURCE_ICON_DRAW_SCALE) : 20;
     const pillH = 20;
 
     this.ctx.save();
@@ -1950,7 +1972,7 @@ export class RenderSystem extends System {
     this.ctx.stroke();
 
     if (hasIcon) {
-      this.ctx.drawImage(icon!, -pillW / 2 + 3, -7, 14, 14);
+      this.ctx.drawImage(icon!, -pillW / 2 + 3, -iconDraw / 2 - 0.5, iconDraw, iconDraw);
       this.ctx.fillStyle = isFull ? '#ff6666' : '#ffffff';
       this.ctx.font = 'bold 9px monospace';
       this.ctx.textAlign = 'center';
@@ -2053,18 +2075,20 @@ export class RenderSystem extends System {
         const iy = center.y + offsets[i].y;
 
         const resSprite = this.loadSprite(`/assets/resources/${combined[i].resourceType}.png`);
+        const jw = 10 * RESOURCE_ICON_DRAW_SCALE;
+        const jHalf = jw / 2;
         if (resSprite) {
-          this.ctx.drawImage(resSprite, ix - 5, iy - 5, 10, 10);
+          this.ctx.drawImage(resSprite, ix - jHalf, iy - jHalf, jw, jw);
         } else {
           this.ctx.fillStyle = '#6b5020';
-          this.ctx.fillRect(ix - 4, iy - 1, 8, 4);
+          this.ctx.fillRect(ix - 4 * RESOURCE_ICON_DRAW_SCALE, iy - 1 * RESOURCE_ICON_DRAW_SCALE, 8 * RESOURCE_ICON_DRAW_SCALE, 4 * RESOURCE_ICON_DRAW_SCALE);
           this.ctx.fillStyle = '#8b6914';
-          this.ctx.fillRect(ix - 4, iy - 4, 8, 4);
+          this.ctx.fillRect(ix - 4 * RESOURCE_ICON_DRAW_SCALE, iy - 4 * RESOURCE_ICON_DRAW_SCALE, 8 * RESOURCE_ICON_DRAW_SCALE, 4 * RESOURCE_ICON_DRAW_SCALE);
           this.ctx.fillStyle = '#a07818';
-          this.ctx.fillRect(ix - 3, iy - 4, 6, 2);
+          this.ctx.fillRect(ix - 3 * RESOURCE_ICON_DRAW_SCALE, iy - 4 * RESOURCE_ICON_DRAW_SCALE, 6 * RESOURCE_ICON_DRAW_SCALE, 2 * RESOURCE_ICON_DRAW_SCALE);
           this.ctx.strokeStyle = '#4a3510';
           this.ctx.lineWidth = 0.5;
-          this.ctx.strokeRect(ix - 4, iy - 4, 8, 7);
+          this.ctx.strokeRect(ix - 4 * RESOURCE_ICON_DRAW_SCALE, iy - 4 * RESOURCE_ICON_DRAW_SCALE, 8 * RESOURCE_ICON_DRAW_SCALE, 7 * RESOURCE_ICON_DRAW_SCALE);
         }
       }
     }
@@ -2455,7 +2479,8 @@ export class RenderSystem extends System {
         px(-1, -20, 3, 1, '#f0c060');
       };
 
-      const toolDrawPx = 10;
+      const toolDrawPx = 10 * RESOURCE_ICON_DRAW_SCALE;
+      const carryW = 8 * RESOURCE_ICON_DRAW_SCALE;
 
       if (isHammerConstruct) {
         const strike = Math.floor(hammerSwingT * 8);
@@ -2488,13 +2513,13 @@ export class RenderSystem extends System {
       ) {
         const wob = Math.sin(now / 200) * 1.2 * s;
         if (resSprite) {
-          this.ctx.drawImage(resSprite, -4 * s, -22 * s + wob, 8 * s, 8 * s);
+          this.ctx.drawImage(resSprite, -4 * s, -22 * s + wob, carryW * s, carryW * s);
         } else {
           drawFallback();
         }
       } else if (isOverheadCarry) {
         if (resSprite) {
-          this.ctx.drawImage(resSprite, -4 * s, -22 * s, 8 * s, 8 * s);
+          this.ctx.drawImage(resSprite, -4 * s, -22 * s, carryW * s, carryW * s);
         } else {
           drawFallback();
         }

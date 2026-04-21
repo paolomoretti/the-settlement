@@ -103,7 +103,7 @@
     "requiredTool": "shovel",
     "production": {
       "outputs": { "planted_tree": 1 },
-      "productionTime": 30,
+      "productionTime": 120,
       "continuous": true,
       "maxOutputBuffer": 6
     },
@@ -125,7 +125,7 @@
     "name": "Stonemason",
     "description": "Cuts stones from granite rock formations.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 55, "color": "#8c8c8c" },
+    "visual": { "buildingHeight": 55, "color": "#8c8c8c", "spriteScale": 1.3 },
     "buildCost": { "wood_plank": 2 },
     "buildTime": 25,
     "requiresRoad": true,

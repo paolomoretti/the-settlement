@@ -794,6 +794,7 @@ export class Game {
 
     audioManager.playSound('build_placed');
     this.updateBuildingRoadConnections();
+    this.recheckConstructionMaterials(true);
     eventBus.emit('build:success');
     console.log(`${buildingDef.name} (${building.width}x${building.height}) placed at (${x}, ${y}) — ${building.state}`);
   }
@@ -1883,10 +1884,16 @@ export class Game {
     }
   }
 
-  private recheckConstructionMaterials(): void {
+  /**
+   * Replenishes lost junction items and fills gaps when HQ inventory cannot pay again.
+   * Build cost is deducted once at place time; `materialsSent` is how many were queued for physical
+   * delivery. If items disappear from the spawn tile / route, `storage` may be empty — we must still
+   * spawn junction entries without a second deduction (same goods already paid for).
+   */
+  private recheckConstructionMaterials(force = false): void {
     if (!this.baseCampEntity) return;
     const now = Date.now();
-    if (now - this.lastMaterialCheckTime < 2000) return;
+    if (!force && now - this.lastMaterialCheckTime < 2000) return;
     this.lastMaterialCheckTime = now;
 
     const storage = this.baseCampEntity.getComponent(Storage);
@@ -1911,13 +1918,17 @@ export class Game {
 
         for (const [, items] of transportManager.getJunctionItemsMap()) {
           for (const item of items) {
-            if (item.destinationEntityId === entity.id && item.resourceType === res) inTransit++;
+            if (item.destinationEntityId === entity.id && item.resourceType === res) {
+              inTransit++;
+            }
           }
         }
 
         for (const [, items] of transportManager.getPendingPickupVisualsMap()) {
           for (const item of items) {
-            if (item.destinationEntityId === entity.id && item.resourceType === res) inTransit++;
+            if (item.destinationEntityId === entity.id && item.resourceType === res) {
+              inTransit++;
+            }
           }
         }
 
@@ -1932,13 +1943,26 @@ export class Game {
           }
         }
 
-        const toDispatch = remaining - inTransit;
-        if (toDispatch <= 0) continue;
+        const sent = building.materialsSent[res] || 0;
+        // Goods already paid for at build time but missing from the pipe (e.g. route reset, stranded)
+        const prepaidGap = sent - delivered - inTransit;
+        if (prepaidGap > 0) {
+          const addPrepaid = Math.min(prepaidGap, remaining - inTransit);
+          for (let i = 0; i < addPrepaid; i++) {
+            transportManager.addJunctionItem(spawnTile.x, spawnTile.y, res, entity.id);
+          }
+          inTransit += addPrepaid;
+        }
 
-        for (let i = 0; i < toDispatch; i++) {
+        // Brand-new dispatch from stock (e.g. initial place had no spawn or extra materials)
+        const stillNeed = remaining - inTransit;
+        if (stillNeed <= 0) continue;
+
+        for (let i = 0; i < stillNeed; i++) {
           if (storage.getAmount(res) <= 0) break;
           storage.removeItem(res, 1);
           transportManager.addJunctionItem(spawnTile.x, spawnTile.y, res, entity.id);
+          building.materialsSent[res] = (building.materialsSent[res] || 0) + 1;
         }
       }
     }

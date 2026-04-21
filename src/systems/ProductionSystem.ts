@@ -114,6 +114,10 @@ export class ProductionSystem extends System {
       const rockDepletionGather =
         buildingDef?.animation?.type === 'gather' &&
         buildingDef.animation.gatherMode === 'rock_depletion';
+      const waterDepletionGather =
+        buildingDef?.animation?.type === 'gather' &&
+        buildingDef.animation.gatherMode === 'water_depletion';
+      const resourceDepletionGather = rockDepletionGather || waterDepletionGather;
 
       // Check buffer/storage space for outputs (skip if cycle already in progress)
       if (production.timer === 0) {
@@ -181,12 +185,12 @@ export class ProductionSystem extends System {
       // Forester / quarry rock: hold the production clock until the field animation worker finishes
       const foresterPlanting =
         building.buildingType === 'forester' && building.animationWorkerId != null;
-      const rockGatherPausing = rockDepletionGather && building.animationWorkerId != null;
-      if (!foresterPlanting && !rockGatherPausing) {
+      const depletionGatherPausing = resourceDepletionGather && building.animationWorkerId != null;
+      if (!foresterPlanting && !depletionGatherPausing) {
         production.timer += deltaTime;
       }
 
-      if (!rockDepletionGather && production.timer >= production.productionTime) {
+      if (!resourceDepletionGather && production.timer >= production.productionTime) {
         production.timer -= production.productionTime;
         applyProductionCycleOutputs(entity);
       }

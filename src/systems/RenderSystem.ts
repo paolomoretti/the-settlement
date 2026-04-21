@@ -14,6 +14,7 @@ import { Isometric } from '@/utils/Isometric';
 import { Tile } from '@/map/Tile';
 import { Production } from '@/components/Production';
 import { dataManager } from '@/data/DataManager';
+import { BuildingType } from '@/types/GameData';
 import { TerrainTextures } from '@/rendering/TerrainTextures';
 import { transportManager } from '@/economics/TransportManager';
 
@@ -469,13 +470,20 @@ export class RenderSystem extends System {
     const sprite = this.loadSprite(spritePath);
 
     if (sprite) {
-      this.renderSpritePreview(gridX, gridY, size.width, size.height, sprite);
+      this.renderSpritePreview(gridX, gridY, size.width, size.height, sprite, buildingType);
     } else {
       this.renderBuildingPreview(gridX, gridY, size.width, size.height, visual.buildingHeight, visual.color);
     }
   }
 
-  private renderSpritePreview(gridX: number, gridY: number, width: number, depth: number, sprite: HTMLImageElement): void {
+  private renderSpritePreview(
+    gridX: number,
+    gridY: number,
+    width: number,
+    depth: number,
+    sprite: HTMLImageElement,
+    buildingType?: string,
+  ): void {
     const canPlace = this.canPlacePreview(gridX, gridY, width, depth);
     const tileHighlight = canPlace ? 'rgba(255, 255, 255, 0.2)' : 'rgba(200, 50, 50, 0.35)';
 
@@ -502,8 +510,9 @@ export class RenderSystem extends System {
 
     const footprintW = (width + depth) * tileW / 2;
     const scale = footprintW / sprite.naturalWidth;
-    const drawW = sprite.naturalWidth * scale;
-    const drawH = sprite.naturalHeight * scale;
+    const extra = this.getBuildingSpriteVisualScale(buildingType ?? '');
+    const drawW = sprite.naturalWidth * scale * extra;
+    const drawH = sprite.naturalHeight * scale * extra;
     const centerX = (width - depth) * tileW / 4;
     const frontY = (width + depth) * tileH / 2;
 
@@ -1689,6 +1698,12 @@ export class RenderSystem extends System {
     return frameIndex < stages.length ? stages[frameIndex] : renderable.spritePath;
   }
 
+  private getBuildingSpriteVisualScale(buildingType: string): number {
+    const def = dataManager.getBuilding(buildingType as BuildingType);
+    const s = def?.visual?.spriteScale;
+    return typeof s === 'number' && s > 0 && Number.isFinite(s) ? s : 1;
+  }
+
   private renderBuildingSprite(building: Building, renderable: Renderable, isSelected: boolean = false): void {
     const spritePath = this.getConstructionSpritePath(building, renderable);
     const sprite = spritePath ? this.loadSprite(spritePath) : null;
@@ -1701,8 +1716,9 @@ export class RenderSystem extends System {
 
     const footprintW = (width + depth) * tileW / 2;
     const scale = footprintW / sprite.naturalWidth;
-    const drawW = sprite.naturalWidth * scale;
-    const drawH = sprite.naturalHeight * scale;
+    const extra = this.getBuildingSpriteVisualScale(building.buildingType);
+    const drawW = sprite.naturalWidth * scale * extra;
+    const drawH = sprite.naturalHeight * scale * extra;
 
     const centerX = (width - depth) * tileW / 4;
     const frontY = (width + depth) * tileH / 2;

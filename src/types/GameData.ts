@@ -169,6 +169,8 @@ export interface BuildingDefinition {
     buildingHeight: number; // Pixels above ground (for rendering)
     color: string;          // Base color (until sprites loaded)
     sprite?: string;        // Path to sprite asset
+    /** Optional multiplier for the footprint-fitted sprite (default 1). Anchored at footprint bottom center. */
+    spriteScale?: number;
   };
 
   // Construction

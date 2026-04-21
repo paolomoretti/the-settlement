@@ -84,7 +84,8 @@ All buildings are defined in `src/data/buildings.json`.
   "visual": {
     "buildingHeight": 60,  // Pixels above ground
     "color": "#8b4513",    // Fallback color
-    "sprite": "/assets/buildings/lumberjack.png"
+    "sprite": "/assets/buildings/lumberjack.png",
+    "spriteScale": 1.2    // Optional: multiplies footprint-fitted sprite size (default 1)
   },
   
   // Construction requirements

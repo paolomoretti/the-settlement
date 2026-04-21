@@ -8,6 +8,78 @@ import { resourceManager } from '@/economics/ResourceManager';
 import { dataManager } from '@/data/DataManager';
 import { ResourceType } from '@/types/GameData';
 
+/**
+ * One full production tick: consume inputs, buffer outputs, emit events, re-check buffer full.
+ * Does not change `production.timer` (caller adjusts after a timer-based tick).
+ */
+export function applyProductionCycleOutputs(entity: Entity): void {
+  const building = entity.getComponent(Building);
+  const production = entity.getComponent(Production);
+  const storage = entity.getComponent(Storage);
+  if (!building || !production) return;
+
+  const useLocalStorage = storage?.isProductionStorage;
+
+  if (useLocalStorage) {
+    for (const [res, amount] of Object.entries(production.inputs)) {
+      storage!.removeItem(res, amount);
+    }
+    for (const [res, amount] of Object.entries(production.outputs)) {
+      if (amount <= 0) continue;
+      if (dataManager.getResource(res as ResourceType)?.virtualOutput) continue;
+      storage!.items[res] = (storage!.items[res] || 0) + amount;
+    }
+  } else {
+    if (production.hasInputs()) {
+      const consumed = resourceManager.consumeInputsForProduction(production.inputs);
+      if (!consumed) {
+        production.status = 'stopped_no_inputs';
+        production.timer = 0;
+        eventBus.emit('production:stopped', {
+          entityId: entity.id,
+          reason: 'no_inputs',
+        });
+        return;
+      }
+    }
+    for (const [resource, amount] of Object.entries(production.outputs)) {
+      if (amount <= 0) continue;
+      if (dataManager.getResource(resource as ResourceType)?.virtualOutput) continue;
+      production.addToBuffer(resource, amount);
+      resourceManager.requestPickup(entity.id, resource, amount);
+    }
+  }
+
+  eventBus.emit('production:complete', {
+    entityId: entity.id,
+    outputs: { ...production.outputs },
+  });
+
+  if (!production.continuous) {
+    production.status = 'idle';
+    production.timer = 0;
+  }
+
+  if (useLocalStorage) {
+    const nextOutputTotal = Object.values(production.outputs).reduce((s, n) => s + n, 0);
+    if (storage!.getFreeSpace() < nextOutputTotal) {
+      production.status = 'stopped_full';
+      eventBus.emit('production:stopped', {
+        entityId: entity.id,
+        reason: 'buffer_full',
+      });
+    }
+  } else {
+    if (!production.hasBufferSpace()) {
+      production.status = 'stopped_full';
+      eventBus.emit('production:stopped', {
+        entityId: entity.id,
+        reason: 'buffer_full',
+      });
+    }
+  }
+}
+
 export class ProductionSystem extends System {
   shouldProcessEntity(entity: Entity): boolean {
     return entity.hasComponent(Production) && entity.hasComponent(Building);
@@ -36,8 +108,12 @@ export class ProductionSystem extends System {
         continue;
       }
 
+      const buildingDef = dataManager.getBuilding(building.buildingType);
       const storage = entity.getComponent(Storage);
       const useLocalStorage = storage?.isProductionStorage;
+      const rockDepletionGather =
+        buildingDef?.animation?.type === 'gather' &&
+        buildingDef.animation.gatherMode === 'rock_depletion';
 
       // Check buffer/storage space for outputs (skip if cycle already in progress)
       if (production.timer === 0) {
@@ -102,79 +178,17 @@ export class ProductionSystem extends System {
         eventBus.emit('production:resumed', { entityId: entity.id });
       }
 
-      // Forester: hold the production clock until the plant-tree animation worker finishes
+      // Forester / quarry rock: hold the production clock until the field animation worker finishes
       const foresterPlanting =
         building.buildingType === 'forester' && building.animationWorkerId != null;
-      if (!foresterPlanting) {
+      const rockGatherPausing = rockDepletionGather && building.animationWorkerId != null;
+      if (!foresterPlanting && !rockGatherPausing) {
         production.timer += deltaTime;
       }
 
-      if (production.timer >= production.productionTime) {
+      if (!rockDepletionGather && production.timer >= production.productionTime) {
         production.timer -= production.productionTime;
-
-        if (useLocalStorage) {
-          // Consume inputs from local storage
-          for (const [res, amount] of Object.entries(production.inputs)) {
-            storage!.removeItem(res, amount);
-          }
-          // Force-add outputs (may temporarily exceed capacity by one cycle)
-          for (const [res, amount] of Object.entries(production.outputs)) {
-            if (amount <= 0) continue;
-            if (dataManager.getResource(res as ResourceType)?.virtualOutput) continue;
-            storage!.items[res] = (storage!.items[res] || 0) + amount;
-          }
-        } else {
-          // Consume from global inventory
-          if (production.hasInputs()) {
-            const consumed = resourceManager.consumeInputsForProduction(production.inputs);
-            if (!consumed) {
-              production.status = 'stopped_no_inputs';
-              production.timer = 0;
-              eventBus.emit('production:stopped', {
-                entityId: entity.id,
-                reason: 'no_inputs',
-              });
-              continue;
-            }
-          }
-          // Add to output buffer (skip virtual outputs — not stockpiled or transported)
-          for (const [resource, amount] of Object.entries(production.outputs)) {
-            if (amount <= 0) continue;
-            if (dataManager.getResource(resource as ResourceType)?.virtualOutput) continue;
-            production.addToBuffer(resource, amount);
-            resourceManager.requestPickup(entity.id, resource, amount);
-          }
-        }
-
-        eventBus.emit('production:complete', {
-          entityId: entity.id,
-          outputs: { ...production.outputs },
-        });
-
-        if (!production.continuous) {
-          production.status = 'idle';
-          production.timer = 0;
-        }
-
-        // Check if still has space after production
-        if (useLocalStorage) {
-          const nextOutputTotal = Object.values(production.outputs).reduce((s, n) => s + n, 0);
-          if (storage!.getFreeSpace() < nextOutputTotal) {
-            production.status = 'stopped_full';
-            eventBus.emit('production:stopped', {
-              entityId: entity.id,
-              reason: 'buffer_full',
-            });
-          }
-        } else {
-          if (!production.hasBufferSpace()) {
-            production.status = 'stopped_full';
-            eventBus.emit('production:stopped', {
-              entityId: entity.id,
-              reason: 'buffer_full',
-            });
-          }
-        }
+        applyProductionCycleOutputs(entity);
       }
     }
   }

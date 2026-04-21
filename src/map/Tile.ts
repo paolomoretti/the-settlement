@@ -11,6 +11,8 @@ export class Tile {
   public explored: boolean = false; // Fog of war - has player seen this tile?
   public waterDepth: number = 0;
   public forestDepth: number = 0;
+  /** Remaining quarry harvests on this rock tile before `terrainTransition` clears it (lazy-init). */
+  public rockHarvestsRemaining?: number;
 
   constructor(
     public x: number,

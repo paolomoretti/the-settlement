@@ -429,6 +429,40 @@ export class TileMap {
     return best ? { x: best.x, y: best.y } : null;
   }
 
+  /**
+   * Nearest rock tile still yielding harvests (closest Manhattan distance first).
+   */
+  findNearestHarvestableRock(
+    cx: number,
+    cy: number,
+    radius: number,
+    types: string[],
+    stonesPerFull: number,
+    exclude?: Set<string>
+  ): { x: number; y: number } | null {
+    let best: { x: number; y: number; dist: number } | null = null;
+
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const x = cx + dx;
+        const y = cy + dy;
+        const tile = this.getTile(x, y);
+        if (!tile) continue;
+        if (!types.includes(tile.terrain)) continue;
+        if (tile.hasRoad || tile.isOccupied()) continue;
+        if (exclude && exclude.has(`${x},${y}`)) continue;
+        const remaining = tile.rockHarvestsRemaining ?? stonesPerFull;
+        if (remaining <= 0) continue;
+        const dist = Math.abs(dx) + Math.abs(dy);
+        if (!best || dist < best.dist) {
+          best = { x, y, dist };
+        }
+      }
+    }
+
+    return best ? { x: best.x, y: best.y } : null;
+  }
+
   isInBounds(x: number, y: number): boolean {
     return x >= 0 && x < this.width && y >= 0 && y < this.height;
   }
@@ -468,6 +502,8 @@ export class TileMap {
     const explored: string[] = [];
     const occupied: { x: number; y: number; id: number }[] = [];
 
+    const rockHarvests: { x: number; y: number; r: number }[] = [];
+
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         const tile = this.tiles[y][x];
@@ -483,6 +519,10 @@ export class TileMap {
         if (tile.occupiedBy !== undefined) {
           occupied.push({ x, y, id: tile.occupiedBy });
         }
+
+        if (tile.rockHarvestsRemaining !== undefined) {
+          rockHarvests.push({ x, y, r: tile.rockHarvestsRemaining });
+        }
       }
     }
 
@@ -493,7 +533,8 @@ export class TileMap {
       terrain: this.encodeTerrain(),
       roads: roads.join(';'),
       explored: explored.join(';'),
-      occupied
+      occupied,
+      rockHarvests,
     };
   }
 
@@ -542,6 +583,15 @@ export class TileMap {
           tile.occupiedBy = occ.id;
         }
       });
+    }
+
+    if (data.rockHarvests && Array.isArray(data.rockHarvests)) {
+      for (const entry of data.rockHarvests as { x: number; y: number; r: number }[]) {
+        const tile = map.getTile(entry.x, entry.y);
+        if (tile) {
+          tile.rockHarvestsRemaining = entry.r;
+        }
+      }
     }
 
     return map;

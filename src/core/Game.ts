@@ -66,6 +66,7 @@ export class Game {
   private pendingBuildingPickups = new Set<number>(); // building entity IDs with workers en route
   private roadDragMode: 'create' | 'delete' | null = null;
   private lastMaterialCheckTime = 0;
+  private lastProductionInputCheckTime = 0;
   /** Full transport heal (segment graph + route maps + junction rescue); mirrors road `scheduleSegmentRecalc`. */
   private lastPeriodicTransportHealTime = 0;
   private lastOutputTransportKickTime = 0;
@@ -635,6 +636,8 @@ export class Game {
 
       building.isActive = this.hasBuildingConnectedRoad(pos, building, connectedRoads);
     }
+
+    this.recheckProductionInputDeliveries(true);
   }
 
   private canPlaceBuilding(x: number, y: number, width: number, height: number, ignoreEntityId?: number): boolean {
@@ -810,6 +813,7 @@ export class Game {
     audioManager.playSound('build_placed');
     this.updateBuildingRoadConnections();
     this.recheckConstructionMaterials(true);
+    this.recheckProductionInputDeliveries(true);
     eventBus.emit('build:success');
     console.log(`${buildingDef.name} (${building.width}x${building.height}) placed at (${x}, ${y}) — ${building.state}`);
   }
@@ -899,6 +903,98 @@ export class Game {
           building.materialsSent[res] = (building.materialsSent[res] || 0) + 1;
         }
       }
+    }
+  }
+
+  /**
+   * Goods in the transport pipe to a building (junction, pickup visual, or worker en route).
+   * Junction-origin hauls in `to_pickup` are represented by pending visuals only — do not also count
+   * the worker or we double-count reserved storage slots.
+   */
+  private countInTransitToBuilding(destEntityId: number): number {
+    let inTransit = 0;
+
+    for (const [, items] of transportManager.getJunctionItemsMap()) {
+      for (const item of items) {
+        if (item.destinationEntityId === destEntityId) inTransit++;
+      }
+    }
+
+    for (const [, items] of transportManager.getPendingPickupVisualsMap()) {
+      for (const item of items) {
+        if (item.destinationEntityId === destEntityId) inTransit++;
+      }
+    }
+
+    for (const seg of roadSegmentManager.getSegments()) {
+      if (seg.assignedWorkerId === null) continue;
+      const workerEntity = this.entities.find(e => e.id === seg.assignedWorkerId && e.active);
+      if (!workerEntity) continue;
+      const worker = workerEntity.getComponent(Worker);
+      const task = worker?.transportTask;
+      if (!task || task.destEntityId !== destEntityId) continue;
+      if (task.phase === 'to_dropoff') {
+        inTransit++;
+      } else if (task.phase === 'to_pickup' && task.sourceEntityId != null) {
+        inTransit++;
+      }
+    }
+
+    return inTransit;
+  }
+
+  /** Pull HQ inventory onto the base-camp spawn junction for production buildings with local input storage. */
+  private tryDispatchHqProductionInputsForBuilding(entity: Entity): void {
+    if (!this.baseCampEntity) return;
+    const building = entity.getComponent(Building);
+    const production = entity.getComponent(Production);
+    const storage = entity.getComponent(Storage);
+    const hqStorage = this.baseCampEntity.getComponent(Storage);
+    if (!building?.isComplete() || !building.isActive || !production?.hasInputs() || !storage?.isProductionStorage || !hqStorage) {
+      return;
+    }
+
+    const spawnTile = this.workers.getBaseCampSpawnTile();
+    if (!spawnTile) return;
+
+    const inputTypes = Object.entries(production.inputs)
+      .filter(([, need]) => need > 0)
+      .map(([res]) => res);
+    if (inputTypes.length === 0) return;
+
+    let dispatchSlots = Math.max(
+      0,
+      storage.capacity - storage.getTotalStored() - this.countInTransitToBuilding(entity.id)
+    );
+
+    while (dispatchSlots > 0) {
+      let sent = false;
+      for (const res of inputTypes) {
+        if (dispatchSlots <= 0) break;
+        if (hqStorage.getAmount(res) <= 0) continue;
+        if (!storage.canAccept(res)) continue;
+        hqStorage.removeItem(res, 1);
+        transportManager.addJunctionItem(spawnTile.x, spawnTile.y, res, entity.id);
+        dispatchSlots--;
+        sent = true;
+      }
+      if (!sent) break;
+    }
+  }
+
+  /**
+   * When HQ holds inputs and a production building has free local storage, spawn junction items at
+   * the camp entrance (same path as construction materials). Throttled like construction recheck.
+   */
+  private recheckProductionInputDeliveries(force = false): void {
+    if (!this.baseCampEntity) return;
+    const now = Date.now();
+    if (!force && now - this.lastProductionInputCheckTime < 2000) return;
+    this.lastProductionInputCheckTime = now;
+
+    for (const entity of this.entities) {
+      if (!entity.active) continue;
+      this.tryDispatchHqProductionInputsForBuilding(entity);
     }
   }
 
@@ -1298,6 +1394,9 @@ export class Game {
     // Re-dispatch lost construction materials
     this.recheckConstructionMaterials();
 
+    // HQ → production building input storage (junction at base camp)
+    this.recheckProductionInputDeliveries();
+
     // Move builders around the building during construction
     this.workers.updateBuilderPatrol();
 
@@ -1360,6 +1459,7 @@ export class Game {
             transportManager.computeRoutesToBuilding(roadSegmentManager.getSegments(), entity.id);
           }
 
+          this.recheckProductionInputDeliveries(true);
           this.recomputePopulationMaxCapacity();
         }
       }
@@ -1785,6 +1885,7 @@ export class Game {
       }
 
       this.recomputePopulationMaxCapacity();
+      this.recheckProductionInputDeliveries(true);
 
       return true;
     } catch (error) {

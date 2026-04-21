@@ -2185,6 +2185,13 @@ export class RenderSystem extends System {
       return;
     }
     if (
+      worker.visualActivity === 'production_gather' &&
+      worker.state === 'working' &&
+      worker.carryingResource === 'pickaxe'
+    ) {
+      return;
+    }
+    if (
       worker.visualActivity === 'construct' &&
       worker.state === 'working' &&
       worker.hammerConstructionEnabled
@@ -2276,8 +2283,19 @@ export class RenderSystem extends System {
       worker.state === 'working' &&
       !isMoving;
 
+    const isStoneGathering =
+      isCarrying &&
+      worker.carryingResource === 'pickaxe' &&
+      worker.visualActivity === 'production_gather' &&
+      worker.state === 'working' &&
+      !isMoving;
+
     const isSideCarryTool =
-      isCarrying && worker.heldItemStyle === 'side' && !isHammerConstruct && !isPlantDigging;
+      isCarrying &&
+      worker.heldItemStyle === 'side' &&
+      !isHammerConstruct &&
+      !isPlantDigging &&
+      !isStoneGathering;
 
     const isOverheadCarry = isCarrying && worker.heldItemStyle === 'overhead';
 
@@ -2362,6 +2380,15 @@ export class RenderSystem extends System {
       leftArmY = -8;
       rightArmY = -7 - strike;
       leftHandY = -5;
+      rightHandY = rightArmY + 3;
+    } else if (isStoneGathering) {
+      const phase = now / 105;
+      const swing = Math.sin(phase) * 3.4;
+      leftArmX = -4;
+      rightArmX = 4;
+      leftArmY = -8 + swing * 0.28;
+      rightArmY = -8 + swing * 1.05;
+      leftHandY = -5 + swing * 0.28;
       rightHandY = rightArmY + 3;
     } else if (isSideCarryTool) {
       const wobble = isMoving ? walkArmSwing * 0.5 : 0;
@@ -2498,6 +2525,15 @@ export class RenderSystem extends System {
         } else {
           px(-2, -8, 6, 5, '#d4a03c');
           px(-1, -9, 4, 1, '#f0c060');
+        }
+      } else if (isStoneGathering) {
+        const swing = Math.sin(now / 105) * 3.4;
+        const ty = -10 + swing * 1.08;
+        const tx = 0.5;
+        if (resSprite) {
+          this.ctx.drawImage(resSprite, tx * s, ty * s, toolDrawPx * s, toolDrawPx * s);
+        } else {
+          px(tx - 1, ty, 5, 5, '#8a7a68');
         }
       } else if (isSideCarryTool) {
         if (resSprite) {

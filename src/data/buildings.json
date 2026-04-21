@@ -132,9 +132,22 @@
     "requiredTool": "pickaxe",
     "production": {
       "outputs": { "stone": 1 },
-      "productionTime": 25,
+      "productionTime": 120,
       "continuous": true,
-      "maxOutputBuffer": 6
+      "maxOutputBuffer": 6,
+      "maxGatherRadius": 15,
+      "stonesPerRockTile": 10
+    },
+    "animation": {
+      "type": "gather",
+      "gatherMode": "rock_depletion",
+      "targetTerrain": ["mountain", "hill"],
+      "searchRadius": 15,
+      "terrainTransition": { "mountain": "grass", "hill": "grass" },
+      "workerSpeed": 1.1,
+      "walkLeadSec": 25,
+      "digAtSiteSec": 7,
+      "carriedResource": "stone"
     },
     "population": { "requires": 1 },
     "category": "production",

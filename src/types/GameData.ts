@@ -139,6 +139,10 @@ export interface ProductionRule {
   continuous: boolean;
   // Max items the building can buffer before pickup (default 10)
   maxOutputBuffer?: number;
+  /** Max Manhattan distance from building to search for gather sources (e.g. quarry rock). */
+  maxGatherRadius?: number;
+  /** Harvests left per rock tile before terrain clears (quarry `rock_depletion` gather). */
+  stonesPerRockTile?: number;
 }
 
 export type AnimationConfig =
@@ -148,6 +152,13 @@ export type AnimationConfig =
       searchRadius: number;
       terrainTransition: Record<string, string>;
       workerSpeed: number;
+      /** Lumberjack-style single chop vs quarry-style timed dig + partial tile depletion. */
+      gatherMode?: 'tree' | 'rock_depletion';
+      /** With `walkLeadSec` + `digAtSiteSec`: worker departs late in the cycle (like forester). */
+      walkLeadSec?: number;
+      digAtSiteSec?: number;
+      /** Resource sprite while carrying back (defaults to `wood_log` for tree gather). */
+      carriedResource?: ResourceType;
     }
   | {
       /** Persistent operator: idles left of the well, works at an adjacent tile in the last part of each cycle. */

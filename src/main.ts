@@ -1,25 +1,39 @@
 import { Game } from './core/Game';
 import { eventBus } from './core/EventBus';
-import { dataManager } from './data/DataManager';
-import { BuildingMenu } from './ui/BuildingMenu';
-import { BuildingPopover } from './ui/BuildingPopover';
-import { setupKeyboardShortcuts } from './input/KeyboardShortcuts';
-import { showToast, setupToastListener } from './ui/Toast';
-import { audioManager } from './audio/AudioManager';
+import { dataManager } from '@/data/DataManager';
+import { BuildingMenu } from '@/ui/BuildingMenu';
+import { BuildingPopover } from '@/ui/BuildingPopover';
+import { setupKeyboardShortcuts } from '@/input/KeyboardShortcuts';
+import { showToast, setupToastListener } from '@/ui/Toast';
+import { audioManager } from '@/audio/AudioManager';
+import { anySaveSlotsExist, GameSaveSession } from '@/save/GameSaveSession';
 import tippy from 'tippy.js';
 import 'tippy.js/dist/tippy.css';
 
 let game: Game | null = null;
 let buildingMenu: BuildingMenu | null = null;
 let buildingPopover: BuildingPopover | null = null;
-let currentSaveSlot: number | null = null;
-let autoSaveInterval: ReturnType<typeof setInterval> | null = null;
-let autoSaveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-let autoSaveEventCleanup: (() => void) | null = null;
 
-const SAVE_SLOT_PREFIX = 'settler_save_';
-const LAST_SAVE_KEY = 'settler_last_save_slot';
 const OPTIONS_KEY = 'settler_options';
+
+function loadOptions(): { autosave: boolean; debugInfo: boolean; buildingLabels: boolean; navigator: boolean; soundEffects: boolean } {
+  const defaults = { autosave: true, debugInfo: true, buildingLabels: true, navigator: true, soundEffects: true };
+  try {
+    const raw = localStorage.getItem(OPTIONS_KEY);
+    if (raw) return { ...defaults, ...JSON.parse(raw) };
+  } catch {}
+  return defaults;
+}
+
+function saveOptions(opts: { autosave: boolean; debugInfo: boolean; buildingLabels: boolean; navigator: boolean; soundEffects: boolean }): void {
+  localStorage.setItem(OPTIONS_KEY, JSON.stringify(opts));
+}
+
+const saveSession = new GameSaveSession({
+  getGame: () => game,
+  isAutosaveEnabled: () => loadOptions().autosave,
+  toast: showToast,
+});
 
 window.addEventListener('DOMContentLoaded', () => {
   const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
@@ -31,36 +45,33 @@ window.addEventListener('DOMContentLoaded', () => {
   setupDialogs();
 
   document.getElementById('btn-start-game')?.addEventListener('click', () => {
-    currentSaveSlot = null;
+    saveSession.clearResumeAndSlot();
     launchGame(canvas);
   });
 
   document.getElementById('btn-load-game-welcome')?.addEventListener('click', () => {
-    openLoadDialog((slotIndex) => {
-      const slotData = getFullSlotData(slotIndex);
+    saveSession.openLoadDialog((slotIndex) => {
+      const slotData = saveSession.getFullSlotData(slotIndex);
       if (slotData) {
-        currentSaveSlot = slotIndex;
-        localStorage.setItem(LAST_SAVE_KEY, slotIndex.toString());
+        saveSession.bindResumeSlot(slotIndex);
         launchGame(canvas, slotData.data);
       }
     });
   });
 
-  const lastSlot = localStorage.getItem(LAST_SAVE_KEY);
-  if (lastSlot !== null) {
-    const slotIndex = parseInt(lastSlot);
-    const slotData = getFullSlotData(slotIndex);
+  const resumeIndex = saveSession.parseResumeSlotIndex();
+  if (resumeIndex !== null) {
+    const slotData = saveSession.getFullSlotData(resumeIndex);
     if (slotData) {
-      currentSaveSlot = slotIndex;
+      saveSession.bindResumeSlot(resumeIndex);
       launchGame(canvas, slotData.data);
       return;
     }
+    saveSession.clearStaleResumeKey();
   }
 
   showScreen('welcome');
 });
-
-// --- Screen Management ---
 
 function showScreen(screen: 'welcome' | 'game'): void {
   const welcomeScreen = document.getElementById('welcome-screen')!;
@@ -80,15 +91,16 @@ function showScreen(screen: 'welcome' | 'game'): void {
 }
 
 function updateWelcomeLoadButton(): void {
-  const hasAnySave = Array.from({ length: 10 }, (_, i) =>
-    localStorage.getItem(`${SAVE_SLOT_PREFIX}${i}`)
-  ).some(Boolean);
   const btn = document.getElementById('btn-load-game-welcome') as HTMLButtonElement;
-  if (btn) btn.disabled = !hasAnySave;
+  if (btn) btn.disabled = !anySaveSlotsExist();
 }
 
-function launchGame(canvas: HTMLCanvasElement, saveData?: any): void {
+function launchGame(canvas: HTMLCanvasElement, saveData?: unknown): void {
   showScreen('game');
+
+  if (!saveData) {
+    saveSession.clearResumeAndSlot();
+  }
 
   if (!game) {
     if (saveData) {
@@ -108,45 +120,18 @@ function launchGame(canvas: HTMLCanvasElement, saveData?: any): void {
   }
 
   game.start();
+
+  saveSession.registerUnloadHooksOnce();
+  saveSession.startAutoSaveIfEnabled();
 }
 
 function exitToWelcome(): void {
-  localStorage.removeItem(LAST_SAVE_KEY);
-  currentSaveSlot = null;
+  saveSession.clearResumeAndSlot();
   if (game) {
     game.stop();
   }
   showScreen('welcome');
 }
-
-// --- Save/Load Slot Management ---
-
-function getFullSlotData(index: number): { name: string; timestamp: number; data: any } | null {
-  const raw = localStorage.getItem(`${SAVE_SLOT_PREFIX}${index}`);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-function getSlotMeta(index: number): { name: string; timestamp: number } | null {
-  const data = getFullSlotData(index);
-  if (!data) return null;
-  return { name: data.name, timestamp: data.timestamp };
-}
-
-function saveToSlot(index: number, name: string): void {
-  if (!game) return;
-  const gameData = game.getSaveData();
-  const slotData = { name, timestamp: Date.now(), data: gameData };
-  localStorage.setItem(`${SAVE_SLOT_PREFIX}${index}`, JSON.stringify(slotData));
-  localStorage.setItem(LAST_SAVE_KEY, index.toString());
-  currentSaveSlot = index;
-}
-
-// --- Dialogs ---
 
 function setupDialogs(): void {
   const saveLoadDialog = document.getElementById('save-load-dialog')!;
@@ -161,9 +146,9 @@ function setupDialogs(): void {
 
   document.getElementById('btn-save-and-exit')?.addEventListener('click', () => {
     exitDialog.style.display = 'none';
-    openSaveDialog(() => {
+    saveSession.openSaveDialog(() => {
       exitToWelcome();
-    });
+    }, 'Save before exiting');
   });
 
   document.getElementById('btn-exit-no-save')?.addEventListener('click', () => {
@@ -179,121 +164,6 @@ function setupDialogs(): void {
     if (e.target === exitDialog) exitDialog.style.display = 'none';
   });
 }
-
-function openSaveDialog(onComplete?: () => void): void {
-  const dialog = document.getElementById('save-load-dialog')!;
-  const title = document.getElementById('save-load-title')!;
-  const slotsContainer = document.getElementById('save-load-slots')!;
-
-  title.textContent = 'Save Game';
-  renderSlots(slotsContainer, 'save', (slotIndex, name) => {
-    saveToSlot(slotIndex, name!);
-    dialog.style.display = 'none';
-    showToast('Game saved!');
-    onComplete?.();
-  });
-
-  dialog.style.display = 'flex';
-}
-
-function openLoadDialog(onLoad: (slotIndex: number) => void): void {
-  const dialog = document.getElementById('save-load-dialog')!;
-  const title = document.getElementById('save-load-title')!;
-  const slotsContainer = document.getElementById('save-load-slots')!;
-
-  title.textContent = 'Load Game';
-  renderSlots(slotsContainer, 'load', (slotIndex) => {
-    dialog.style.display = 'none';
-    onLoad(slotIndex);
-  });
-
-  dialog.style.display = 'flex';
-}
-
-function renderSlots(
-  container: HTMLElement,
-  mode: 'save' | 'load',
-  onAction: (slotIndex: number, name?: string) => void,
-  editingIndex: number | null = null
-): void {
-  container.innerHTML = '';
-
-  for (let i = 0; i < 10; i++) {
-    const meta = getSlotMeta(i);
-    const slot = document.createElement('div');
-
-    if (mode === 'save' && editingIndex === i) {
-      slot.className = 'save-slot editing';
-      slot.innerHTML = `
-        <span class="slot-number">${i + 1}.</span>
-        <input type="text" class="slot-name-input" value="${escapeAttr(meta?.name || '')}" placeholder="Enter save name..." />
-      `;
-    } else {
-      slot.className = 'save-slot' + (meta ? ' filled' : '');
-      if (meta) {
-        const date = new Date(meta.timestamp);
-        const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        slot.innerHTML = `
-          <span class="slot-number">${i + 1}.</span>
-          <span class="slot-name">${escapeHtml(meta.name)}</span>
-          <span class="slot-date">${dateStr}</span>
-          ${mode === 'save' ? '<span class="slot-edit-btn" title="Rename">&#9998;</span>' : ''}
-        `;
-      } else {
-        slot.innerHTML = `
-          <span class="slot-number">${i + 1}.</span>
-          <span class="slot-name empty-label">Empty</span>
-          <span class="slot-date"></span>
-        `;
-      }
-    }
-
-    container.appendChild(slot);
-
-    if (mode === 'save' && editingIndex === i) {
-      const input = slot.querySelector('.slot-name-input') as HTMLInputElement;
-      requestAnimationFrame(() => { input.focus(); input.select(); });
-
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.stopPropagation();
-          onAction(i, input.value.trim() || `Save ${i + 1}`);
-        } else if (e.key === 'Escape') {
-          e.stopPropagation();
-          renderSlots(container, mode, onAction);
-        }
-      });
-    } else if (mode === 'save' && meta) {
-      slot.addEventListener('click', (e) => {
-        if ((e.target as HTMLElement).classList.contains('slot-edit-btn')) {
-          renderSlots(container, mode, onAction, i);
-        } else {
-          onAction(i, meta.name);
-        }
-      });
-    } else if (mode === 'save') {
-      slot.addEventListener('click', () => {
-        renderSlots(container, mode, onAction, i);
-      });
-    } else if (mode === 'load' && meta) {
-      slot.addEventListener('click', () => onAction(i));
-    } else if (mode === 'load') {
-      slot.classList.add('disabled');
-    }
-  }
-}
-
-function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-function escapeAttr(str: string): string {
-  return str.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
-// --- Game UI ---
 
 function setupGameUI(game: Game): void {
   setupKeyboardShortcuts(game);
@@ -330,43 +200,43 @@ function setupGameUI(game: Game): void {
   });
 
   document.getElementById('btn-save')?.addEventListener('click', () => {
-    if (currentSaveSlot !== null) {
-      const meta = getSlotMeta(currentSaveSlot);
-      if (meta) {
-        saveToSlot(currentSaveSlot, meta.name);
+    const slot = saveSession.getCurrentSlot();
+    if (slot !== null) {
+      const meta = saveSession.getSlotMeta(slot);
+      if (meta && saveSession.saveToSlot(slot, meta.name)) {
         showToast('Game saved!');
         return;
       }
     }
-    openSaveDialog();
+    saveSession.openSaveDialog(undefined, 'Save Game — pick a slot');
   });
 
   document.getElementById('btn-save-as')?.addEventListener('click', () => {
-    openSaveDialog();
+    saveSession.openSaveDialog(undefined, 'Save As — pick a slot');
   });
 
   eventBus.on('open:save_dialog', () => {
-    openSaveDialog();
+    saveSession.openSaveDialog(undefined, 'Save Game — pick a slot');
   });
 
   eventBus.on('quick:save', () => {
-    if (currentSaveSlot !== null) {
-      const meta = getSlotMeta(currentSaveSlot);
-      if (meta) {
-        saveToSlot(currentSaveSlot, meta.name);
+    const slot = saveSession.getCurrentSlot();
+    if (slot !== null) {
+      const meta = saveSession.getSlotMeta(slot);
+      if (meta && saveSession.saveToSlot(slot, meta.name)) {
         showToast('Game saved!');
         return;
       }
     }
-    openSaveDialog();
+    saveSession.openSaveDialog(undefined, 'Save Game — pick a slot');
   });
 
   document.getElementById('btn-load')?.addEventListener('click', () => {
-    openLoadDialog((slotIndex) => {
-      const slotData = getFullSlotData(slotIndex);
-      if (slotData) {
+    saveSession.openLoadDialog((slotIndex) => {
+      const slotData = saveSession.getFullSlotData(slotIndex);
+      if (slotData && game) {
         game.loadSaveData(slotData.data);
-        localStorage.setItem(LAST_SAVE_KEY, slotIndex.toString());
+        saveSession.bindResumeSlot(slotIndex);
         showToast('Game loaded!');
       }
     });
@@ -413,19 +283,6 @@ function setupGameUI(game: Game): void {
   });
 }
 
-function loadOptions(): { autosave: boolean; debugInfo: boolean; buildingLabels: boolean; navigator: boolean; soundEffects: boolean } {
-  const defaults = { autosave: true, debugInfo: true, buildingLabels: true, navigator: true, soundEffects: true };
-  try {
-    const raw = localStorage.getItem(OPTIONS_KEY);
-    if (raw) return { ...defaults, ...JSON.parse(raw) };
-  } catch {}
-  return defaults;
-}
-
-function saveOptions(opts: { autosave: boolean; debugInfo: boolean; buildingLabels: boolean; navigator: boolean; soundEffects: boolean }): void {
-  localStorage.setItem(OPTIONS_KEY, JSON.stringify(opts));
-}
-
 function setupOptionsPanel(game: Game): void {
   const panel = document.getElementById('options-panel')!;
   const autosaveToggle = document.getElementById('opt-autosave') as HTMLInputElement;
@@ -441,7 +298,6 @@ function setupOptionsPanel(game: Game): void {
   navigatorToggle.checked = opts.navigator;
   soundEffectsToggle.checked = opts.soundEffects;
 
-  if (opts.autosave) startAutoSave();
   if (!opts.debugInfo) document.getElementById('debug-info')!.style.display = 'none';
   if (!opts.buildingLabels) game.renderSystem.showBuildingLabels = false;
   if (!opts.navigator) document.getElementById('minimap')!.style.display = 'none';
@@ -469,9 +325,9 @@ function setupOptionsPanel(game: Game): void {
 
   autosaveToggle.addEventListener('change', () => {
     if (autosaveToggle.checked) {
-      startAutoSave();
+      saveSession.startAutoSave();
     } else {
-      stopAutoSave();
+      saveSession.stopAutoSave();
     }
     persistAll();
   });
@@ -497,62 +353,6 @@ function setupOptionsPanel(game: Game): void {
     audioManager.toggle();
     persistAll();
   });
-}
-
-function performAutoSave(): void {
-  if (currentSaveSlot !== null) {
-    const meta = getSlotMeta(currentSaveSlot);
-    if (meta) {
-      saveToSlot(currentSaveSlot, meta.name);
-      showToast('Auto saved');
-      return;
-    }
-  }
-  saveToSlot(currentSaveSlot ?? 0, 'Auto Save');
-  showToast('Auto saved');
-}
-
-function resetAutoSaveInterval(): void {
-  if (autoSaveInterval !== null) clearInterval(autoSaveInterval);
-  autoSaveInterval = setInterval(performAutoSave, 2 * 60 * 1000);
-}
-
-function scheduleAutoSaveDebounce(): void {
-  if (autoSaveDebounceTimer !== null) clearTimeout(autoSaveDebounceTimer);
-  autoSaveDebounceTimer = setTimeout(() => {
-    autoSaveDebounceTimer = null;
-    performAutoSave();
-    resetAutoSaveInterval();
-  }, 5 * 1000);
-}
-
-const AUTO_SAVE_EVENTS = [
-  'build:success', 'build:road', 'delete:selected', 'drag:end', 'road:drag_end', 'erase:done',
-] as const;
-
-function startAutoSave(): void {
-  stopAutoSave();
-  resetAutoSaveInterval();
-  const handler = () => scheduleAutoSaveDebounce();
-  for (const evt of AUTO_SAVE_EVENTS) eventBus.on(evt, handler);
-  autoSaveEventCleanup = () => {
-    for (const evt of AUTO_SAVE_EVENTS) eventBus.off(evt, handler);
-  };
-}
-
-function stopAutoSave(): void {
-  if (autoSaveInterval !== null) {
-    clearInterval(autoSaveInterval);
-    autoSaveInterval = null;
-  }
-  if (autoSaveDebounceTimer !== null) {
-    clearTimeout(autoSaveDebounceTimer);
-    autoSaveDebounceTimer = null;
-  }
-  if (autoSaveEventCleanup) {
-    autoSaveEventCleanup();
-    autoSaveEventCleanup = null;
-  }
 }
 
 function showInventoryPanel(game: Game): void {

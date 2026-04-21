@@ -28,12 +28,19 @@ export const SHORTCUT_BINDINGS: ShortcutBinding[] = [
   { key: 'Space (hold)', description: 'Pan mode (drag to pan)', category: 'navigation' },
 ];
 
+function isGamePanelOverlayOpen(overlayId: string): boolean {
+  return document.getElementById(overlayId)?.classList.contains('is-open') ?? false;
+}
+
 function isModalOpen(): boolean {
-  const ids = ['save-load-dialog', 'exit-dialog', 'options-panel'];
-  return ids.some(id => {
-    const el = document.getElementById(id);
-    return el !== null && el.style.display !== 'none' && el.style.display !== '';
-  });
+  const saveLoad = document.getElementById('save-load-dialog');
+  if (saveLoad && saveLoad.style.display !== 'none' && saveLoad.style.display !== '') return true;
+  const exit = document.getElementById('exit-dialog');
+  if (exit && exit.style.display !== 'none' && exit.style.display !== '') return true;
+  if (isGamePanelOverlayOpen('options-overlay')) return true;
+  if (isGamePanelOverlayOpen('inventory-overlay')) return true;
+  if (isGamePanelOverlayOpen('building-menu-overlay')) return true;
+  return false;
 }
 
 /** Close the topmost overlay if any. Returns true if Escape/V should not fall through to view mode. */
@@ -52,15 +59,18 @@ function tryCloseTopOverlay(): boolean {
     return true;
   }
 
-  const optionsPanel = document.getElementById('options-panel');
-  if (optionsPanel && optionsPanel.style.display === 'block') {
-    optionsPanel.style.display = 'none';
+  if (isGamePanelOverlayOpen('options-overlay')) {
+    eventBus.emit('close:options');
     return true;
   }
 
-  const inventoryPanel = document.getElementById('inventory-panel');
-  if (inventoryPanel && inventoryPanel.style.display === 'block') {
-    inventoryPanel.style.display = 'none';
+  if (isGamePanelOverlayOpen('building-menu-overlay')) {
+    eventBus.emit('close:building_menu');
+    return true;
+  }
+
+  if (isGamePanelOverlayOpen('inventory-overlay')) {
+    eventBus.emit('close:inventory');
     return true;
   }
 
@@ -110,7 +120,7 @@ export function setupKeyboardShortcuts(game: Game): void {
 
   // O — Toggle options
   hotkeys('o', (e) => {
-    const optionsOpen = document.getElementById('options-panel')?.style.display === 'block';
+    const optionsOpen = isGamePanelOverlayOpen('options-overlay');
     if (!optionsOpen && isModalOpen()) return;
     e.preventDefault();
     eventBus.emit('toggle:options');

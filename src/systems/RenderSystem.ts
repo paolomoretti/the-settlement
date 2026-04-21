@@ -1651,8 +1651,8 @@ export class RenderSystem extends System {
       this.ctx.filter = 'none';
     }
 
-    // Construction overlay for buildings under construction or awaiting materials
-    if (building && (building.state === 'under_construction' || building.state === 'awaiting_materials')) {
+    // Construction overlay: bar + dust only while workers are actively building (not while waiting on materials)
+    if (building && building.state === 'under_construction') {
       this.ctx.globalAlpha = 1;
       this.renderConstructionOverlay(building);
     }

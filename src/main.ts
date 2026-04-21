@@ -178,7 +178,7 @@ function setupGameUI(game: Game): void {
 
     if (mode === 'view') {
       buildingMenu!.close();
-    } else if (document.getElementById('building-menu-panel')?.style.display === 'block') {
+    } else if (document.getElementById('building-menu-overlay')?.classList.contains('is-open')) {
       buildingMenu!.refresh();
     }
   });
@@ -281,10 +281,39 @@ function setupGameUI(game: Game): void {
   document.getElementById('btn-close-inventory')?.addEventListener('click', () => {
     hideInventoryPanel();
   });
+
+  const inventoryOverlay = document.getElementById('inventory-overlay');
+  inventoryOverlay?.addEventListener('click', (e) => {
+    if (e.target === inventoryOverlay) hideInventoryPanel();
+  });
+
+  const buildingMenuOverlay = document.getElementById('building-menu-overlay');
+  buildingMenuOverlay?.addEventListener('click', (e) => {
+    if (e.target === buildingMenuOverlay) buildingMenu!.close();
+  });
+
+  eventBus.on('close:inventory', () => hideInventoryPanel());
+  eventBus.on('close:building_menu', () => buildingMenu?.close());
+  eventBus.on('close:options', () => closeOptionsOverlay());
+}
+
+function closeOptionsOverlay(): void {
+  const overlay = document.getElementById('options-overlay');
+  if (!overlay) return;
+  overlay.classList.remove('is-open');
+  overlay.setAttribute('aria-hidden', 'true');
+}
+
+function toggleOptionsOverlay(): void {
+  const overlay = document.getElementById('options-overlay');
+  if (!overlay) return;
+  const open = !overlay.classList.contains('is-open');
+  overlay.classList.toggle('is-open', open);
+  overlay.setAttribute('aria-hidden', open ? 'false' : 'true');
 }
 
 function setupOptionsPanel(game: Game): void {
-  const panel = document.getElementById('options-panel')!;
+  const overlay = document.getElementById('options-overlay')!;
   const autosaveToggle = document.getElementById('opt-autosave') as HTMLInputElement;
   const debugToggle = document.getElementById('opt-debug-info') as HTMLInputElement;
   const buildingLabelsToggle = document.getElementById('opt-building-labels') as HTMLInputElement;
@@ -311,16 +340,20 @@ function setupOptionsPanel(game: Game): void {
     soundEffects: soundEffectsToggle.checked,
   });
 
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeOptionsOverlay();
+  });
+
   document.getElementById('btn-options')?.addEventListener('click', () => {
-    panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+    toggleOptionsOverlay();
   });
 
   document.getElementById('btn-close-options')?.addEventListener('click', () => {
-    panel.style.display = 'none';
+    closeOptionsOverlay();
   });
 
   eventBus.on('toggle:options', () => {
-    panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+    toggleOptionsOverlay();
   });
 
   autosaveToggle.addEventListener('change', () => {
@@ -356,8 +389,8 @@ function setupOptionsPanel(game: Game): void {
 }
 
 function showInventoryPanel(game: Game): void {
-  const panel = document.getElementById('inventory-panel');
-  if (!panel) return;
+  const overlay = document.getElementById('inventory-overlay');
+  if (!overlay) return;
 
   const popDisplay = document.getElementById('population-display');
   if (popDisplay) {
@@ -387,12 +420,15 @@ function showInventoryPanel(game: Game): void {
     });
   });
 
-  panel.style.display = 'block';
+  overlay.classList.add('is-open');
+  overlay.setAttribute('aria-hidden', 'false');
 }
 
 function hideInventoryPanel(): void {
-  const panel = document.getElementById('inventory-panel');
-  if (panel) panel.style.display = 'none';
+  const overlay = document.getElementById('inventory-overlay');
+  if (!overlay) return;
+  overlay.classList.remove('is-open');
+  overlay.setAttribute('aria-hidden', 'true');
 }
 
 function updateButtonStates(activeButtonId: string | null): void {

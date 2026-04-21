@@ -249,18 +249,33 @@
       color: #fff;
     }
 
+    /* Full-screen dimmer; click backdrop (outside sheet) to close */
+    .game-panel-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 70;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: rgba(0, 0, 0, 0.55);
+      pointer-events: auto;
+    }
+
+    .game-panel-overlay.is-open {
+      display: flex;
+    }
+
     #inventory-panel {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
+      position: relative;
       background: rgba(0, 0, 0, 0.9);
       padding: 20px;
       border-radius: 8px;
       pointer-events: auto;
-      display: none;
       min-width: 400px;
       max-width: 500px;
+      max-height: 90vh;
+      overflow: auto;
       border: 3px solid #8b1a1a;
       box-shadow: 0 0 20px rgba(139, 26, 26, 0.5);
     }
@@ -313,17 +328,13 @@
     }
 
     #building-menu-panel {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
+      position: relative;
       background: rgba(0, 0, 0, 0.95);
       padding: 20px;
       border-radius: 8px;
       pointer-events: auto;
-      display: none;
-      width: 700px;
-      max-height: 80vh;
+      width: min(700px, 100%);
+      max-height: 85vh;
       border: 3px solid #4a6741;
       box-shadow: 0 0 30px rgba(74, 103, 65, 0.6);
       overflow: hidden;
@@ -506,19 +517,17 @@
       display: block;
     }
 
-    /* Options Panel */
+    /* Options Panel (sheet inside .game-panel-overlay) */
     #options-panel {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
+      position: relative;
       background: rgba(0, 0, 0, 0.95);
       padding: 20px;
       border-radius: 8px;
       pointer-events: auto;
-      display: none;
       min-width: 340px;
       max-width: 400px;
+      max-height: 90vh;
+      overflow: auto;
       border: 3px solid #4a6741;
       box-shadow: 0 0 30px rgba(74, 103, 65, 0.6);
     }
@@ -924,39 +933,44 @@
           <button id="btn-load">Load Game</button>
         </div>
       </div>
-      <div id="inventory-panel">
+      <div id="inventory-overlay" class="game-panel-overlay" aria-hidden="true">
+        <div id="inventory-panel" role="dialog" aria-labelledby="inventory-title">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-          <h3 style="margin: 0;">🏕️ Base Camp</h3>
-          <button id="btn-close-inventory" style="padding: 4px 12px; margin: 0;">✕</button>
+          <h3 id="inventory-title" style="margin: 0;">🏕️ Base Camp</h3>
+          <button type="button" id="btn-close-inventory" style="padding: 4px 12px; margin: 0;">✕</button>
         </div>
         <div style="font-size: 11px; margin-bottom: 10px; opacity: 0.8;">
           <div>Population: <span id="population-display">0/0</span></div>
         </div>
         <h4 style="margin: 10px 0 5px 0; font-size: 12px;">Resources</h4>
         <div id="inventory-list" style="max-height: 400px; overflow-y: auto; font-size: 11px;"></div>
+        </div>
       </div>
-      <div id="building-menu-panel">
+      <div id="building-menu-overlay" class="game-panel-overlay" aria-hidden="true">
+        <div id="building-menu-panel" role="dialog" aria-labelledby="building-menu-title">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-          <h3 style="margin: 0;">🏗️ Building Menu</h3>
-          <button id="btn-close-building-menu" style="padding: 4px 12px; margin: 0;">✕</button>
+          <h3 id="building-menu-title" style="margin: 0;">🏗️ Building Menu</h3>
+          <button type="button" id="btn-close-building-menu" style="padding: 4px 12px; margin: 0;">✕</button>
         </div>
 
         <div class="building-tabs">
-          <button id="tab-residential" class="tab-button">🏘️ Residential</button>
-          <button id="tab-production" class="tab-button active">🏭 Production</button>
-          <button id="tab-military" class="tab-button">🛡️ Military</button>
-          <button id="tab-infrastructure" class="tab-button">🏛️ Infrastructure</button>
+          <button type="button" id="tab-residential" class="tab-button">🏘️ Residential</button>
+          <button type="button" id="tab-production" class="tab-button active">🏭 Production</button>
+          <button type="button" id="tab-military" class="tab-button">🛡️ Military</button>
+          <button type="button" id="tab-infrastructure" class="tab-button">🏛️ Infrastructure</button>
         </div>
 
         <div id="building-cards-container" class="building-cards-container">
           <!-- Building cards will be inserted here dynamically -->
         </div>
+        </div>
       </div>
 
-      <div id="options-panel">
+      <div id="options-overlay" class="game-panel-overlay" aria-hidden="true">
+        <div id="options-panel" role="dialog" aria-labelledby="options-title">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-          <h3 style="margin: 0; font-size: 18px; color: #ffff00;">Options</h3>
-          <button id="btn-close-options" style="padding: 4px 12px; margin: 0;">&#10005;</button>
+          <h3 id="options-title" style="margin: 0; font-size: 18px; color: #ffff00;">Options</h3>
+          <button type="button" id="btn-close-options" style="padding: 4px 12px; margin: 0;">&#10005;</button>
         </div>
         <div class="options-row">
           <span class="options-label">Auto-save</span>
@@ -992,6 +1006,7 @@
             <input type="checkbox" id="opt-sound-effects" checked>
             <span class="slider"></span>
           </label>
+        </div>
         </div>
       </div>
 

@@ -98,7 +98,12 @@ export class BuildingPopover {
     const production = this.currentEntity.getComponent(Production);
     if (!building || this.productionTimeSec <= 0) return;
 
-    const isStopped = production && production.status !== 'producing' && production.status !== 'idle';
+    const isStopped =
+      production &&
+      (production.status === 'stopped_full' ||
+        production.status === 'stopped_no_inputs' ||
+        production.status === 'stopped_no_road');
+    const isProducing = production && production.status === 'producing';
 
     if (isStopped) {
       this.progressContainer.style.display = 'none';
@@ -110,7 +115,7 @@ export class BuildingPopover {
       } else if (production!.status === 'stopped_no_road') {
         this.stoppedLabel.textContent = 'Production stopped — no road';
       }
-    } else {
+    } else if (isProducing) {
       this.progressContainer.style.display = '';
       this.stoppedLabel.style.display = 'none';
       if (this.progressBarFill && this.progressBarLabel && production) {
@@ -119,6 +124,9 @@ export class BuildingPopover {
         const remaining = Math.ceil(this.productionTimeSec * (1 - progress));
         this.progressBarLabel.textContent = `${remaining}s`;
       }
+    } else {
+      this.progressContainer.style.display = 'none';
+      this.stoppedLabel.style.display = 'none';
     }
   }
 

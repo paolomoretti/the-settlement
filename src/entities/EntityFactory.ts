@@ -76,6 +76,7 @@ export function createBuilding(
     forester: '/assets/buildings/forester.png',
     quarry: '/assets/buildings/quarry.png',
     hut: '/assets/buildings/hut.png',
+    house: '/assets/buildings/house.png',
     fisher: '/assets/buildings/fisher.png',
     well: '/assets/buildings/well.png',
   };

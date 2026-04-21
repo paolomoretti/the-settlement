@@ -11,6 +11,7 @@ export class GamePopover {
   private rafId: number | null = null;
   private _onClose: (() => void) | null = null;
   private escHandler: (e: KeyboardEvent) => void;
+  private outsidePointerHandler: ((e: PointerEvent) => void) | null = null;
 
   constructor(container: HTMLElement) {
     this.el = document.createElement('div');
@@ -48,6 +49,7 @@ export class GamePopover {
   }
 
   show(title: string, content: HTMLElement, getAnchor: AnchorFn): void {
+    this.detachOutsidePointer();
     this.titleEl.textContent = title;
     this.bodyEl.innerHTML = '';
     this.bodyEl.appendChild(content);
@@ -56,14 +58,30 @@ export class GamePopover {
     this.reposition();
     this.startLoop();
     document.addEventListener('keydown', this.escHandler);
+    queueMicrotask(() => {
+      if (!this.isVisible()) return;
+      this.outsidePointerHandler = (e: PointerEvent) => {
+        const t = e.target as Node | null;
+        if (t && !this.el.contains(t)) this.hide();
+      };
+      document.addEventListener('pointerdown', this.outsidePointerHandler, true);
+    });
   }
 
   hide(): void {
     if (!this.isVisible()) return;
+    this.detachOutsidePointer();
     this.el.style.display = 'none';
     this.stopLoop();
     document.removeEventListener('keydown', this.escHandler);
     this._onClose?.();
+  }
+
+  private detachOutsidePointer(): void {
+    if (this.outsidePointerHandler) {
+      document.removeEventListener('pointerdown', this.outsidePointerHandler, true);
+      this.outsidePointerHandler = null;
+    }
   }
 
   isVisible(): boolean {
@@ -79,6 +97,7 @@ export class GamePopover {
   }
 
   destroy(): void {
+    this.detachOutsidePointer();
     this.hide();
     this.el.remove();
   }

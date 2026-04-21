@@ -9,6 +9,7 @@ import { BuildingDefinition, BuildingType } from '@/types/GameData';
 export class BuildingMenu {
   private game: Game;
   private panel: HTMLElement | null = null;
+  private overlay: HTMLElement | null = null;
   private currentCategory: 'residential' | 'production' | 'military' | 'infrastructure' = 'production';
 
   constructor(game: Game) {
@@ -17,8 +18,9 @@ export class BuildingMenu {
   }
 
   private setupUI(): void {
+    this.overlay = document.getElementById('building-menu-overlay');
     this.panel = document.getElementById('building-menu-panel');
-    if (!this.panel) return;
+    if (!this.panel || !this.overlay) return;
 
     // Tab buttons
     const tabs = ['residential', 'production', 'military', 'infrastructure'] as const;
@@ -33,19 +35,21 @@ export class BuildingMenu {
   }
 
   open(): void {
-    if (!this.panel) return;
-    this.panel.style.display = 'block';
+    if (!this.overlay) return;
+    this.overlay.classList.add('is-open');
+    this.overlay.setAttribute('aria-hidden', 'false');
     this.refresh();
   }
 
   close(): void {
-    if (!this.panel) return;
-    this.panel.style.display = 'none';
+    if (!this.overlay) return;
+    this.overlay.classList.remove('is-open');
+    this.overlay.setAttribute('aria-hidden', 'true');
   }
 
   toggle(): void {
-    if (!this.panel) return;
-    if (this.panel.style.display === 'block') {
+    if (!this.overlay) return;
+    if (this.overlay.classList.contains('is-open')) {
       this.close();
     } else {
       this.open();

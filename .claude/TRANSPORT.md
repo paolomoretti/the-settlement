@@ -12,7 +12,7 @@ A **segment** is a continuous stretch of road tiles between two **nodes**. A nod
 
 - A **dead end** — has 0 or 1 cardinal road neighbors
 - A **junction** — has 3+ cardinal road neighbors
-- **Building-adjacent** — cardinally adjacent to a building **entrance tile** (occupied + hasRoad)
+- **Building-adjacent** — cardinally adjacent to a building **entrance tile** (occupied + hasRoad). **At most one** road tile per building is the entrance connector (carries `entityId` for transport + autotile merge). **`Building.entranceRoadConnector`** is sticky: the first free road you place cardinally next to the entrance claims it; adding more adjacent roads does not move the hook. If that road is removed, `Game.syncEntranceRoadConnectors` picks the lexicographic min among remaining adjacent roads. Persisted in save data. **Rendering** (`RenderSystem.getRoadConfig`) reads the same field.
 
 Tiles with exactly 2 cardinal road neighbors and no adjacent buildings are **corridor tiles** — they're interior to a segment, not boundaries.
 

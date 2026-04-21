@@ -54,7 +54,8 @@ function tileNoise(noise: NoiseGenerator, x: number, y: number, scale: number, o
 
 type GenFn = (gfx: number, gfy: number, noise: NoiseGenerator, r: Float64Array, g: Float64Array, b: Float64Array, i: number) => void;
 
-const GRASS = hexToRgb('#7cb342');
+/** Slightly warmer, less flat base; variation added in `genGrass` (atlas build only — no runtime cost). */
+const GRASS = hexToRgb('#73ae4a');
 const WATER = hexToRgb('#3a7bd5');
 const MOUNTAIN = hexToRgb('#7a6e63');
 const FOREST = hexToRgb('#2d5016');
@@ -66,16 +67,50 @@ function genGrass(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: F
   const n1 = tileNoise(n, x, y, 0.8);
   const n2 = tileNoise(n, x, y, 2.2, 37, 53);
   const n3 = tileNoise(n, x, y, 5.5, 73, 91);
-  const v = (n1 - 0.5) * 40 + (n2 - 0.5) * 20 + (n3 - 0.5) * 10;
-  r[i] = GRASS.r + v * 0.3;
-  g[i] = GRASS.g + v;
-  b[i] = GRASS.b + v * 0.2;
-  if (n2 > 0.72) { r[i] -= 12; g[i] -= 4; b[i] -= 8; }
+  const nFine = tileNoise(n, x, y, 13, 101, 117);
+
+  const v = (n1 - 0.5) * 36 + (n2 - 0.5) * 18 + (n3 - 0.5) * 8;
+  r[i] = GRASS.r + v * 0.32;
+  g[i] = GRASS.g + v * 0.98;
+  b[i] = GRASS.b + v * 0.22;
+
+  const fine = (nFine - 0.5) * 10;
+  r[i] += fine * 0.4;
+  g[i] += fine * 0.55;
+  b[i] += fine * 0.35;
+
+  const tau = (2 * Math.PI) / P;
+  const blade = Math.sin(tau * (x * 5 + y * 3));
+  const blade2 = Math.cos(tau * (x * 2 - y * 7)) * 0.55;
+  const blade3 = Math.sin(tau * (x * -4 + y * 6)) * 0.35;
+  r[i] += blade * 2.4 + blade2 * 1.8 + blade3 * 1.2;
+  g[i] += blade * 3.2 + blade2 * 2.2 + blade3 * 1.4;
+  b[i] += blade * 1.6 + blade2 * 1.1 + blade3 * 0.8;
+
+  if (n2 > 0.72) {
+    const sh = (n2 - 0.72) / 0.28;
+    r[i] -= 10 * sh;
+    g[i] -= 3.5 * sh;
+    b[i] -= 6.5 * sh;
+  }
+
   if (n3 > 0.88) {
     const ft = tileNoise(n, x, y, 11, 120, 140);
-    if (ft > 0.5) { r[i] += 70; g[i] -= 15; b[i] -= 15; }
-    else { r[i] += 50; g[i] += 40; b[i] -= 25; }
+    const w = Math.min(1, (n3 - 0.88) / 0.12);
+    if (ft > 0.52) {
+      r[i] += 68 * w;
+      g[i] -= 14 * w;
+      b[i] -= 14 * w;
+    } else {
+      r[i] += 48 * w;
+      g[i] += 38 * w;
+      b[i] -= 22 * w;
+    }
   }
+
+  r[i] = clamp(r[i]);
+  g[i] = clamp(g[i]);
+  b[i] = clamp(b[i]);
 }
 
 function genWater(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: Float64Array, b: Float64Array, i: number): void {

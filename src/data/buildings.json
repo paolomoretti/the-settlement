@@ -213,9 +213,15 @@
     "requiresRoad": true,
     "production": {
       "outputs": { "water": 1 },
-      "productionTime": 15,
+      "productionTime": 180,
       "continuous": true,
       "maxOutputBuffer": 6
+    },
+    "animation": {
+      "type": "well_operator",
+      "workerSpeed": 1.2,
+      "drawingPhaseSec": 30,
+      "walkLeadSec": 5
     },
     "population": { "requires": 1 },
     "category": "production",

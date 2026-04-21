@@ -137,13 +137,21 @@ export interface ProductionRule {
   maxOutputBuffer?: number;
 }
 
-export interface AnimationConfig {
-  type: 'gather';
-  targetTerrain: string[];
-  searchRadius: number;
-  terrainTransition: Record<string, string>;
-  workerSpeed: number;
-}
+export type AnimationConfig =
+  | {
+      type: 'gather';
+      targetTerrain: string[];
+      searchRadius: number;
+      terrainTransition: Record<string, string>;
+      workerSpeed: number;
+    }
+  | {
+      /** Persistent operator: idles left of the well, works at an adjacent tile in the last part of each cycle. */
+      type: 'well_operator';
+      workerSpeed: number;
+      drawingPhaseSec: number;
+      walkLeadSec?: number;
+    };
 
 export interface BuildingDefinition {
   id: BuildingType;

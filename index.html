@@ -52,6 +52,44 @@
       pointer-events: auto;
     }
 
+    #top-right-actions {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      z-index: 50;
+      pointer-events: auto;
+    }
+
+    .topbar-icon-btn {
+      width: 42px;
+      height: 42px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+      line-height: 0;
+    }
+
+    .btn-options-icon,
+    .btn-exit-door-icon {
+      width: 30px;
+      height: 30px;
+      display: block;
+      object-fit: contain;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      flex-shrink: 0;
+    }
+
+    .btn-options-gear:hover .btn-options-icon,
+    .btn-exit-door:hover .btn-exit-door-icon {
+      filter: brightness(1.12);
+    }
+
     #controls {
       position: absolute;
       bottom: 10px;
@@ -866,20 +904,24 @@
         <div>Entities: <span id="entity-count">0</span></div>
         <div>Mode: <span id="current-mode">View</span></div>
       </div>
+      <div id="top-right-actions">
+        <button type="button" id="btn-options" class="topbar-icon-btn btn-options-gear" aria-label="Settings">
+          <img class="btn-options-icon" src="/assets/ui/options_gear.png" width="30" height="30" alt="" decoding="async">
+        </button>
+        <button type="button" id="btn-exit" class="topbar-icon-btn btn-exit-door" aria-label="Exit to menu">
+          <img class="btn-exit-door-icon" src="/assets/ui/exit_door.png" width="30" height="30" alt="" decoding="async">
+        </button>
+      </div>
       <div id="controls">
         <div>
-          <button id="btn-view">View Mode <span class="shortcut-hint">[Esc]</span></button>
           <button id="btn-road">Build Road <span class="shortcut-hint">[R]</span></button>
+          <button id="btn-erase">Erase <span class="shortcut-hint">[E]</span></button>
           <button id="btn-building-menu">Buildings <span class="shortcut-hint">[B]</span></button>
         </div>
         <div style="margin-top: 10px;">
           <button id="btn-save">Save Game <span class="shortcut-hint">[S]</span></button>
           <button id="btn-save-as">Save As...</button>
           <button id="btn-load">Load Game</button>
-        </div>
-        <div style="margin-top: 10px;">
-          <button id="btn-options" style="padding: 8px 12px; font-size: 16px;">&#9881;</button>
-          <button id="btn-exit" class="btn-secondary">Exit</button>
         </div>
       </div>
       <div id="inventory-panel">

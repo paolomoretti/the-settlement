@@ -17,6 +17,13 @@ import { dataManager } from '@/data/DataManager';
 import { TerrainTextures } from '@/rendering/TerrainTextures';
 import { transportManager } from '@/economics/TransportManager';
 
+/** World-space half-plane clip for long straight iso shores (same screen row / column of tile centers). */
+type FlatShoreCut =
+  | { axis: 'horizontal'; worldY: number; grassHalf: 'upper' | 'lower' }
+  | { axis: 'vertical'; worldX: number; grassHalf: 'left' | 'right' };
+
+const FLAT_SHORE_CLIP_EXTENT = 1_000_000;
+
 // Construction phase sprites per building type (excluding the completed sprite).
 // During build, total frames = stages.length + 1 (the completed sprite is the last frame).
 const CONSTRUCTION_SPRITES: Record<string, string[]> = {
@@ -74,6 +81,7 @@ export class RenderSystem extends System {
   private toast: { text: string; x: number; y: number; startTime: number } | null = null;
   private fishJumps: Array<{ x: number; y: number; startTime: number }> = [];
   private nextFishSpawn: number = 0;
+  private eraseSmokePuffs: Array<{ gx: number; gy: number; start: number }> = [];
 
   // Minimap
   private minimapCanvas: HTMLCanvasElement;
@@ -143,6 +151,8 @@ export class RenderSystem extends System {
       '/assets/resources/water.png',
       '/assets/resources/fish.png',
       '/assets/resources/meat.png',
+      '/assets/resources/ham.png',
+      '/assets/resources/beer.png',
       '/assets/resources/hammer.png',
       '/assets/resources/axe.png',
       '/assets/resources/saw.png',
@@ -150,6 +160,10 @@ export class RenderSystem extends System {
       '/assets/resources/shovel.png',
       '/assets/resources/fishing_rod.png',
       '/assets/resources/scythe.png',
+      '/assets/resources/rolling_pin.png',
+      '/assets/resources/crucible.png',
+      '/assets/resources/tongs.png',
+      '/assets/resources/cleaver.png',
       '/assets/resources/sword.png',
       '/assets/resources/shield.png',
       '/assets/resources/bow.png',
@@ -330,6 +344,8 @@ export class RenderSystem extends System {
       this.renderBuildPreview(this.buildPreview);
     }
 
+    this.renderEraseSmokeEffects();
+
     this.ctx.restore();
 
     // Render toast message (screen-space, after ctx.restore)
@@ -432,6 +448,11 @@ export class RenderSystem extends System {
       return;
     }
 
+    if (mode === 'erase') {
+      this.renderErasePreview(gridX, gridY);
+      return;
+    }
+
     const buildingType = mode.replace('build_', '');
     const buildingDef = dataManager.getBuilding(buildingType as any);
     if (!buildingDef) return;
@@ -481,6 +502,95 @@ export class RenderSystem extends System {
 
     this.ctx.drawImage(sprite, centerX - drawW / 2, frontY - drawH, drawW, drawH);
     this.ctx.restore();
+  }
+
+  public spawnEraseSmoke(gridX: number, gridY: number): void {
+    this.eraseSmokePuffs.push({ gx: gridX, gy: gridY, start: performance.now() });
+  }
+
+  private findBuildingAtGrid(gx: number, gy: number): Entity | null {
+    const hit = this.entities.find(entity => {
+      const pos = entity.getComponent(Position);
+      const building = entity.getComponent(Building);
+      if (!pos || !building) return false;
+      return gx >= pos.x && gx < pos.x + building.width &&
+             gy >= pos.y && gy < pos.y + building.height;
+    });
+    return hit ?? null;
+  }
+
+  private renderErasePreview(gridX: number, gridY: number): void {
+    const tile = this.tileMap.getTile(gridX, gridY);
+    if (!tile || !tile.isExplored()) {
+      this.strokeEraseTile(gridX, gridY, false);
+      return;
+    }
+
+    const entity = this.findBuildingAtGrid(gridX, gridY);
+    if (entity) {
+      const building = entity.getComponent(Building);
+      const pos = entity.getComponent(Position);
+      const def = building ? dataManager.getBuilding(building.buildingType) : null;
+      if (def?.isHeadquarters || !building || !pos) {
+        this.strokeEraseTile(gridX, gridY, false);
+        return;
+      }
+      this.highlightTiles(pos.x, pos.y, building.width, building.height, 'rgba(220, 70, 70, 0.38)');
+      return;
+    }
+
+    const canErase =
+      (tile.hasRoad && !tile.isOccupied()) ||
+      tile.terrain === 'tree' ||
+      tile.terrain === 'forest';
+    this.strokeEraseTile(gridX, gridY, canErase);
+  }
+
+  private strokeEraseTile(gridX: number, gridY: number, valid: boolean): void {
+    const corners = this.iso.getTileCorners(gridX, gridY);
+    this.ctx.beginPath();
+    this.ctx.moveTo(corners[0].x, corners[0].y);
+    corners.forEach(c => this.ctx.lineTo(c.x, c.y));
+    this.ctx.closePath();
+    if (valid) {
+      this.ctx.fillStyle = 'rgba(230, 80, 80, 0.35)';
+      this.ctx.fill();
+      this.ctx.strokeStyle = 'rgba(255, 140, 120, 0.95)';
+    } else {
+      this.ctx.fillStyle = 'rgba(80, 40, 40, 0.25)';
+      this.ctx.fill();
+      this.ctx.strokeStyle = 'rgba(120, 80, 80, 0.6)';
+    }
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+  }
+
+  private renderEraseSmokeEffects(): void {
+    const now = performance.now();
+    const lifeMs = 480;
+    const risePx = 40;
+    this.eraseSmokePuffs = this.eraseSmokePuffs.filter(p => now - p.start < lifeMs);
+
+    for (const p of this.eraseSmokePuffs) {
+      const t = (now - p.start) / lifeMs;
+      const ease = 1 - (1 - t) * (1 - t);
+      const base = this.iso.gridToScreen(p.gx, p.gy);
+      const lift = risePx * ease;
+      const puffAlpha = (1 - t) * 0.65;
+
+      this.ctx.save();
+      this.ctx.globalAlpha = puffAlpha;
+      const offsets = [-7, 0, 7];
+      for (let i = 0; i < offsets.length; i++) {
+        const ox = offsets[i];
+        const radius = 4 + t * 4 + (i === 1 ? 1 : 0);
+        this.ctx.fillStyle = i === 1 ? 'rgba(85, 85, 90, 0.95)' : 'rgba(110, 105, 100, 0.75)';
+        this.ctx.beginPath();
+        this.ctx.arc(base.x + ox, base.y - lift - t * 8, radius, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
+      this.ctx.restore();
+    }
   }
 
   private renderRoadPreview(gridX: number, gridY: number): void {
@@ -790,11 +900,15 @@ export class RenderSystem extends System {
         if (tile.isOccupied() || tile.hasRoad) continue;
 
         const center = this.iso.gridToScreen(x, y);
+        const flatGrass = this.getGrassFlatShoreCut(x, y);
+        if (flatGrass) this.ctx.save();
+        if (flatGrass) this.applyFlatShoreGrassClip(flatGrass);
         if (tile.terrain === 'tree') {
           this.renderSingleTree(center.x, center.y, x, y);
         } else {
           this.renderForestCluster(center.x, center.y, x, y);
         }
+        if (flatGrass) this.ctx.restore();
       }
 
       // Entities at this depth
@@ -1035,16 +1149,22 @@ export class RenderSystem extends System {
     return config;
   }
 
-  private getWaterConfig(x: number, y: number): number {
-    let config = 0;
+  /** Diamond-adjacent water neighbors only (bits NW, NE, SE, SW); used for shore autotile + straight-run detection. */
+  private getWaterCardinalsMask(x: number, y: number): number {
+    let mask = 0;
     const nw = this.tileMap.getTile(x - 1, y);
-    if (nw?.terrain === 'water') config |= 1;
+    if (nw?.terrain === 'water') mask |= 1;
     const ne = this.tileMap.getTile(x, y - 1);
-    if (ne?.terrain === 'water') config |= 2;
+    if (ne?.terrain === 'water') mask |= 2;
     const se = this.tileMap.getTile(x + 1, y);
-    if (se?.terrain === 'water') config |= 4;
+    if (se?.terrain === 'water') mask |= 4;
     const sw = this.tileMap.getTile(x, y + 1);
-    if (sw?.terrain === 'water') config |= 8;
+    if (sw?.terrain === 'water') mask |= 8;
+    return mask;
+  }
+
+  private getWaterConfig(x: number, y: number): number {
+    let config = this.getWaterCardinalsMask(x, y);
     if ((config & 3) === 3) {
       const d = this.tileMap.getTile(x - 1, y - 1);
       if (d?.terrain === 'water') config |= 16;
@@ -1064,6 +1184,157 @@ export class RenderSystem extends System {
     return config;
   }
 
+  /** Count set bits in the low nibble (0–4). */
+  private popcountNibble(n: number): number {
+    let v = n & 0xF;
+    let c = 0;
+    while (v) {
+      v &= v - 1;
+      c++;
+    }
+    return c;
+  }
+
+  /** Longest chain of water tiles from (x,y) along given steps sharing the same cardinal water mask. */
+  private waterMaskRunLength(
+    x: number, y: number, card: number, dirs: readonly (readonly [number, number])[], maxSpan: number = 48
+  ): number {
+    let best = 1;
+    for (const [dx, dy] of dirs) {
+      let len = 1;
+      for (let k = 1; k < maxSpan; k++) {
+        const t = this.tileMap.getTile(x + dx * k, y + dy * k);
+        if (!t || t.terrain !== 'water') break;
+        if (this.getWaterCardinalsMask(x + dx * k, y + dy * k) !== card) break;
+        len++;
+      }
+      for (let k = 1; k < maxSpan; k++) {
+        const t = this.tileMap.getTile(x - dx * k, y - dy * k);
+        if (!t || t.terrain !== 'water') break;
+        if (this.getWaterCardinalsMask(x - dx * k, y - dy * k) !== card) break;
+        len++;
+      }
+      best = Math.max(best, len);
+    }
+    return best;
+  }
+
+  /**
+   * Two or more water tiles in a row along grid x or y share the same shore neighbor mask:
+   * use linearized shore SDF so the edge reads as one continuous line instead of a stair-step.
+   *
+   * Only applies when exactly one diamond neighbor is land (three are water): flat shores.
+   * Skips tiles with two+ land sides (bays/corners need corner rounding) and tiles with four
+   * water neighbors (diagonal land / inner curves use the normal SDF).
+   */
+  private getWaterShoreLinearized(x: number, y: number): boolean {
+    const cfg = this.getWaterConfig(x, y);
+    if (cfg === 255) return false;
+    const card = cfg & 0xF;
+    if (this.popcountNibble(card) !== 3) return false;
+    const axisSteps = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
+    return this.waterMaskRunLength(x, y, card, axisSteps) >= 2;
+  }
+
+  /**
+   * Straight world-space boundary between this water tile and its single land neighbor,
+   * when water forms a diagonal run in grid ((1,-1) steps) or ((1,1)) matching constant
+   * screen Y or X — removes W-shaped zigzag along those shores.
+   */
+  private tryWaterFlatShoreCut(wx: number, wy: number): FlatShoreCut | null {
+    const cfg = this.getWaterConfig(wx, wy);
+    if (cfg === 255) return null;
+    const card = cfg & 0xF;
+    if (this.popcountNibble(card) !== 3) return null;
+    const landMask = (~card) & 0xF;
+    const diagHR = [[1, -1], [-1, 1]] as const;
+    const diagVR = [[1, 1], [-1, -1]] as const;
+
+    if (landMask === 2) {
+      if (this.waterMaskRunLength(wx, wy, card, diagHR) < 2) return null;
+      const w = this.iso.gridToScreen(wx, wy);
+      const l = this.iso.gridToScreen(wx, wy - 1);
+      return { axis: 'horizontal', worldY: (w.y + l.y) * 0.5, grassHalf: 'upper' };
+    }
+    if (landMask === 8) {
+      if (this.waterMaskRunLength(wx, wy, card, diagHR) < 2) return null;
+      const w = this.iso.gridToScreen(wx, wy);
+      const l = this.iso.gridToScreen(wx, wy + 1);
+      return { axis: 'horizontal', worldY: (w.y + l.y) * 0.5, grassHalf: 'lower' };
+    }
+    if (landMask === 1) {
+      if (this.waterMaskRunLength(wx, wy, card, diagVR) < 2) return null;
+      const w = this.iso.gridToScreen(wx, wy);
+      const l = this.iso.gridToScreen(wx - 1, wy);
+      return { axis: 'vertical', worldX: (w.x + l.x) * 0.5, grassHalf: 'left' };
+    }
+    if (landMask === 4) {
+      if (this.waterMaskRunLength(wx, wy, card, diagVR) < 2) return null;
+      const w = this.iso.gridToScreen(wx, wy);
+      const l = this.iso.gridToScreen(wx + 1, wy);
+      return { axis: 'vertical', worldX: (w.x + l.x) * 0.5, grassHalf: 'right' };
+    }
+    return null;
+  }
+
+  private getGrassFlatShoreCut(gx: number, gy: number): FlatShoreCut | null {
+    const fromWater = (wx: number, wy: number): FlatShoreCut | null => {
+      const t = this.tileMap.getTile(wx, wy);
+      if (!t || t.terrain !== 'water') return null;
+      const cut = this.tryWaterFlatShoreCut(wx, wy);
+      if (!cut) return null;
+      if (cut.axis === 'horizontal') {
+        if (cut.grassHalf === 'upper' && gx === wx && gy === wy - 1) return cut;
+        if (cut.grassHalf === 'lower' && gx === wx && gy === wy + 1) return cut;
+      } else {
+        if (cut.grassHalf === 'left' && gx === wx - 1 && gy === wy) return cut;
+        if (cut.grassHalf === 'right' && gx === wx + 1 && gy === wy) return cut;
+      }
+      return null;
+    };
+    return (
+      fromWater(gx, gy + 1) ??
+      fromWater(gx, gy - 1) ??
+      fromWater(gx - 1, gy) ??
+      fromWater(gx + 1, gy)
+    );
+  }
+
+  private applyFlatShoreGrassClip(cut: FlatShoreCut): void {
+    const M = FLAT_SHORE_CLIP_EXTENT;
+    this.ctx.beginPath();
+    if (cut.axis === 'horizontal') {
+      if (cut.grassHalf === 'upper') {
+        this.ctx.rect(-M, -M, 2 * M, cut.worldY + M);
+      } else {
+        this.ctx.rect(-M, cut.worldY, 2 * M, 2 * M);
+      }
+    } else if (cut.grassHalf === 'left') {
+      this.ctx.rect(-M, -M, cut.worldX + M, 2 * M);
+    } else {
+      this.ctx.rect(cut.worldX, -M, 2 * M, 2 * M);
+    }
+    this.ctx.clip();
+  }
+
+  /** Water overlay / deep tint: half-plane opposite the grass side. */
+  private applyFlatShoreWaterOverlayClip(cut: FlatShoreCut): void {
+    const M = FLAT_SHORE_CLIP_EXTENT;
+    this.ctx.beginPath();
+    if (cut.axis === 'horizontal') {
+      if (cut.grassHalf === 'upper') {
+        this.ctx.rect(-M, cut.worldY, 2 * M, 2 * M);
+      } else {
+        this.ctx.rect(-M, -M, 2 * M, cut.worldY + M);
+      }
+    } else if (cut.grassHalf === 'left') {
+      this.ctx.rect(cut.worldX, -M, 2 * M, 2 * M);
+    } else {
+      this.ctx.rect(-M, -M, cut.worldX + M, 2 * M);
+    }
+    this.ctx.clip();
+  }
+
   private renderTile(tile: Tile): void {
     const center = this.iso.gridToScreen(tile.x, tile.y);
     if (!tile.isExplored()) {
@@ -1072,9 +1343,25 @@ export class RenderSystem extends System {
     }
 
     if (tile.terrain === 'water') {
-      this.terrainTextures.drawTile(this.ctx, 'grass', tile.x, tile.y, center.x, center.y);
+      const flatCut = this.tryWaterFlatShoreCut(tile.x, tile.y);
       const waterConfig = this.getWaterConfig(tile.x, tile.y);
-      this.terrainTextures.drawWater(this.ctx, waterConfig, tile.x, tile.y, center.x, center.y);
+      const linearShore = !flatCut && this.getWaterShoreLinearized(tile.x, tile.y);
+
+      if (flatCut) {
+        this.ctx.save();
+        this.applyFlatShoreGrassClip(flatCut);
+        this.terrainTextures.drawTile(this.ctx, 'grass', tile.x, tile.y, center.x, center.y);
+        this.ctx.restore();
+
+        this.ctx.save();
+        this.applyFlatShoreWaterOverlayClip(flatCut);
+        this.terrainTextures.drawWater(this.ctx, waterConfig, tile.x, tile.y, center.x, center.y, linearShore);
+        this.ctx.restore();
+      } else {
+        this.terrainTextures.drawTile(this.ctx, 'grass', tile.x, tile.y, center.x, center.y);
+        this.terrainTextures.drawWater(this.ctx, waterConfig, tile.x, tile.y, center.x, center.y, linearShore);
+      }
+
       if (tile.waterDepth > 1) {
         const darken = Math.min((tile.waterDepth - 1) * 0.04, 0.3);
         this.ctx.fillStyle = `rgba(0, 8, 25, ${darken})`;
@@ -1085,10 +1372,28 @@ export class RenderSystem extends System {
         this.ctx.lineTo(c[2].x, c[2].y);
         this.ctx.lineTo(c[3].x, c[3].y);
         this.ctx.closePath();
-        this.ctx.fill();
+        if (flatCut) {
+          this.ctx.save();
+          this.applyFlatShoreWaterOverlayClip(flatCut);
+          this.ctx.fill();
+          this.ctx.restore();
+        } else {
+          this.ctx.fill();
+        }
       }
     } else {
-      this.terrainTextures.drawTile(this.ctx, tile.terrain, tile.x, tile.y, center.x, center.y);
+      const flatGrass =
+        (tile.terrain === 'grass' || tile.terrain === 'forest' || tile.terrain === 'tree')
+          ? this.getGrassFlatShoreCut(tile.x, tile.y)
+          : null;
+      if (flatGrass) {
+        this.ctx.save();
+        this.applyFlatShoreGrassClip(flatGrass);
+        this.terrainTextures.drawTile(this.ctx, tile.terrain, tile.x, tile.y, center.x, center.y);
+        this.ctx.restore();
+      } else {
+        this.terrainTextures.drawTile(this.ctx, tile.terrain, tile.x, tile.y, center.x, center.y);
+      }
       if (tile.forestDepth > 1) {
         const darken = Math.min((tile.forestDepth - 1) * 0.07, 0.35);
         this.ctx.fillStyle = `rgba(0, 12, 3, ${darken})`;
@@ -1099,7 +1404,14 @@ export class RenderSystem extends System {
         this.ctx.lineTo(c[2].x, c[2].y);
         this.ctx.lineTo(c[3].x, c[3].y);
         this.ctx.closePath();
-        this.ctx.fill();
+        if (flatGrass) {
+          this.ctx.save();
+          this.applyFlatShoreGrassClip(flatGrass);
+          this.ctx.fill();
+          this.ctx.restore();
+        } else {
+          this.ctx.fill();
+        }
       }
     }
 
@@ -1783,6 +2095,19 @@ export class RenderSystem extends System {
 
   private updateIdleAnimation(worker: Worker): void {
     const now = Date.now();
+    if (worker.visualActivity === 'production_well' && worker.state === 'working') {
+      return;
+    }
+    if (
+      worker.visualActivity === 'construct' &&
+      worker.state === 'working' &&
+      worker.hammerConstructionEnabled
+    ) {
+      return;
+    }
+    if (worker.heldItemStyle === 'side' && worker.carryingResource) {
+      return;
+    }
     if (worker.idleAnim !== 'none') {
       if (now > worker.idleAnimStart + worker.idleAnimDuration) {
         worker.idleAnim = 'none';
@@ -1849,6 +2174,24 @@ export class RenderSystem extends System {
     const anim = worker.idleAnim;
     const animT = anim !== 'none' ? (now - worker.idleAnimStart) / worker.idleAnimDuration : 0;
 
+    const isCarrying = !!worker.carryingResource;
+    const isHammerConstruct =
+      isCarrying &&
+      worker.carryingResource === 'hammer' &&
+      worker.visualActivity === 'construct' &&
+      worker.hammerConstructionEnabled &&
+      worker.state === 'working' &&
+      !isMoving;
+
+    const isSideCarryTool =
+      isCarrying && worker.heldItemStyle === 'side' && !isHammerConstruct;
+
+    const isOverheadCarry = isCarrying && worker.heldItemStyle === 'overhead';
+
+    /** Idle poses that need free hands — skip when holding a tool at the side. */
+    const armAnim: IdleAnim =
+      isSideCarryTool && anim !== 'look_around' && anim !== 'none' ? 'none' : anim;
+
     this.ctx.save();
 
     const px = (x: number, y: number, w: number, h: number, color: string) => {
@@ -1859,6 +2202,17 @@ export class RenderSystem extends System {
     const mirror = facing === 1 || facing === 2;
     const showBack = facing === 2 || facing === 3;
     if (mirror) this.ctx.scale(-1, 1);
+
+    const isWellDrawing =
+      worker.visualActivity === 'production_well' &&
+      worker.state === 'working' &&
+      !isMoving &&
+      worker.carryingResource === 'water';
+    if (isWellDrawing) {
+      const bob = Math.sin(now / 420) * 1.8;
+      const sway = Math.sin(now / 510) * 0.5;
+      this.ctx.translate(sway * s, bob * s);
+    }
 
     const legOffsets = [[0, 0], [-1, 1], [0, 0], [1, -1]];
     const [leftLeg, rightLeg] = legOffsets[frame];
@@ -1891,7 +2245,6 @@ export class RenderSystem extends System {
       px(-2, -5, 5, 1, '#2a1f14');
     }
 
-    // Arms — vary by idle animation
     let leftArmY = -8 + walkArmSwing;
     let rightArmY = -8 - walkArmSwing;
     let leftHandY = -5 + walkArmSwing;
@@ -1900,9 +2253,40 @@ export class RenderSystem extends System {
     let rightArmX = 3;
     let extraDraw: (() => void) | null = null;
 
-    const isCarrying = !!worker.carryingResource;
+    let hammerSwingT = 0;
 
-    if (isCarrying) {
+    if (isHammerConstruct) {
+      hammerSwingT = (Math.sin(now / 130) + 1) / 2;
+      const strike = Math.floor(hammerSwingT * 8);
+      leftArmX = -4;
+      rightArmX = 4;
+      leftArmY = -8;
+      rightArmY = -7 - strike;
+      leftHandY = -5;
+      rightHandY = rightArmY + 3;
+    } else if (isSideCarryTool) {
+      const wobble = isMoving ? walkArmSwing * 0.5 : 0;
+      leftArmX = -4;
+      rightArmX = 4;
+      leftArmY = -8 + wobble;
+      rightArmY = -8 - wobble;
+      leftHandY = -4 + wobble;
+      rightHandY = -4 - wobble;
+    } else if (
+      isOverheadCarry &&
+      worker.visualActivity === 'production_well' &&
+      worker.carryingResource === 'water'
+    ) {
+      const pull = Math.sin(now / 200);
+      const a1 = pull * 2.5;
+      const a2 = -pull * 2.5;
+      leftArmY = -12 + a1;
+      rightArmY = -12 + a2;
+      leftHandY = -14 + a1;
+      rightHandY = -14 + a2;
+      leftArmX = -3;
+      rightArmX = 2;
+    } else if (isOverheadCarry) {
       leftArmY = -13;
       rightArmY = -13;
       leftHandY = -15;
@@ -1910,30 +2294,26 @@ export class RenderSystem extends System {
       leftArmX = -3;
       rightArmX = 2;
     } else if (!isMoving) {
-      if (anim === 'scratch_head') {
-        // Right arm raised to head
+      if (armAnim === 'scratch_head') {
         rightArmY = -13;
         rightHandY = -14;
         rightArmX = 2;
-        // Slight hand wiggle
         const wiggle = Math.sin(animT * Math.PI * 6) > 0 ? 1 : 0;
         rightHandY += wiggle;
-      } else if (anim === 'hands_on_hips') {
+      } else if (armAnim === 'hands_on_hips') {
         leftArmX = -3;
         rightArmX = 2;
         leftArmY = -7;
         rightArmY = -7;
         leftHandY = -5;
         rightHandY = -5;
-      } else if (anim === 'stretch') {
-        // Both arms up
+      } else if (armAnim === 'stretch') {
         const lift = Math.sin(animT * Math.PI);
         leftArmY = -8 - Math.floor(lift * 5);
         rightArmY = -8 - Math.floor(lift * 5);
         leftHandY = leftArmY - 1;
         rightHandY = rightArmY - 1;
-      } else if (anim === 'read') {
-        // Both arms in front holding something
+      } else if (armAnim === 'read') {
         leftArmX = -2;
         rightArmX = 1;
         leftArmY = -7;
@@ -1942,7 +2322,6 @@ export class RenderSystem extends System {
         rightHandY = -5;
         if (!showBack) {
           extraDraw = () => {
-            // Little paper/scroll
             px(-1, -8, 4, 3, '#e8dcc8');
             px(-1, -8, 4, 1, '#c8b898');
           };
@@ -1950,7 +2329,6 @@ export class RenderSystem extends System {
       }
     }
 
-    // Draw arms
     px(leftArmX, leftArmY, 2, 3, a.tunic);
     px(rightArmX, rightArmY, 2, 3, a.tunic);
     px(leftArmX, leftHandY, 2, 1, a.skin);
@@ -1958,7 +2336,6 @@ export class RenderSystem extends System {
 
     if (extraDraw) extraDraw();
 
-    // Head — look_around shifts head position
     let headShift = 0;
     if (anim === 'look_around') {
       headShift = Math.round(Math.sin(animT * Math.PI * 2) * 1.5);
@@ -1996,13 +2373,48 @@ export class RenderSystem extends System {
       px(1 + headShift, -12, 1, 1, '#1a1008');
     }
 
-    if (isCarrying) {
+    if (isCarrying && worker.carryingResource) {
       const resSprite = this.loadSprite(`/assets/resources/${worker.carryingResource}.png`);
-      if (resSprite) {
-        this.ctx.drawImage(resSprite, -4 * s, -22 * s, 8 * s, 8 * s);
-      } else {
+      const drawFallback = () => {
         px(-2, -19, 5, 4, '#d4a03c');
         px(-1, -20, 3, 1, '#f0c060');
+      };
+
+      const toolDrawPx = 10;
+
+      if (isHammerConstruct) {
+        const strike = Math.floor(hammerSwingT * 8);
+        const ty = -11 - strike;
+        const tx = 0.5;
+        if (resSprite) {
+          this.ctx.drawImage(resSprite, tx * s, ty * s, toolDrawPx * s, toolDrawPx * s);
+        } else {
+          px(tx - 1, ty, 5, 5, '#8a7a68');
+        }
+      } else if (isSideCarryTool) {
+        if (resSprite) {
+          this.ctx.drawImage(resSprite, -0.5 * s, -11 * s, toolDrawPx * s, toolDrawPx * s);
+        } else {
+          px(-2, -20, 6, 5, '#d4a03c');
+          px(-1, -21, 4, 1, '#f0c060');
+        }
+      } else if (
+        isOverheadCarry &&
+        worker.visualActivity === 'production_well' &&
+        worker.carryingResource === 'water'
+      ) {
+        const wob = Math.sin(now / 200) * 1.2 * s;
+        if (resSprite) {
+          this.ctx.drawImage(resSprite, -4 * s, -22 * s + wob, 8 * s, 8 * s);
+        } else {
+          drawFallback();
+        }
+      } else if (isOverheadCarry) {
+        if (resSprite) {
+          this.ctx.drawImage(resSprite, -4 * s, -22 * s, 8 * s, 8 * s);
+        } else {
+          drawFallback();
+        }
       }
     }
 

@@ -6,6 +6,8 @@ import { BuildingPopover } from './ui/BuildingPopover';
 import { setupKeyboardShortcuts } from './input/KeyboardShortcuts';
 import { showToast, setupToastListener } from './ui/Toast';
 import { audioManager } from './audio/AudioManager';
+import tippy from 'tippy.js';
+import 'tippy.js/dist/tippy.css';
 
 let game: Game | null = null;
 let buildingMenu: BuildingMenu | null = null;
@@ -299,11 +301,10 @@ function setupGameUI(game: Game): void {
   buildingMenu = new BuildingMenu(game);
 
   eventBus.on('input:mode_changed', (mode) => {
-    const modeToButtonId: Record<string, string> = {
-      'view': 'btn-view',
-      'build_road': 'btn-road'
-    };
-    updateButtonStates(modeToButtonId[mode] || 'btn-view');
+    const toolbarBtn =
+      mode === 'build_road' ? 'btn-road' :
+      mode === 'erase' ? 'btn-erase' : null;
+    updateButtonStates(toolbarBtn);
 
     if (mode === 'view') {
       buildingMenu!.close();
@@ -312,12 +313,12 @@ function setupGameUI(game: Game): void {
     }
   });
 
-  document.getElementById('btn-view')?.addEventListener('click', () => {
-    game.inputSystem.setMode('view');
-  });
-
   document.getElementById('btn-road')?.addEventListener('click', () => {
     game.inputSystem.setMode('build_road');
+  });
+
+  document.getElementById('btn-erase')?.addEventListener('click', () => {
+    game.inputSystem.setMode('erase');
   });
 
   document.getElementById('btn-building-menu')?.addEventListener('click', () => {
@@ -374,6 +375,18 @@ function setupGameUI(game: Game): void {
   document.getElementById('btn-exit')?.addEventListener('click', () => {
     document.getElementById('exit-dialog')!.style.display = 'flex';
   });
+
+  const exitButton = document.getElementById('btn-exit');
+  if (exitButton) {
+    tippy(exitButton, {
+      content: 'Exit to menu',
+      placement: 'bottom',
+      animation: 'fade',
+      duration: [180, 120],
+      arrow: true,
+      touch: ['hold', 400],
+    });
+  }
 
   setupOptionsPanel(game);
 
@@ -514,7 +527,7 @@ function scheduleAutoSaveDebounce(): void {
 }
 
 const AUTO_SAVE_EVENTS = [
-  'build:success', 'build:road', 'delete:selected', 'drag:end', 'road:drag_end',
+  'build:success', 'build:road', 'delete:selected', 'drag:end', 'road:drag_end', 'erase:done',
 ] as const;
 
 function startAutoSave(): void {
@@ -582,10 +595,9 @@ function hideInventoryPanel(): void {
   if (panel) panel.style.display = 'none';
 }
 
-function updateButtonStates(activeButtonId: string): void {
-  const buttons = ['btn-view', 'btn-road'];
-  buttons.forEach(id => {
-    const btn = document.getElementById(id);
-    if (btn) btn.classList.toggle('selected', id === activeButtonId);
-  });
+function updateButtonStates(activeButtonId: string | null): void {
+  const btnRoad = document.getElementById('btn-road');
+  if (btnRoad) btnRoad.classList.toggle('selected', activeButtonId === 'btn-road');
+  const btnErase = document.getElementById('btn-erase');
+  if (btnErase) btnErase.classList.toggle('selected', activeButtonId === 'btn-erase');
 }

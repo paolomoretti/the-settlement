@@ -66,7 +66,7 @@ Quick summary:
 - **Mouse Drag** - Pan camera
 - **Mouse Wheel** - Zoom in/out
 - **Spacebar + Drag** - Pan camera (any mode)
-- **Escape** - Return to view mode
+- **Escape** or **V** - Dismiss overlays in order, then return to view mode
 - **Click** - Select buildings, place structures
 - **Minimap Click** - Jump to location
 

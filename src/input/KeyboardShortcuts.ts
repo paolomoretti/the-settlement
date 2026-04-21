@@ -15,6 +15,7 @@ export interface ShortcutBinding {
 export const SHORTCUT_BINDINGS: ShortcutBinding[] = [
   { key: 'H', description: 'Center on base camp', category: 'navigation' },
   { key: 'R', description: 'Build road mode', category: 'building' },
+  { key: 'E', description: 'Erase tool (roads, buildings, trees)', category: 'building' },
   { key: 'B', description: 'Open building menu', category: 'building' },
   { key: 'O', description: 'Open options', category: 'general' },
   { key: 'S', description: 'Quick save', category: 'general' },
@@ -22,6 +23,7 @@ export const SHORTCUT_BINDINGS: ShortcutBinding[] = [
   { key: 'Arrow Down', description: 'Pan down', category: 'navigation' },
   { key: 'Arrow Left', description: 'Pan left', category: 'navigation' },
   { key: 'Arrow Right', description: 'Pan right', category: 'navigation' },
+  { key: 'V', description: 'Return to view mode / Close dialog (same as Escape)', category: 'general' },
   { key: 'Escape', description: 'Return to view mode / Close dialog', category: 'general' },
   { key: 'Space (hold)', description: 'Pan mode (drag to pan)', category: 'navigation' },
 ];
@@ -32,6 +34,37 @@ function isModalOpen(): boolean {
     const el = document.getElementById(id);
     return el !== null && el.style.display !== 'none' && el.style.display !== '';
   });
+}
+
+/** Close the topmost overlay if any. Returns true if Escape/V should not fall through to view mode. */
+function tryCloseTopOverlay(): boolean {
+  const saveLoadDialog = document.getElementById('save-load-dialog');
+  if (saveLoadDialog && saveLoadDialog.style.display !== 'none' && saveLoadDialog.style.display !== '') {
+    if (!saveLoadDialog.querySelector('.editing')) {
+      saveLoadDialog.style.display = 'none';
+    }
+    return true;
+  }
+
+  const exitDialog = document.getElementById('exit-dialog');
+  if (exitDialog && exitDialog.style.display !== 'none' && exitDialog.style.display !== '') {
+    exitDialog.style.display = 'none';
+    return true;
+  }
+
+  const optionsPanel = document.getElementById('options-panel');
+  if (optionsPanel && optionsPanel.style.display === 'block') {
+    optionsPanel.style.display = 'none';
+    return true;
+  }
+
+  const inventoryPanel = document.getElementById('inventory-panel');
+  if (inventoryPanel && inventoryPanel.style.display === 'block') {
+    inventoryPanel.style.display = 'none';
+    return true;
+  }
+
+  return false;
 }
 
 export function setupKeyboardShortcuts(game: Game): void {
@@ -59,6 +92,13 @@ export function setupKeyboardShortcuts(game: Game): void {
     if (isModalOpen()) return;
     e.preventDefault();
     inputSystem.setMode('build_road');
+  });
+
+  // E — Erase tool
+  hotkeys('e', (e) => {
+    if (isModalOpen()) return;
+    e.preventDefault();
+    inputSystem.setMode('erase');
   });
 
   // B — Open building menu
@@ -112,36 +152,17 @@ export function setupKeyboardShortcuts(game: Game): void {
     renderSystem.moveCamera(-PAN_STEP, 0);
   });
 
+  // V — Same behavior as Escape: dismiss overlays in order, then view mode
+  hotkeys('v', (e) => {
+    e.preventDefault();
+    if (tryCloseTopOverlay()) return;
+    inputSystem.setMode('view');
+  });
+
   // Escape — Close dialogs / return to view mode
   hotkeys('escape', (e) => {
     e.preventDefault();
-
-    const saveLoadDialog = document.getElementById('save-load-dialog');
-    if (saveLoadDialog && saveLoadDialog.style.display !== 'none' && saveLoadDialog.style.display !== '') {
-      if (!saveLoadDialog.querySelector('.editing')) {
-        saveLoadDialog.style.display = 'none';
-      }
-      return;
-    }
-
-    const exitDialog = document.getElementById('exit-dialog');
-    if (exitDialog && exitDialog.style.display !== 'none' && exitDialog.style.display !== '') {
-      exitDialog.style.display = 'none';
-      return;
-    }
-
-    const optionsPanel = document.getElementById('options-panel');
-    if (optionsPanel && optionsPanel.style.display === 'block') {
-      optionsPanel.style.display = 'none';
-      return;
-    }
-
-    const inventoryPanel = document.getElementById('inventory-panel');
-    if (inventoryPanel && inventoryPanel.style.display === 'block') {
-      inventoryPanel.style.display = 'none';
-      return;
-    }
-
+    if (tryCloseTopOverlay()) return;
     inputSystem.setMode('view');
   });
 

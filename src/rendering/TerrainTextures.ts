@@ -264,13 +264,15 @@ function buildRoadAtlas(noise: NoiseGenerator): HTMLCanvasElement {
 }
 
 // --- Water shore overlay atlas ---
-// 16 shore configs (4x4) + 4 deep water variants (row 5) = 4x5 grid
+// 256 base shore configs + 256 linearized (straight-run) variants + 4 deep water
 
 const WATER_COLS = 16;
-const WATER_ROWS = 17;
+const WATER_LINEARIZE_OFFSET = 256;
+const DEEP_WATER_OFFSET = 512;
+const WATER_CELL_COUNT = DEEP_WATER_OFFSET + 4;
+const WATER_ROWS = Math.ceil(WATER_CELL_COUNT / WATER_COLS);
 const WATER_ATLAS_W = WATER_COLS * TILE_W;
 const WATER_ATLAS_H = WATER_ROWS * TILE_H;
-const DEEP_WATER_OFFSET = 256;
 
 const CORNERS = [
   { x: 32, y: 0 },
@@ -288,7 +290,8 @@ function smin(a: number, b: number, k: number): number {
 
 function renderWaterCell(
   data: Uint8ClampedArray, noise: NoiseGenerator,
-  cellIndex: number, config: number, noiseOx: number, noiseOy: number
+  cellIndex: number, config: number, noiseOx: number, noiseOy: number,
+  linearizeShore: boolean = false
 ): void {
   const col = cellIndex % WATER_COLS;
   const row = Math.floor(cellIndex / WATER_COLS);
@@ -315,17 +318,37 @@ function renderWaterCell(
 
       const shoreNoise = noise.noise(cpx * 2.5 + noiseOx, cpy * 2.5 + noiseOy, 0.18);
       const shoreNoise2 = noise.noise(cpx * 5 + noiseOx + 200, cpy * 5 + noiseOy + 200, 0.25);
-      const noiseOffset = (shoreNoise - 0.5) * 0.18 + (shoreNoise2 - 0.5) * 0.08;
+      let noiseOffset = (shoreNoise - 0.5) * 0.18 + (shoreNoise2 - 0.5) * 0.08;
+      if (linearizeShore) noiseOffset *= 0.35;
 
       const k = 0.55;
-      let minF = smin(smin(eFNW, eFNE, k), smin(eFSE, eFSW, k), k);
+      let minF: number;
+      if (linearizeShore) {
+        const active: number[] = [];
+        if (!(cardinals & 1)) active.push(fNW);
+        if (!(cardinals & 2)) active.push(fNE);
+        if (!(cardinals & 4)) active.push(fSE);
+        if (!(cardinals & 8)) active.push(fSW);
+        if (active.length > 0) {
+          minF = active[0];
+          for (let i = 1; i < active.length; i++) {
+            if (active[i] < minF) minF = active[i];
+          }
+        } else {
+          minF = smin(smin(eFNW, eFNE, k), smin(eFSE, eFSW, k), k);
+        }
+      } else {
+        minF = smin(smin(eFNW, eFNE, k), smin(eFSE, eFSW, k), k);
+      }
 
-      for (let c = 0; c < 4; c++) {
-        if ((cardinals & CORNER_PAIRS[c]) === CORNER_PAIRS[c] && !(diagonals & (1 << c))) {
-          const dx = cpx - CORNERS[c].x;
-          const dy = cpy - CORNERS[c].y;
-          const fCorner = Math.sqrt(dx * dx + dy * dy) / CORNER_R;
-          minF = smin(minF, fCorner, k);
+      if (!linearizeShore) {
+        for (let c = 0; c < 4; c++) {
+          if ((cardinals & CORNER_PAIRS[c]) === CORNER_PAIRS[c] && !(diagonals & (1 << c))) {
+            const dx = cpx - CORNERS[c].x;
+            const dy = cpy - CORNERS[c].y;
+            const fCorner = Math.sqrt(dx * dx + dy * dy) / CORNER_R;
+            minF = smin(minF, fCorner, k);
+          }
         }
       }
 
@@ -416,12 +439,13 @@ function buildWaterAtlas(noise: NoiseGenerator): HTMLCanvasElement {
 
   // 256 shore configurations (4 cardinal + 4 diagonal bits)
   for (let config = 0; config < 256; config++) {
-    renderWaterCell(data, noise, config, config, config * 97, config * 53);
+    renderWaterCell(data, noise, config, config, config * 97, config * 53, false);
+    renderWaterCell(data, noise, WATER_LINEARIZE_OFFSET + config, config, config * 97, config * 53, true);
   }
 
   // 4 deep water variants (all neighbors water, different noise offsets)
   for (let v = 0; v < 4; v++) {
-    renderWaterCell(data, noise, DEEP_WATER_OFFSET + v, 255, v * 211 + 500, v * 173 + 700);
+    renderWaterCell(data, noise, DEEP_WATER_OFFSET + v, 255, v * 211 + 500, v * 173 + 700, false);
   }
 
   ctx.putImageData(imageData, 0, 0);
@@ -504,10 +528,15 @@ export class TerrainTextures {
     );
   }
 
-  drawWater(ctx: CanvasRenderingContext2D, config: number, tileX: number, tileY: number, screenCenterX: number, screenCenterY: number): void {
+  drawWater(
+    ctx: CanvasRenderingContext2D, config: number, tileX: number, tileY: number,
+    screenCenterX: number, screenCenterY: number, useLinearizedShore: boolean = false
+  ): void {
     let cell: number;
     if (config === 255) {
       cell = DEEP_WATER_OFFSET + ((tileX + tileY) & 3);
+    } else if (useLinearizedShore) {
+      cell = WATER_LINEARIZE_OFFSET + config;
     } else {
       cell = config;
     }

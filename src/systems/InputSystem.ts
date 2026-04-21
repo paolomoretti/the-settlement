@@ -8,7 +8,7 @@ import { eventBus } from '@/core/EventBus';
 import { RenderSystem } from './RenderSystem';
 import { BuildingType } from '@/types/GameData';
 
-export type InputMode = 'view' | 'select' | `build_${BuildingType}`;
+export type InputMode = 'view' | 'select' | 'erase' | `build_${BuildingType}`;
 
 export class InputSystem {
   private mode: InputMode = 'view';
@@ -19,6 +19,7 @@ export class InputSystem {
   private dragStartGridPos: { x: number; y: number } | null = null;
   private spacebarPressed = false;
   private lastRoadBuildPos: { x: number; y: number } | null = null;
+  private lastErasePos: { x: number; y: number } | null = null;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -27,7 +28,7 @@ export class InputSystem {
     this.setupEventListeners();
 
     eventBus.on('build:success', () => {
-      if (this.mode !== 'view' && this.mode !== 'select' && this.mode !== 'build_road') {
+      if (this.mode !== 'view' && this.mode !== 'select' && this.mode !== 'build_road' && this.mode !== 'erase') {
         this.setMode('view');
       }
     });
@@ -35,7 +36,11 @@ export class InputSystem {
 
   setSpacebarPressed(pressed: boolean): void {
     this.spacebarPressed = pressed;
-    this.canvas.style.cursor = pressed ? 'grab' : 'default';
+    if (pressed) {
+      this.canvas.style.cursor = 'grabbing';
+    } else {
+      this.canvas.style.cursor = this.mode === 'erase' ? 'crosshair' : 'default';
+    }
   }
 
   private setupEventListeners(): void {
@@ -85,6 +90,11 @@ export class InputSystem {
       eventBus.emit('build:road', { x: this.dragStartGridPos.x, y: this.dragStartGridPos.y });
       this.lastRoadBuildPos = { ...this.dragStartGridPos };
     }
+
+    if (this.mode === 'erase') {
+      eventBus.emit('erase:tile', { x: this.dragStartGridPos.x, y: this.dragStartGridPos.y });
+      this.lastErasePos = { ...this.dragStartGridPos };
+    }
   }
 
   private handlePointerMove(clientX: number, clientY: number): void {
@@ -111,6 +121,13 @@ export class InputSystem {
         if (!this.lastRoadBuildPos || gx !== this.lastRoadBuildPos.x || gy !== this.lastRoadBuildPos.y) {
           eventBus.emit('build:road', { x: gx, y: gy });
           this.lastRoadBuildPos = { x: gx, y: gy };
+        }
+      } else if (this.mode === 'erase') {
+        const gx = this.hoverGridPos.x;
+        const gy = this.hoverGridPos.y;
+        if (!this.lastErasePos || gx !== this.lastErasePos.x || gy !== this.lastErasePos.y) {
+          eventBus.emit('erase:tile', { x: gx, y: gy });
+          this.lastErasePos = { x: gx, y: gy };
         }
       } else if (this.mode === 'view') {
         // Check if we should be dragging an entity instead of panning
@@ -165,6 +182,7 @@ export class InputSystem {
     this.isDragging = false;
     this.dragStartGridPos = null;
     this.lastRoadBuildPos = null;
+    this.lastErasePos = null;
     eventBus.emit('road:drag_end');
   }
 
@@ -213,6 +231,9 @@ export class InputSystem {
 
   setMode(mode: InputMode): void {
     this.mode = mode;
+    if (!this.spacebarPressed) {
+      this.canvas.style.cursor = mode === 'erase' ? 'crosshair' : 'default';
+    }
     eventBus.emit('input:mode_changed', mode);
   }
 

@@ -9,6 +9,7 @@ export type SoundEvent =
   | 'build_placed'
   | 'road_build'
   | 'demolish'
+  | 'erase_demolition'
   | 'building_complete'
   | 'worker_spawn'
   | 'footstep'

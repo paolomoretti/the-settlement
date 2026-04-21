@@ -17,6 +17,27 @@ export interface WorkerAppearance {
 
 export type WorkerRole = 'peasant';
 
+/** How a carried resource or tool is attached to the body in `RenderSystem`. */
+export type WorkerHeldItemStyle = 'overhead' | 'side';
+
+/**
+ * Visual behavior for worker rendering. Game logic sets this from job type;
+ * `WorkerRole` can diverge later (e.g. militia) while activity stays data-driven.
+ */
+export type WorkerVisualActivity =
+  | 'general'
+  | 'construct'
+  | 'deliver_tool'
+  | 'production_gather'
+  | 'production_well';
+
+/** Tools held at the hip / one hand; bulk goods use overhead carry. */
+const RESOURCE_HELD_SIDE = new Set<string>(['hammer', 'axe', 'pickaxe', 'fishing_rod', 'shovel']);
+
+export function inferHeldItemStyle(resource: string): WorkerHeldItemStyle {
+  return RESOURCE_HELD_SIDE.has(resource) ? 'side' : 'overhead';
+}
+
 export interface WorkerDef {
   role: WorkerRole;
   speed: number;
@@ -66,6 +87,15 @@ export class Worker extends Component {
   public role: WorkerRole;
   public appearance: WorkerAppearance;
 
+  /** Render pose for anything currently carried (tools vs logs, etc.). */
+  public heldItemStyle: WorkerHeldItemStyle = 'overhead';
+  /** Job-driven animation bucket for render + brief gameplay (patrol pauses). */
+  public visualActivity: WorkerVisualActivity = 'general';
+  /** Builder may hammer on site only after `beginConstruction()` runs. */
+  public hammerConstructionEnabled = false;
+  /** Builder stands and plays hammer idle until this time (ms since epoch). */
+  public buildIdleUntil = 0;
+
   public idleAnim: IdleAnim = 'none';
   public idleAnimStart = 0;
   public idleAnimDuration = 0;
@@ -85,13 +115,15 @@ export class Worker extends Component {
     this.state = state;
   }
 
-  pickUpResource(resource: string): void {
+  pickUpResource(resource: string, heldOverride?: WorkerHeldItemStyle): void {
     this.carryingResource = resource;
     this.state = 'carrying';
+    this.heldItemStyle = heldOverride ?? inferHeldItemStyle(resource);
   }
 
   dropResource(): void {
     this.carryingResource = undefined;
     this.state = 'idle';
+    this.heldItemStyle = 'overhead';
   }
 }

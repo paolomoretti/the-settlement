@@ -17,13 +17,15 @@ All keyboard shortcuts are defined and registered in `src/input/KeyboardShortcut
 |-----|-----------|--------|
 | **H** | view mode, no modal dialog | Center camera on base camp |
 | **R** | no modal dialog | Enter build road mode |
+| **E** | no modal dialog | Erase tool (roads, buildings, trees); drag to strip tiles like roads |
 | **B** | no modal dialog | Toggle building menu |
 | **S** | no modal dialog | Quick save (auto-saves to last slot, or opens dialog if first save) |
 | **Arrow Up** | view mode, no modal dialog | Pan camera up |
 | **Arrow Down** | view mode, no modal dialog | Pan camera down |
 | **Arrow Left** | view mode, no modal dialog | Pan camera left |
 | **Arrow Right** | view mode, no modal dialog | Pan camera right |
-| **Escape** | always | Close topmost dialog, or return to view mode |
+| **V** | always | Same as Escape: close topmost overlay, then return to view mode |
+| **Escape** | always | Close topmost overlay, then return to view mode |
 | **Space (hold)** | always | Enter pan mode (drag to pan camera) |
 
 ## Adding New Shortcuts
@@ -36,9 +38,10 @@ All keyboard shortcuts are defined and registered in `src/input/KeyboardShortcut
 
 `isModalOpen()` checks `save-load-dialog` and `exit-dialog`. These block all gameplay shortcuts. In-game panels (inventory, building menu, popover) are not considered modal — they close via Escape priority or mode changes.
 
-## Escape Priority
+## Escape and V priority
 
 1. Close save/load dialog (if not editing a slot name)
-2. Close exit dialog
-3. Close inventory panel
-4. Return to view mode (which also closes building menu and popover)
+2. Close exit confirmation dialog
+3. Close options panel
+4. Close inventory panel
+5. Return to view mode (which also closes building menu and popover)

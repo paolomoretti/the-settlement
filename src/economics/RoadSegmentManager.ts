@@ -116,8 +116,12 @@ export class RoadSegmentManager {
     if (neighbors.length === 1) {
       return { x, y, type: adjacentBuildingId !== undefined ? 'building' : 'dead_end', entityId: adjacentBuildingId };
     }
+    // Same as the 2-neighbor case: intersections next to a building entrance must
+    // keep entityId so transport can seed computeRoutesToBuilding; otherwise
+    // construction materials never get a direction map and sit at base camp forever
+    // while the builder still arrives via off-road A*.
     if (neighbors.length >= 3) {
-      return { x, y, type: 'junction' };
+      return { x, y, type: 'junction', entityId: adjacentBuildingId };
     }
     // 2 neighbors — only a node if adjacent to a building
     if (adjacentBuildingId !== undefined) {

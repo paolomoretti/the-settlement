@@ -28,7 +28,16 @@ export class MovementSystem extends System {
         if (entity.hasComponent(Worker)) {
           const worker = entity.getComponent(Worker)!;
           if (worker.state === 'walking') {
-            worker.setState(worker.carryingResource ? 'carrying' : 'idle');
+            if (
+              worker.hammerConstructionEnabled &&
+              worker.visualActivity === 'construct' &&
+              worker.carryingResource === 'hammer'
+            ) {
+              worker.setState('working');
+              worker.buildIdleUntil = Date.now() + 1600 + Math.random() * 1400;
+            } else {
+              worker.setState(worker.carryingResource ? 'carrying' : 'idle');
+            }
           }
         }
         return;
@@ -65,7 +74,16 @@ export class MovementSystem extends System {
           if (entity.hasComponent(Worker)) {
             const worker = entity.getComponent(Worker)!;
             if (worker.state === 'walking') {
-              worker.setState(worker.carryingResource ? 'carrying' : 'idle');
+              if (
+                worker.hammerConstructionEnabled &&
+                worker.visualActivity === 'construct' &&
+                worker.carryingResource === 'hammer'
+              ) {
+                worker.setState('working');
+                worker.buildIdleUntil = Date.now() + 1600 + Math.random() * 1400;
+              } else {
+                worker.setState(worker.carryingResource ? 'carrying' : 'idle');
+              }
             }
           }
         }

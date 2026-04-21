@@ -2,7 +2,7 @@
 
 How road segments are computed and workers are assigned to them. Settlers II style: every segment of road gets exactly one worker standing at its center.
 
-**Last Updated**: 2026-04-19
+**Last Updated**: 2026-04-20
 
 ---
 
@@ -147,22 +147,21 @@ New games start with **zero roads**. The player builds the first road from the b
 | `getCenterTile(segment)` | Middle tile of a segment |
 | `getSegmentForWorker(workerId)` | Find which segment a worker belongs to |
 
-### Game.ts Methods
+### Game.ts methods (transport slice)
+
+Road worker **spawn / free / move** live in `GameWorkerRegistry`; the **relay task loop** below is in `Game.ts`.
 
 | Method | Purpose |
 |--------|---------|
-| `spawnSegmentWorker(segment)` | Create worker entity, pathfind to center |
-| `freeSegmentWorker(workerId)` | Drop carried items, pathfind worker back to base camp, remove on arrival |
-| `rerouteReturningWorkers()` | Re-pathfind all returning workers (called on road deletion) |
-| `moveSegmentWorker(workerId, segment)` | Pathfind existing worker to new center |
-| `getAvailablePopulation()` | Population minus road workers and returning workers |
-| `occupyBuildingTiles(...)` | Occupy footprint tiles, create entrance road |
-| `hasBuildingConnectedRoad(...)` | Check entrance tile connectivity (or adjacent for 1×1) |
-| `updateTransport()` | Per-frame: check idle workers for items, advance transport phases |
-| `tryStartTransport(...)` | Check pickup endpoint for items, create TransportTask |
-| `advanceTransport(...)` | Handle to_pickup → to_dropoff → to_center transitions |
-| `getSegmentPath(...)` | Extract sub-path from segment tile list (no A*) |
-| `recomputeTransportRoutes()` | Cancel tasks + recompute BFS after segment changes |
+| `updateTransport()` | Each frame: rebuild `pendingBuildingPickups`, then for each segment worker idle and not returning, `tryStartTransport` or `advanceTransport` |
+| `tryStartTransport(...)` | Scans both segment endpoints for building output (`ep.entityId` + `checkBuildingForOutput`) and junction items; creates `TransportTask` |
+| `advanceTransport(...)` | `to_pickup` → `to_dropoff` → `to_center`; pulls from `Production.outputBuffer` / storage or junction |
+| `getSegmentPath(...)` | Ordered sub-path along `segment.tiles` between two positions (empty if same index) |
+| `recomputeTransportRoutes()` | `cancelInvalidTransportTasks`, `computeRoutes`, `computeRoutesToBuilding` for input buildings + construction sites, `rescueStrandedItems` |
+| `kickTransportRoutesForNewOutput()` | Wrapper: calls `recomputeTransportRoutes()` after production output or periodic heal |
+| `hasAnyUnroutedProductionOutput()` | True if any buffer / production storage still holds output (used for periodic route refresh) |
+| `checkBuildingForOutput(entityId)` | Returns a resource type to haul, or `null` |
+| `cancelInvalidTransportTasks()` | Clears tasks whose pickup/dropoff no longer match segment endpoints (after topology change) |
 
 ---
 
@@ -195,7 +194,43 @@ Routes are recomputed whenever roads change, buildings are placed/deleted, or a 
 
 ### Demand-Based Routing
 
-When a worker picks up a resource, the system checks if any production building **demands** it (has it as an input and has storage space). If so, the item is routed toward that building instead of base camp. See [Building Dependencies](BUILDING_DEPENDENCIES.md) for full details.
+When a worker picks up a resource, the system checks if any production building **demands** it (has it as an input and has storage space). If so, the item is routed toward that building **when this segment’s direction map allows carrying toward that consumer from the pickup end**. If not, the destination **falls back to headquarters** — the worker must still pick up; never skip pickup entirely because another segment might theoretically serve the consumer.
+
+See [Building Dependencies](BUILDING_DEPENDENCIES.md) for full chain details.
+
+### Production buffer pickup — `tryStartTransport` (critical)
+
+Implemented in `Game.ts` (`tryStartTransport`, `advanceTransport`, `updateTransport`). This is what drains `Production.outputBuffer` (and production `Storage` for input-buffered buildings).
+
+#### Endpoint types vs `entityId`
+
+`RoadSegmentManager.classifyTile()` sets `entityId` when a road tile is cardinally adjacent to a building tile that is **occupied and `hasRoad`** (the entrance cell). That happens for more than one **node `type`**:
+
+| `type`     | When |
+|------------|------|
+| `building` | 2 road neighbors, or 0–1 neighbors, and adjacent to a building entrance |
+| `junction` | **3+ road neighbors** and adjacent to a building entrance |
+
+So a **T-junction** (or any 3-way tile) next to a woodcutter is classified as **`junction`**, not `building`, but it still carries the correct **`entityId`**.
+
+**Pitfall (fixed 2026-04):** Pickup logic must **not** require `ep.type === 'building'`. It must treat **`ep.entityId != null`** as a candidate and use `checkBuildingForOutput(entityId)` to confirm there is output. Requiring `type === 'building'` alone **silently skipped** all pickups when the only road connection to a producer was a junction-classified tile — buffers filled while workers looked idle.
+
+#### Direction index (`getDirectionIndex`)
+
+Pickups require a valid `TransportManager.getDirectionIndex(segment.id, destEntityId)` so the worker knows which endpoint is “toward” the destination (HQ or consumer). If that returns `undefined` (stale graph, load order, rare race), `tryStartTransport` runs **`kickTransportRoutesForNewOutput()`** (same as `recomputeTransportRoutes()` for this purpose) **once** and retries the lookup before giving up for that endpoint index.
+
+#### `pendingBuildingPickups`
+
+`Game.updateTransport()` **clears and rebuilds** this `Set` every frame from workers that have `transportTask.phase === 'to_pickup'` and a non-null `sourceEntityId` (building pickup en route). Do **not** delete entries at the start of `advanceTransport` for building pickups — that caused same-frame double-assignment races with other segment workers. Adding the building id when starting a building task is enough; phase change to `to_dropoff` drops it from the rebuild naturally.
+
+#### Zero-length segment path
+
+`getSegmentPath` returns `[]` when the worker is already on the pickup tile (`fromIdx === toIdx`). In that case `tryStartTransport` calls **`advanceTransport` immediately** in the same frame so the pickup phase still runs.
+
+#### Healing stale route maps
+
+- **`production:complete`** (from `ProductionSystem`) triggers **`kickTransportRoutesForNewOutput()`** so new goods get correct BFS directions right after a cycle completes.
+- **Every ~6s**, if any production building still has buffered output (or local production storage with output), **`recomputeTransportRoutes()`** runs again. This is a cheap safety net if graphs were wrong or a segment was missed after edits.
 
 ### Worker State Machine
 
@@ -232,7 +267,8 @@ Items waiting at segment endpoints (junctions) for the next worker to pick up. E
 - **Segment recalc mid-transport**: all active transport tasks are cancelled, carried items are dropped as junction items at the worker's current position
 - **Worker freed**: carried items dropped as junction items before worker walks back to base camp
 - **Item consumed before pickup**: worker returns to center idle
-- **Single-tile segment**: worker skips walking phases (already at pickup/dropoff/center)
+- **Single-tile segment / already on pickup tile**: `getSegmentPath` may be empty; pickup still runs via immediate `advanceTransport` (see § Production buffer pickup)
+- **Producer only touches network at a junction tile**: must use `ep.entityId`, not `ep.type === 'building'`, or output is never picked up (see § Production buffer pickup)
 
 ### File Map
 

@@ -16,6 +16,8 @@ export type ResourceType =
   | 'iron_ore'
   | 'gold_ore'
   | 'granite'
+  /** Forester / terrain: not stockpiled; applied to the map instead. */
+  | 'planted_tree'
 
   // Refined Materials
   | 'iron_bar'
@@ -56,6 +58,8 @@ export interface ResourceDefinition {
   description: string;
   stackSize: number; // Max items per inventory slot
   icon?: string; // Path to icon asset
+  /** If true, production never buffers this or requests transport; game handles the effect. */
+  virtualOutput?: boolean;
 }
 
 // ============================================================================
@@ -151,6 +155,16 @@ export type AnimationConfig =
       workerSpeed: number;
       drawingPhaseSec: number;
       walkLeadSec?: number;
+    }
+  | {
+      /** Forester: walk to a reserved grass tile, dig, return; tree appears after digging. */
+      type: 'plant_tree';
+      searchRadius: number;
+      workerSpeed: number;
+      /** Seconds before cycle end to start walking to the plant site (must fit walk + dig before pause lifts). */
+      walkLeadSec: number;
+      /** Seconds at the site with shovel before the tree is placed and the worker returns. */
+      digAtSiteSec: number;
     };
 
 export interface BuildingDefinition {
@@ -171,6 +185,9 @@ export interface BuildingDefinition {
     sprite?: string;        // Path to sprite asset
     /** Optional multiplier for the footprint-fitted sprite (default 1). Anchored at footprint bottom center. */
     spriteScale?: number;
+    /** Optional screen-space nudge for the sprite (pixels); may be negative. */
+    offsetX?: number;
+    offsetY?: number;
   };
 
   // Construction

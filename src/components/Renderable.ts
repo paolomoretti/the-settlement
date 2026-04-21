@@ -11,7 +11,8 @@ export class Renderable extends Component {
     public type: RenderType,
     public color: string,
     public size: { width: number; height: number },
-    public offsetY: number = 0, // For vertical offset (e.g., jumping animation)
+    public offsetX: number = 0,
+    public offsetY: number = 0, // Vertical nudge / jumping animation
     public spritePath?: string, // Future: path to sprite
     public layer: number = 0 // Rendering layer (higher = on top)
   ) {

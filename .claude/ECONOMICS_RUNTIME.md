@@ -2,7 +2,7 @@
 
 How production, storage, and transport actually work at runtime. This is the **implemented** system — for design goals and balance theory, see [ECONOMY_DESIGN.md](ECONOMY_DESIGN.md).
 
-**Last Updated**: 2026-04-19
+**Last Updated**: 2026-04-20
 
 ---
 
@@ -114,7 +114,7 @@ Full details in [TRANSPORT.md](TRANSPORT.md) § Transport Relay Chain.
 ### How It Works
 
 1. Building produces an item → goes into `Production.outputBuffer`
-2. The segment worker nearest to that building notices items at its pickup endpoint
+2. Each **segment worker** (idle at segment center) scans **both segment endpoints** for haulable output; see **TRANSPORT.md → “Production buffer pickup”** — especially **junction-classified** tiles next to an entrance, which still carry `entityId` and must be treated as pickup points
 3. Worker walks to the pickup endpoint, takes 1 item from the building's output buffer (buffer decrements)
 4. Worker carries the item to the dropoff endpoint (toward base camp), arms raised, item visible above head
 5. At the dropoff:
@@ -128,9 +128,9 @@ Items waiting at road junctions for the next worker in the relay chain. Rendered
 
 Managed by `TransportManager` (`src/economics/TransportManager.ts`).
 
-### Route Computation
+### Route computation
 
-`TransportManager.computeRoutes()` runs BFS from the base camp through the segment graph to determine "toward base camp" direction for every reachable segment. Recomputed on any road/segment change.
+`TransportManager.computeRoutes()` runs BFS from the base camp through the segment graph to determine "toward base camp" direction for every reachable segment. Recomputed on road/segment/building topology changes **and** when production completes or when a periodic check sees non-empty output buffers (so `getDirectionIndex` is not stale). Details: **TRANSPORT.md → “Production buffer pickup”** and following subsections.
 
 ### Transport Lifecycle
 
@@ -138,8 +138,8 @@ Managed by `TransportManager` (`src/economics/TransportManager.ts`).
 Building produces item
   → Item enters Production.outputBuffer
 
-Segment worker checks pickup endpoint (every frame, when idle)
-  → Sees item in building buffer OR junction items
+Segment worker checks **both** pickup endpoints (every frame, when idle)
+  → Sees item in building buffer (including endpoints typed `junction` with `entityId`) OR junction items
   → Creates TransportTask, walks to pickup
 
 Worker arrives at pickup
@@ -175,7 +175,7 @@ Worker arrives at dropoff
 | `canAfford(costs)` | Check if global inventory covers a cost map |
 | `deductResources(costs)` | Remove resources from storage buildings |
 | `consumeInputsForProduction(inputs)` | Check + deduct inputs for production |
-| `requestPickup(entityId, resource, amount)` | Create a transport request |
+| `requestPickup(entityId, resource, amount)` | Emits `transport:pickup_available` and queues `TransportRequest` — **not wired** to the segment-worker relay; the live pipeline is **`Game.updateTransport` → `tryStartTransport`** reading `Production.outputBuffer`. Do not assume this call alone moves goods. |
 | `completeDelivery(requestId, resource, amount)` | Deliver item to headquarters storage |
 | `findNearestStorage(x, y, resourceType?)` | Find closest storage building by Manhattan distance |
 | `getStorageBuildings()` | All completed buildings with Storage component |

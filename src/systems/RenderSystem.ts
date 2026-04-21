@@ -71,6 +71,12 @@ const CONSTRUCTION_SPRITES: Record<string, string[]> = {
     '/assets/buildings/house_build_1.png',
     '/assets/buildings/house_build_2.png',
   ],
+  // Farm one → site; farm two/three → progress; farm four = farm.png when complete.
+  farm: [
+    '/assets/buildings/farm_build_0.png',
+    '/assets/buildings/farm_build_1.png',
+    '/assets/buildings/farm_build_2.png',
+  ],
 };
 
 export class RenderSystem extends System {
@@ -470,9 +476,27 @@ export class RenderSystem extends System {
     const sprite = this.loadSprite(spritePath);
 
     if (sprite) {
-      this.renderSpritePreview(gridX, gridY, size.width, size.height, sprite, buildingType);
+      this.renderSpritePreview(
+        gridX,
+        gridY,
+        size.width,
+        size.height,
+        sprite,
+        buildingType,
+        visual.offsetX ?? 0,
+        visual.offsetY ?? 0
+      );
     } else {
-      this.renderBuildingPreview(gridX, gridY, size.width, size.height, visual.buildingHeight, visual.color);
+      this.renderBuildingPreview(
+        gridX,
+        gridY,
+        size.width,
+        size.height,
+        visual.buildingHeight,
+        visual.color,
+        visual.offsetX ?? 0,
+        visual.offsetY ?? 0
+      );
     }
   }
 
@@ -483,6 +507,8 @@ export class RenderSystem extends System {
     depth: number,
     sprite: HTMLImageElement,
     buildingType?: string,
+    offsetX: number = 0,
+    offsetY: number = 0
   ): void {
     const canPlace = this.canPlacePreview(gridX, gridY, width, depth);
     const tileHighlight = canPlace ? 'rgba(255, 255, 255, 0.2)' : 'rgba(200, 50, 50, 0.35)';
@@ -496,7 +522,7 @@ export class RenderSystem extends System {
     this.ctx.save();
     this.ctx.globalAlpha = canPlace ? 0.6 : 0.4;
     if (!canPlace) this.ctx.filter = 'saturate(0.3) brightness(0.8)';
-    this.ctx.translate(screenPos.x, screenPos.y - this.iso.tileHeight / 2);
+    this.ctx.translate(screenPos.x + offsetX, screenPos.y - this.iso.tileHeight / 2 + offsetY);
 
     if (width > 1 || depth > 1) {
       const cx = (width - depth) * tileW / 4;
@@ -647,7 +673,16 @@ export class RenderSystem extends System {
     return true;
   }
 
-  private renderBuildingPreview(gridX: number, gridY: number, width: number, depth: number, height: number, color: string): void {
+  private renderBuildingPreview(
+    gridX: number,
+    gridY: number,
+    width: number,
+    depth: number,
+    height: number,
+    color: string,
+    offsetX: number = 0,
+    offsetY: number = 0
+  ): void {
     const canPlace = this.canPlacePreview(gridX, gridY, width, depth);
 
     const previewColor = canPlace ? color : '#cc3333';
@@ -664,7 +699,7 @@ export class RenderSystem extends System {
 
     this.ctx.save();
     this.ctx.globalAlpha = canPlace ? 0.6 : 0.5;
-    this.ctx.translate(screenPos.x, screenPos.y - this.iso.tileHeight / 2);
+    this.ctx.translate(screenPos.x + offsetX, screenPos.y - this.iso.tileHeight / 2 + offsetY);
 
     if (width > 1 || depth > 1) {
       const cx = (width - depth) * tileW / 4;
@@ -1573,6 +1608,7 @@ export class RenderSystem extends System {
     const renderY = (isSelected && this.dragPreviewPosition) ? this.dragPreviewPosition.y : pos.y;
 
     const screenPos = this.iso.gridToScreen(renderX, renderY);
+    const offsetX = renderable.offsetX;
     const offsetY = renderable.offsetY;
 
     this.ctx.save();
@@ -1599,10 +1635,10 @@ export class RenderSystem extends System {
     // gridToScreen gives us tile CENTER, but building corners are calculated from TOP corner
     if (building && building.buildingHeight > 0) {
       // Offset from tile center to tile top corner
-      this.ctx.translate(screenPos.x, screenPos.y - this.iso.tileHeight / 2 + offsetY);
+      this.ctx.translate(screenPos.x + offsetX, screenPos.y - this.iso.tileHeight / 2 + offsetY);
     } else {
       // Non-buildings render at tile center
-      this.ctx.translate(screenPos.x, screenPos.y + offsetY);
+      this.ctx.translate(screenPos.x + offsetX, screenPos.y + offsetY);
     }
 
     if (building) {
@@ -2121,6 +2157,9 @@ export class RenderSystem extends System {
     if (worker.visualActivity === 'production_well' && worker.state === 'working') {
       return;
     }
+    if (worker.visualActivity === 'production_plant' && worker.state === 'working') {
+      return;
+    }
     if (
       worker.visualActivity === 'construct' &&
       worker.state === 'working' &&
@@ -2206,8 +2245,15 @@ export class RenderSystem extends System {
       worker.state === 'working' &&
       !isMoving;
 
+    const isPlantDigging =
+      isCarrying &&
+      worker.carryingResource === 'shovel' &&
+      worker.visualActivity === 'production_plant' &&
+      worker.state === 'working' &&
+      !isMoving;
+
     const isSideCarryTool =
-      isCarrying && worker.heldItemStyle === 'side' && !isHammerConstruct;
+      isCarrying && worker.heldItemStyle === 'side' && !isHammerConstruct && !isPlantDigging;
 
     const isOverheadCarry = isCarrying && worker.heldItemStyle === 'overhead';
 
@@ -2235,6 +2281,12 @@ export class RenderSystem extends System {
       const bob = Math.sin(now / 420) * 1.8;
       const sway = Math.sin(now / 510) * 0.5;
       this.ctx.translate(sway * s, bob * s);
+    }
+
+    if (isPlantDigging) {
+      const bob = Math.sin(now / 380) * 2.2;
+      const lean = Math.sin(now / 520) * 0.6;
+      this.ctx.translate(lean * s, bob * s);
     }
 
     const legOffsets = [[0, 0], [-1, 1], [0, 0], [1, -1]];
@@ -2413,6 +2465,14 @@ export class RenderSystem extends System {
           this.ctx.drawImage(resSprite, tx * s, ty * s, toolDrawPx * s, toolDrawPx * s);
         } else {
           px(tx - 1, ty, 5, 5, '#8a7a68');
+        }
+      } else if (isPlantDigging) {
+        const dip = Math.sin(now / 290) * 0.8 * s;
+        if (resSprite) {
+          this.ctx.drawImage(resSprite, -1 * s, -6 * s + dip, toolDrawPx * s, toolDrawPx * s);
+        } else {
+          px(-2, -8, 6, 5, '#d4a03c');
+          px(-1, -9, 4, 1, '#f0c060');
         }
       } else if (isSideCarryTool) {
         if (resSprite) {

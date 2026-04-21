@@ -71,6 +71,15 @@
     "stackSize": 50,
     "icon": "/assets/ui/icons/granite.png"
   },
+  "planted_tree": {
+    "id": "planted_tree",
+    "name": "Planted tree",
+    "category": "raw",
+    "virtualOutput": true,
+    "description": "Represents a new tree on the map (forester); not stored in inventory.",
+    "stackSize": 1,
+    "icon": "/assets/ui/icons/wood_log.png"
+  },
   "grain": {
     "id": "grain",
     "name": "Grain",

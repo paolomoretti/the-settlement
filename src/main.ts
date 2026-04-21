@@ -395,7 +395,7 @@ function showInventoryPanel(game: Game): void {
   const popDisplay = document.getElementById('population-display');
   if (popDisplay) {
     const available = game.getAvailablePopulation();
-    popDisplay.textContent = `${available} available / ${game.population.current} total`;
+    popDisplay.textContent = `${available} available / ${game.population.max} max`;
   }
 
   const inventoryList = document.getElementById('inventory-list');

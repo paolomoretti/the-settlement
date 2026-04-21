@@ -23,6 +23,7 @@ export function createWorker(x: number, y: number, role: WorkerRole = 'peasant')
     '#8b7355',
     { width: 12, height: 20 },
     0,
+    0,
     undefined,
     0
   ));
@@ -56,6 +57,7 @@ export function createBuilding(
       color,
       { width: width * 32, height: depth * 32 },
       0,
+      0,
       undefined,
       0
     ));
@@ -79,6 +81,7 @@ export function createBuilding(
     house: '/assets/buildings/house.png',
     fisher: '/assets/buildings/fisher.png',
     well: '/assets/buildings/well.png',
+    farm: '/assets/buildings/farm.png',
   };
   const spritePath = SPRITE_PATHS[buildingType];
 
@@ -86,7 +89,8 @@ export function createBuilding(
     spritePath ? 'sprite' : 'rectangle',
     visual.color,
     { width: size.width * 32, height: size.height * 32 },
-    0,
+    visual.offsetX ?? 0,
+    visual.offsetY ?? 0,
     spritePath,
     0
   ));

@@ -5,6 +5,8 @@ import { Building } from '@/components/Building';
 import { Production } from '@/components/Production';
 import { Storage } from '@/components/Storage';
 import { resourceManager } from '@/economics/ResourceManager';
+import { dataManager } from '@/data/DataManager';
+import { ResourceType } from '@/types/GameData';
 
 export class ProductionSystem extends System {
   shouldProcessEntity(entity: Entity): boolean {
@@ -100,7 +102,12 @@ export class ProductionSystem extends System {
         eventBus.emit('production:resumed', { entityId: entity.id });
       }
 
-      production.timer += deltaTime;
+      // Forester: hold the production clock until the plant-tree animation worker finishes
+      const foresterPlanting =
+        building.buildingType === 'forester' && building.animationWorkerId != null;
+      if (!foresterPlanting) {
+        production.timer += deltaTime;
+      }
 
       if (production.timer >= production.productionTime) {
         production.timer -= production.productionTime;
@@ -113,6 +120,7 @@ export class ProductionSystem extends System {
           // Force-add outputs (may temporarily exceed capacity by one cycle)
           for (const [res, amount] of Object.entries(production.outputs)) {
             if (amount <= 0) continue;
+            if (dataManager.getResource(res as ResourceType)?.virtualOutput) continue;
             storage!.items[res] = (storage!.items[res] || 0) + amount;
           }
         } else {
@@ -129,9 +137,10 @@ export class ProductionSystem extends System {
               continue;
             }
           }
-          // Add to output buffer
+          // Add to output buffer (skip virtual outputs — not stockpiled or transported)
           for (const [resource, amount] of Object.entries(production.outputs)) {
             if (amount <= 0) continue;
+            if (dataManager.getResource(resource as ResourceType)?.virtualOutput) continue;
             production.addToBuffer(resource, amount);
             resourceManager.requestPickup(entity.id, resource, amount);
           }

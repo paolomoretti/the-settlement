@@ -67,6 +67,7 @@ export class Game {
   private roadDragMode: 'create' | 'delete' | null = null;
   private lastMaterialCheckTime = 0;
   private lastRescueCheckTime = 0;
+  private lastOutputTransportKickTime = 0;
 
   constructor(canvas: HTMLCanvasElement, skipInit = false) {
     this.canvas = canvas;
@@ -112,6 +113,9 @@ export class Game {
 
     // Setup event listeners
     this.setupEventListeners();
+    eventBus.on('production:complete', (payload: { entityId: number; outputs: Record<string, number> }) =>
+      this.onProductionComplete(payload)
+    );
 
     // Initialize game world
     if (!skipInit) {
@@ -216,6 +220,37 @@ export class Game {
       roadSegmentManager.recalculate(this.tileMap);
       this.recomputeTransportRoutes();
     }, 200);
+  }
+
+  /**
+   * Refreshes direction maps when new goods appear in building buffers so segment workers
+   * can resolve toward-base / toward-consumer indices (cheap vs full segment recalc).
+   */
+  private kickTransportRoutesForNewOutput(): void {
+    if (!this.baseCampEntity) return;
+    this.recomputeTransportRoutes();
+  }
+
+  private onProductionComplete(_payload: { entityId: number; outputs: Record<string, number> }): void {
+    this.kickTransportRoutesForNewOutput();
+  }
+
+  private hasAnyUnroutedProductionOutput(): boolean {
+    for (const entity of this.entities) {
+      if (!entity.active) continue;
+      const production = entity.getComponent(Production);
+      const building = entity.getComponent(Building);
+      const storage = entity.getComponent(Storage);
+      if (!production || !building?.isComplete() || !building.isActive) continue;
+      if (storage?.isProductionStorage) {
+        for (const res of Object.keys(production.outputs)) {
+          if (storage.getAmount(res) > 0) return true;
+        }
+      } else if (production.getTotalBuffered() > 0) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private recomputeTransportRoutes(): void {
@@ -503,6 +538,7 @@ export class Game {
     }
     console.log(`Deleted entity #${entity.id}`);
     this.removeEntity(entity);
+    this.recomputePopulationMaxCapacity();
     this.syncInventory();
     this.updateSelectionUI();
     roadSegmentManager.recalculate(this.tileMap);
@@ -667,9 +703,7 @@ export class Game {
     this.baseCampEntity = baseCamp;
     this.occupyBuildingTiles(baseCamp.id, x, y, building.width, building.height, building);
 
-    // Update population max
-    const baseCampDef = dataManager.getBuilding('base_camp');
-    this.population.max = baseCampDef?.population?.provides || 15;
+    this.recomputePopulationMaxCapacity();
 
     // Load starting resources into base camp storage
     const storage = baseCamp.getComponent(Storage);
@@ -683,7 +717,23 @@ export class Game {
 
     console.log(`Base Camp (${building.width}x${building.height}) established at (${x}, ${y})`);
     console.log(`Starting inventory:`, this.inventory);
-    console.log(`Population: ${this.population.current}/${this.population.max}`);
+    console.log(`Population: ${this.population.current}/${this.population.max} (peasants / housing cap)`);
+  }
+
+  /** Housing cap = starting population baseline + completed residential `provides` (hut, house, …). */
+  private recomputePopulationMaxCapacity(): void {
+    const baseline = dataManager.getStartingPopulation();
+    let extra = 0;
+    for (const entity of this.entities) {
+      if (!entity.active) continue;
+      const b = entity.getComponent(Building);
+      if (!b?.isComplete()) continue;
+      if (b.buildingType === 'base_camp') continue;
+      const def = dataManager.getBuilding(b.buildingType);
+      const add = def?.population?.provides;
+      if (typeof add === 'number' && add > 0) extra += add;
+    }
+    this.population.max = baseline + extra;
   }
 
   private buildGeneric(buildingType: BuildingType, x: number, y: number): void {
@@ -752,9 +802,8 @@ export class Game {
       this.workers.spawnBuilderForPlacedBuilding(entity);
     }
 
-    // Update population if residential
-    if (buildingDef.population?.provides) {
-      this.population.max += buildingDef.population.provides;
+    if (building.isComplete()) {
+      this.recomputePopulationMaxCapacity();
     }
 
     audioManager.playSound('build_placed');
@@ -901,22 +950,6 @@ export class Game {
     return null;
   }
 
-  private canAnySegmentRouteToBuilding(x: number, y: number, destEntityId: number, excludeSegmentId: number): boolean {
-    const segments = roadSegmentManager.getSegments();
-    for (const seg of segments) {
-      if (seg.id === excludeSegmentId) continue;
-      let epIdx = -1;
-      if (seg.endpoints[0].x === x && seg.endpoints[0].y === y) epIdx = 0;
-      else if (seg.endpoints[1].x === x && seg.endpoints[1].y === y) epIdx = 1;
-      if (epIdx === -1) continue;
-      const dirIdx = transportManager.getDirectionIndex(seg.id, destEntityId);
-      if (dirIdx !== undefined && dirIdx !== epIdx) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   private checkBuildingForOutput(buildingEntityId: number): { resourceType: string } | null {
     const bldgEntity = this.entities.find(e => e.id === buildingEntityId && e.active);
     if (!bldgEntity) return null;
@@ -945,8 +978,10 @@ export class Game {
       const dropoffIdx = 1 - pickupIdx;
       const dropoffEp = segment.endpoints[dropoffIdx];
 
-      // Check building output at this endpoint
-      if (ep.type === 'building' && ep.entityId != null && !this.pendingBuildingPickups.has(ep.entityId)) {
+      // Building-adjacent outputs: endpoint may be type `building` OR `junction` (T-crossing next to
+      // an entrance still carries entityId — only `building` was checked before, so pickups never
+      // started at junction endpoints).
+      if (ep.entityId != null && !this.pendingBuildingPickups.has(ep.entityId)) {
         const output = this.checkBuildingForOutput(ep.entityId);
         if (output) {
           let destEntityId: number | null = this.baseCampEntity?.id ?? null;
@@ -955,12 +990,16 @@ export class Game {
             const dirIdx = transportManager.getDirectionIndex(segment.id, demandBuilding.id);
             if (dirIdx !== undefined && dirIdx !== pickupIdx) {
               destEntityId = demandBuilding.id;
-            } else if (this.canAnySegmentRouteToBuilding(ep.x, ep.y, demandBuilding.id, segment.id)) {
-              continue;
             }
+            // If this segment cannot carry toward the consumer from this pickup end, still ship
+            // to HQ — never skip pickup entirely (that left buffers stuck when another route existed).
           }
 
-          const dirCheck = transportManager.getDirectionIndex(segment.id, destEntityId);
+          let dirCheck = transportManager.getDirectionIndex(segment.id, destEntityId);
+          if (dirCheck === undefined) {
+            this.kickTransportRoutesForNewOutput();
+            dirCheck = transportManager.getDirectionIndex(segment.id, destEntityId);
+          }
           if (dirCheck === undefined || dirCheck === pickupIdx) continue;
 
           this.pendingBuildingPickups.add(ep.entityId);
@@ -976,6 +1015,9 @@ export class Game {
           if (path.length > 0) {
             movable.setPath(path);
             worker.setState('walking');
+          } else {
+            // Worker already on the pickup tile (zero-length segment hop) — run pickup immediately.
+            this.advanceTransport(segment, worker, movable, pos);
           }
           return;
         }
@@ -1052,7 +1094,6 @@ export class Game {
       case 'to_pickup': {
         let taken = false;
         if (task.sourceEntityId != null) {
-          this.pendingBuildingPickups.delete(task.sourceEntityId);
           const bldgEntity = this.entities.find(e => e.id === task.sourceEntityId && e.active);
           if (bldgEntity) {
             const production = bldgEntity.getComponent(Production);
@@ -1281,6 +1322,14 @@ export class Game {
       this.rescueStrandedItems();
     }
 
+    // Heal stale toward-base / toward-consumer maps when goods sit in output buffers
+    if (now - this.lastOutputTransportKickTime > 6000) {
+      this.lastOutputTransportKickTime = now;
+      if (this.hasAnyUnroutedProductionOutput()) {
+        this.kickTransportRoutesForNewOutput();
+      }
+    }
+
     // Keep inventory in sync with storage components
     this.syncInventory();
 
@@ -1307,6 +1356,8 @@ export class Game {
           if (production && production.hasInputs()) {
             transportManager.computeRoutesToBuilding(roadSegmentManager.getSegments(), entity.id);
           }
+
+          this.recomputePopulationMaxCapacity();
         }
       }
     }
@@ -1617,7 +1668,11 @@ export class Game {
       this.workers.resetState();
       this.pendingBuildingPickups.clear();
 
-      this.population = saveData.population || { current: 0, max: 0 };
+      if (saveData.population && typeof saveData.population.current === 'number') {
+        this.population.current = saveData.population.current;
+      } else {
+        this.population.current = dataManager.getStartingPopulation();
+      }
       this.baseCampEntity = null;
 
       for (const buildingData of saveData.buildings) {
@@ -1725,6 +1780,8 @@ export class Game {
       } else if (saveData.zoom) {
         this.renderSystem.setZoom(saveData.zoom);
       }
+
+      this.recomputePopulationMaxCapacity();
 
       return true;
     } catch (error) {

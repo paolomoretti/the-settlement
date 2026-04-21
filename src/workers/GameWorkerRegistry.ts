@@ -38,7 +38,18 @@ type WellOperatorAnimState = {
   lastProductionTimer: number;
 };
 
-type AnimationWorkerState = GatherAnimState | WellOperatorAnimState;
+type PlantTreeAnimState = {
+  kind: 'plant_tree';
+  buildingEntityId: number;
+  phase: 'to_site' | 'digging' | 'returning';
+  plantTile: { x: number; y: number };
+  workTile: { x: number; y: number };
+  entranceTile: { x: number; y: number };
+  digUntilMs: number;
+  planted: boolean;
+};
+
+type AnimationWorkerState = GatherAnimState | WellOperatorAnimState | PlantTreeAnimState;
 
 export interface WorkerWorldAccess {
   getEntities(): Entity[];
@@ -537,6 +548,86 @@ export class GameWorkerRegistry {
         continue;
       }
 
+      if (state.kind === 'plant_tree') {
+        const plant = state;
+        const movable = workerEntity.getComponent(Movable);
+        const workerComp = workerEntity.getComponent(Worker);
+        const workerPos = workerEntity.getComponent(Position);
+        if (!movable || !workerComp || !workerPos) continue;
+
+        const buildingEntity = entities.find(e => e.id === plant.buildingEntityId && e.active);
+        const building = buildingEntity?.getComponent(Building);
+        const production = buildingEntity?.getComponent(Production);
+        const buildingDef = building ? dataManager.getBuilding(building.buildingType) : undefined;
+        const animCfg = buildingDef?.animation;
+
+        if (
+          !buildingEntity ||
+          !building ||
+          !production ||
+          !buildingDef ||
+          animCfg?.type !== 'plant_tree'
+        ) {
+          this.world.removeEntity(workerEntity);
+          this.cleanupAnimationWorker(workerId, plant);
+          continue;
+        }
+
+        if (production.status !== 'producing') {
+          this.world.removeEntity(workerEntity);
+          this.cleanupAnimationWorker(workerId, plant);
+          continue;
+        }
+
+        const speed = animCfg.workerSpeed;
+        const nowMs = Date.now();
+
+        if (plant.phase === 'to_site') {
+          if (movable.isMoving) continue;
+          plant.phase = 'digging';
+          plant.digUntilMs = nowMs + animCfg.digAtSiteSec * 1000;
+          workerComp.pickUpResource((buildingDef.requiredTool as string) || 'shovel');
+          workerComp.visualActivity = 'production_plant';
+          workerComp.setState('working');
+          continue;
+        }
+
+        if (plant.phase === 'digging') {
+          if (nowMs < plant.digUntilMs) continue;
+          if (!plant.planted) {
+            const t = tileMap.getTile(plant.plantTile.x, plant.plantTile.y);
+            if (t && t.terrain === 'grass' && !t.hasRoad && !t.isOccupied()) {
+              tileMap.setTerrain(plant.plantTile.x, plant.plantTile.y, 'tree');
+              render.updateMinimapTiles([{ x: plant.plantTile.x, y: plant.plantTile.y }]);
+            }
+            plant.planted = true;
+            const ret = pathFinder.findOffRoadPath(
+              new Position(Math.floor(workerPos.x), Math.floor(workerPos.y)),
+              new Position(plant.entranceTile.x, plant.entranceTile.y),
+              tileMap
+            );
+            if (ret.length > 0) {
+              movable.speed = speed;
+              movable.setPath(ret);
+              workerComp.setState('walking');
+              workerComp.visualActivity = 'general';
+              plant.phase = 'returning';
+            } else {
+              this.world.removeEntity(workerEntity);
+              this.cleanupAnimationWorker(workerId, plant);
+            }
+          }
+          continue;
+        }
+
+        if (plant.phase === 'returning') {
+          if (movable.isMoving) continue;
+          this.world.removeEntity(workerEntity);
+          this.cleanupAnimationWorker(workerId, plant);
+        }
+        continue;
+      }
+
       const gather = state;
       const movable = workerEntity.getComponent(Movable);
       if (!movable || movable.isMoving) continue;
@@ -644,6 +735,12 @@ export class GameWorkerRegistry {
 
       if (buildingDef.animation.type === 'well_operator') {
         this.spawnWellOperator(entity);
+        continue;
+      }
+
+      if (buildingDef.animation.type === 'plant_tree') {
+        if (production.status !== 'producing') continue;
+        this.spawnPlantTreeWorker(entity);
         continue;
       }
 
@@ -759,6 +856,8 @@ export class GameWorkerRegistry {
       if (animState) {
         if (animState.kind === 'gather') {
           this.reservedTreeTiles.delete(`${animState.targetTile.x},${animState.targetTile.y}`);
+        } else if (animState.kind === 'plant_tree') {
+          this.reservedTreeTiles.delete(`${animState.plantTile.x},${animState.plantTile.y}`);
         }
         this.animationWorkers.delete(building.animationWorkerId);
       }
@@ -917,6 +1016,42 @@ export class GameWorkerRegistry {
     }
   }
 
+  /**
+   * Cardinal neighbor of `(ox, oy)` that is on the HQ road network (see `Game.hasBuildingConnectedRoad`).
+   * Must match how we decide `building.isActive`, otherwise we pick a disconnected `hasRoad` fragment,
+   * `findPath` returns empty, and tool/builder workers never spawn.
+   */
+  private findAdjacentNetworkRoadTile(
+    ox: number,
+    oy: number,
+    tileMap: TileMap,
+    connected: Set<string>
+  ): { x: number; y: number } | null {
+    const dirs = [
+      [-1, 0],
+      [1, 0],
+      [0, -1],
+      [0, 1],
+    ] as const;
+    for (const [dx, dy] of dirs) {
+      const tx = ox + dx;
+      const ty = oy + dy;
+      if (!connected.has(`${tx},${ty}`)) continue;
+      const tile = tileMap.getTile(tx, ty);
+      if (!tile || !tile.hasRoad || tile.isOccupied()) continue;
+      return { x: tx, y: ty };
+    }
+    for (const [dx, dy] of dirs) {
+      const tx = ox + dx;
+      const ty = oy + dy;
+      if (!connected.has(`${tx},${ty}`)) continue;
+      const tile = tileMap.getTile(tx, ty);
+      if (!tile || !tile.hasRoad) continue;
+      return { x: tx, y: ty };
+    }
+    return null;
+  }
+
   private findBaseCampSpawnTile(): { x: number; y: number } | null {
     const baseCampEntity = this.world.getBaseCampEntity();
     if (!baseCampEntity) return null;
@@ -930,19 +1065,10 @@ export class GameWorkerRegistry {
     const ex = pos.x + entrance.dx;
     const ey = pos.y + entrance.dy;
     const tileMap = this.world.getTileMap();
+    const connected = this.world.getBaseCampConnectedRoads();
 
-    const dirs = [
-      [-1, 0],
-      [1, 0],
-      [0, -1],
-      [0, 1],
-    ];
-    for (const [dx, dy] of dirs) {
-      const tile = tileMap.getTile(ex + dx, ey + dy);
-      if (tile && tile.hasRoad && !tile.isOccupied()) {
-        return { x: ex + dx, y: ey + dy };
-      }
-    }
+    const adjacent = this.findAdjacentNetworkRoadTile(ex, ey, tileMap, connected);
+    if (adjacent) return adjacent;
 
     return { x: ex, y: ey };
   }
@@ -953,38 +1079,17 @@ export class GameWorkerRegistry {
     if (!pos || !building) return null;
 
     const tileMap = this.world.getTileMap();
+    const connected = this.world.getBaseCampConnectedRoads();
     const entrance = building.getEntranceOffset();
     if (entrance) {
       const ex = pos.x + entrance.dx;
       const ey = pos.y + entrance.dy;
-      const dirs = [
-        [-1, 0],
-        [1, 0],
-        [0, -1],
-        [0, 1],
-      ];
-      for (const [dx, dy] of dirs) {
-        const tile = tileMap.getTile(ex + dx, ey + dy);
-        if (tile && tile.hasRoad && !tile.isOccupied()) {
-          return { x: ex + dx, y: ey + dy };
-        }
-      }
+      const adjacent = this.findAdjacentNetworkRoadTile(ex, ey, tileMap, connected);
+      if (adjacent) return adjacent;
       return { x: ex, y: ey };
     }
 
-    const dirs = [
-      [-1, 0],
-      [1, 0],
-      [0, -1],
-      [0, 1],
-    ];
-    for (const [dx, dy] of dirs) {
-      const tile = tileMap.getTile(pos.x + dx, pos.y + dy);
-      if (tile && tile.hasRoad && !tile.isOccupied()) {
-        return { x: pos.x + dx, y: pos.y + dy };
-      }
-    }
-    return null;
+    return this.findAdjacentNetworkRoadTile(pos.x, pos.y, tileMap, connected);
   }
 
   private spawnBuilder(buildingEntity: Entity): void {
@@ -1239,9 +1344,135 @@ export class GameWorkerRegistry {
     });
   }
 
+  /**
+   * Tile next to `plantTile` the worker can stand on while digging, with a path from the building entrance.
+   */
+  private findForesterWorkTileAdjacentToPlant(
+    entranceX: number,
+    entranceY: number,
+    plantX: number,
+    plantY: number,
+    tileMap: TileMap,
+    pathFinder: PathFinder
+  ): { x: number; y: number } | null {
+    const dirs = [
+      [-1, 0],
+      [1, 0],
+      [0, -1],
+      [0, 1],
+    ] as const;
+    const candidates: { x: number; y: number; d: number }[] = [];
+    for (const [dx, dy] of dirs) {
+      const wx = plantX + dx;
+      const wy = plantY + dy;
+      const tile = tileMap.getTile(wx, wy);
+      if (!tile || !tile.walkable || tile.isOccupied()) continue;
+      const d = Math.abs(wx - entranceX) + Math.abs(wy - entranceY);
+      candidates.push({ x: wx, y: wy, d });
+    }
+    candidates.sort((a, b) => a.d - b.d);
+    for (const c of candidates) {
+      const path = pathFinder.findOffRoadPath(
+        new Position(entranceX, entranceY),
+        new Position(c.x, c.y),
+        tileMap
+      );
+      if (path.length > 0) return { x: c.x, y: c.y };
+    }
+    return null;
+  }
+
+  private spawnPlantTreeWorker(buildingEntity: Entity): void {
+    const building = buildingEntity.getComponent(Building);
+    const pos = buildingEntity.getComponent(Position);
+    const production = buildingEntity.getComponent(Production);
+    if (!building || !pos || !production) return;
+    if (building.animationWorkerId != null) return;
+    if (this.world.getAvailablePeasantSlotCount() <= 0) return;
+
+    const buildingDef = dataManager.getBuilding(building.buildingType);
+    const anim = buildingDef?.animation;
+    if (!anim || anim.type !== 'plant_tree') return;
+    if (production.status !== 'producing') return;
+
+    const prodTime = production.productionTime;
+    const departBuffer = anim.walkLeadSec + anim.digAtSiteSec;
+    if (production.timer < prodTime - departBuffer) return;
+
+    const entrance = building.getEntranceOffset();
+    const entranceX = entrance ? pos.x + entrance.dx : pos.x;
+    const entranceY = entrance ? pos.y + entrance.dy : pos.y;
+
+    const tileMap = this.world.getTileMap();
+    const pathFinder = this.world.getPathFinder();
+
+    const exclude = new Set(this.reservedTreeTiles);
+    for (let dy = 0; dy < building.height; dy++) {
+      for (let dx = 0; dx < building.width; dx++) {
+        exclude.add(`${pos.x + dx},${pos.y + dy}`);
+      }
+    }
+
+    const plantSpot = tileMap.findNearbyTerrain(
+      entranceX,
+      entranceY,
+      anim.searchRadius,
+      ['grass'],
+      exclude
+    );
+    if (!plantSpot) return;
+
+    const workTile = this.findForesterWorkTileAdjacentToPlant(
+      entranceX,
+      entranceY,
+      plantSpot.x,
+      plantSpot.y,
+      tileMap,
+      pathFinder
+    );
+    if (!workTile) return;
+
+    const path = pathFinder.findOffRoadPath(
+      new Position(entranceX, entranceY),
+      new Position(workTile.x, workTile.y),
+      tileMap
+    );
+    if (path.length === 0) return;
+
+    this.reservedTreeTiles.add(`${plantSpot.x},${plantSpot.y}`);
+
+    const worker = createWorker(entranceX, entranceY);
+    this.world.addEntity(worker);
+
+    const workerComp = worker.getComponent(Worker);
+    const movable = worker.getComponent(Movable);
+    if (workerComp && movable) {
+      workerComp.pickUpResource((buildingDef.requiredTool as string) || 'shovel');
+      workerComp.visualActivity = 'general';
+      workerComp.setState('walking');
+      movable.speed = anim.workerSpeed;
+      movable.setPath(path);
+    }
+
+    building.animationWorkerId = worker.id;
+    this.animationWorkers.set(worker.id, {
+      kind: 'plant_tree',
+      buildingEntityId: buildingEntity.id,
+      phase: 'to_site',
+      plantTile: { x: plantSpot.x, y: plantSpot.y },
+      workTile,
+      entranceTile: { x: entranceX, y: entranceY },
+      digUntilMs: 0,
+      planted: false,
+    });
+  }
+
   private cleanupAnimationWorker(workerId: number, state: AnimationWorkerState): void {
     if (state.kind === 'gather') {
       this.reservedTreeTiles.delete(`${state.targetTile.x},${state.targetTile.y}`);
+    }
+    if (state.kind === 'plant_tree') {
+      this.reservedTreeTiles.delete(`${state.plantTile.x},${state.plantTile.y}`);
     }
     this.animationWorkers.delete(workerId);
     const entities = [...this.world.getEntities()];

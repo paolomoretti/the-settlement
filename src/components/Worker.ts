@@ -29,7 +29,8 @@ export type WorkerVisualActivity =
   | 'construct'
   | 'deliver_tool'
   | 'production_gather'
-  | 'production_well';
+  | 'production_well'
+  | 'production_plant';
 
 /** Tools held at the hip / one hand; bulk goods use overhead carry. */
 const RESOURCE_HELD_SIDE = new Set<string>(['hammer', 'axe', 'pickaxe', 'fishing_rod', 'shovel']);

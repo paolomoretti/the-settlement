@@ -83,6 +83,9 @@ Roads:      /assets/roads/[type].png
 Units:      /assets/units/[name]_[action].png
 UI:         /assets/ui/[element].png
 
+On disk: write under repo-root `assets/...` (same folders as the URLs, no leading slash).
+Never save sprites under `public/` — see `.claude/ASSET_GUIDE.md` (“Do not put game art in public”).
+
 Naming: lowercase, underscores, descriptive
 Examples: terrain_grass.png, building_warehouse.png, road_corner_ne.png
 

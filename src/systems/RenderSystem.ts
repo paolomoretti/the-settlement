@@ -79,6 +79,19 @@ const CONSTRUCTION_SPRITES: Record<string, string[]> = {
   ],
 };
 
+// Production phase sprites per building type (shown only while actively producing).
+// Naming: `/assets/buildings/<type>_prod_<index>.png`.
+// Timing: split cycle into `stages.length + 2` slices, map slices to stages, and
+// keep the last stage visible for extra slices before the cycle completes.
+const PRODUCTION_SPRITES: Record<string, string[]> = {
+  farm: [
+    '/assets/buildings/farm_prod_0.png',
+    '/assets/buildings/farm_prod_1.png',
+    '/assets/buildings/farm_prod_2.png',
+    '/assets/buildings/farm_prod_3.png',
+  ],
+};
+
 /** Uniform draw scale for `/assets/resources/*.png` on the main canvas (workers, junctions, map bubbles). */
 const RESOURCE_ICON_DRAW_SCALE = 1.25;
 
@@ -155,6 +168,9 @@ export class RenderSystem extends System {
       '/assets/buildings/house.png',
     ];
     for (const stages of Object.values(CONSTRUCTION_SPRITES)) {
+      allSprites.push(...stages);
+    }
+    for (const stages of Object.values(PRODUCTION_SPRITES)) {
       allSprites.push(...stages);
     }
     this.preloadSprites(allSprites);
@@ -1733,8 +1749,9 @@ export class RenderSystem extends System {
       }
 
       const insightHighlight = entity.id === this.insightHighlightEntityId;
+      const production = entity.getComponent(Production) ?? null;
       if (renderable.spritePath) {
-        this.renderBuildingSprite(building, renderable, isSelected, insightHighlight);
+        this.renderBuildingSprite(building, renderable, production, isSelected, insightHighlight);
       } else {
         this.renderIsometricBuilding(building, renderable, isSelected, insightHighlight);
       }
@@ -1811,6 +1828,38 @@ export class RenderSystem extends System {
     return frameIndex < stages.length ? stages[frameIndex] : renderable.spritePath;
   }
 
+  private getProductionSpritePath(
+    building: Building,
+    renderable: Renderable,
+    production?: Production | null
+  ): string | undefined {
+    if (!renderable.spritePath || !production) return renderable.spritePath;
+    if (!building.isComplete()) return renderable.spritePath;
+    if (building.state !== 'complete') return renderable.spritePath;
+    if (production.status !== 'producing') return renderable.spritePath;
+    if (production.productionTime <= 0) return renderable.spritePath;
+
+    const stages = PRODUCTION_SPRITES[building.buildingType];
+    if (!stages || stages.length === 0) return renderable.spritePath;
+
+    const progress = Math.max(0, Math.min(0.999999, production.getProgress()));
+    const totalSlices = stages.length + 2;
+    const slice = Math.floor(progress * totalSlices);
+    const stageIndex = Math.min(slice, stages.length - 1);
+    return stages[stageIndex] ?? renderable.spritePath;
+  }
+
+  private getBuildingSpritePath(
+    building: Building,
+    renderable: Renderable,
+    production?: Production | null
+  ): string | undefined {
+    if (building.state === 'under_construction' || building.state === 'awaiting_materials') {
+      return this.getConstructionSpritePath(building, renderable);
+    }
+    return this.getProductionSpritePath(building, renderable, production);
+  }
+
   private getBuildingSpriteVisualScale(buildingType: string): number {
     const def = dataManager.getBuilding(buildingType as BuildingType);
     const s = def?.visual?.spriteScale;
@@ -1820,10 +1869,11 @@ export class RenderSystem extends System {
   private renderBuildingSprite(
     building: Building,
     renderable: Renderable,
+    production: Production | null,
     isSelected: boolean = false,
     insightHighlight: boolean = false
   ): void {
-    const spritePath = this.getConstructionSpritePath(building, renderable);
+    const spritePath = this.getBuildingSpritePath(building, renderable, production);
     const sprite = spritePath ? this.loadSprite(spritePath) : null;
     if (!sprite) return;
 

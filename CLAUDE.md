@@ -29,7 +29,8 @@ src/
   audio/        - AudioManager (Howler.js wrapper)
   utils/        - Isometric projection, NoiseGenerator
   main.ts       - Entry point
-assets/         - Sprite folders (terrain/, buildings/, units/, roads/, ui/) - currently empty placeholders
+assets/         - **All game sprites & textures** (terrain/, buildings/, ui/, …). Served at `/assets/…` via `vite.config.ts`; **do not** mirror these under `public/`.
+public/         - **Not** for PNG/WebP art. Only exceptions like `public/audio/` for `/audio/…` Howler loads.
 ```
 
 ## Key Commands

@@ -176,6 +176,13 @@ assets/
     └── panels/
 ```
 
+### **Do not put game art in `public/` (mandatory)**
+
+- **All sprites and textures** (PNG/WebP sheets for buildings, terrain, UI, units, roads, resources, etc.) belong **only** under the **repository root** folder **`assets/`** — for example `assets/buildings/farm.png`, `assets/terrain/grass-texture.png`, `assets/ui/load.png`.
+- **Never** add or duplicate those files under **`public/assets/`** (or anywhere under `public/` except the exceptions below). Duplicates drift out of sync, hide the real source of truth, and break the mental model of this repo.
+- **Why `/assets/...` still works in the browser:** Vite is configured to **serve** `assets/` at the URL prefix `/assets/` in dev and to **copy** that tree into `dist/assets/` on production build (see `vite.config.ts`). You keep editing files under **`assets/`** only.
+- **`public/` is reserved for** small, non-art static roots that are not part of the `assets/` tree — e.g. **`public/audio/*.mp3`** loaded as `/audio/...`. If you are about to drop a `.png` into `public/`, **stop** and put it under **`assets/`** in the correct subfolder instead.
+
 ---
 
 ## Naming Conventions
@@ -458,6 +465,39 @@ const CONSTRUCTION_SPRITES: Record<string, string[]> = {
 ```
 
 **How it works:** The build sprites + the completed sprite = total frames. The build time is divided equally among all frames. For a 60s warehouse with 2 build sprites + 1 completed = 3 frames → each shown for 20s. You can provide any number of build sprites per building. Buildings without construction sprites keep the existing opacity fade effect.
+
+### Step 4 (optional): Add production-cycle sprites (`*_prod_*`)
+
+For buildings that should animate their facade while producing, add production sprites with this naming:
+
+```
+assets/buildings/<type>_prod_0.png
+assets/buildings/<type>_prod_1.png
+assets/buildings/<type>_prod_2.png
+...
+```
+
+Then register the building in `src/systems/RenderSystem.ts` in `PRODUCTION_SPRITES`:
+
+```typescript
+const PRODUCTION_SPRITES: Record<string, string[]> = {
+  farm: [
+    '/assets/buildings/farm_prod_0.png',
+    '/assets/buildings/farm_prod_1.png',
+    '/assets/buildings/farm_prod_2.png',
+    '/assets/buildings/farm_prod_3.png',
+  ],
+};
+```
+
+**Timing rule (important):**
+
+- Production sprites are shown **only** while the building is actively producing (`Production.status === 'producing'`).
+- The cycle is split into `N + 2` equal slices (`N` = number of production sprites).
+- Slice index maps to sprite index and clamps at the last sprite, so the final production sprite lingers briefly before completion.
+- At the end of the cycle (100%), rendering returns to the normal completed sprite (`/assets/buildings/<type>.png`).
+
+Example with `N = 3`: cycle is split into `5` slices (as requested), and the last production sprite is held for the final part of the cycle before reset to the default building sprite.
 
 ### How the sprite system works
 

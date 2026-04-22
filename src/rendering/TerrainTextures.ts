@@ -524,6 +524,148 @@ function buildAtlas(gen: GenFn, noise: NoiseGenerator): HTMLCanvasElement {
   return canvas;
 }
 
+const GRASS_TEXTURE_SRC = '/assets/terrain/grass-texture.png';
+
+/**
+ * Split the grass photo into an N×N grid; one full image spans N×N world grass cells.
+ * Atlas slots cycle (gx mod N, gy mod N) so iso variation still tiles cleanly.
+ */
+const GRASS_TEXTURE_REPEAT = 3;
+
+/** 0 at diamond perimeter → original grass; 1 at center → full tint (same metric as DIAMOND_MASK). */
+function grassEdgeTintStrength(lx: number, ly: number): number {
+  const dx = Math.abs(lx + 0.5 - TILE_W / 2) / (TILE_W / 2);
+  const dy = Math.abs(ly + 0.5 - TILE_H / 2) / (TILE_H / 2);
+  const w = dx + dy;
+  if (w >= 1.06) return 0;
+  const edge = w / 1.06;
+  return Math.pow(Math.max(0, 1 - edge), 1.38);
+}
+
+function canvasFromImageData(id: ImageData): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = id.width;
+  canvas.height = id.height;
+  canvas.getContext('2d')!.putImageData(id, 0, 0);
+  return canvas;
+}
+
+/**
+ * One GPU readback for the full grass atlas (no per-tile getImageData).
+ * Forest / tree / mountain: tint fades toward original grass at each tile’s diamond edge.
+ */
+function buildGrassPhotoAtlases(
+  img: HTMLImageElement,
+  repeat: number
+): { grass: HTMLCanvasElement; forest: HTMLCanvasElement; tree: HTMLCanvasElement; mountain: HTMLCanvasElement } | null {
+  const iw = img.naturalWidth || img.width;
+  const ih = img.naturalHeight || img.height;
+  const r = Math.max(1, repeat);
+  const cellW = iw / r;
+  const cellH = ih / r;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = ATLAS_W;
+  canvas.height = ATLAS_H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  for (let gy = 0; gy < ATLAS_GRID; gy++) {
+    for (let gx = 0; gx < ATLAS_GRID; gx++) {
+      const rx = ((gx % r) + r) % r;
+      const ry = ((gy % r) + r) % r;
+      const sx = rx * cellW;
+      const sy = ry * cellH;
+      ctx.drawImage(img, sx, sy, cellW, cellH, gx * TILE_W, gy * TILE_H, TILE_W, TILE_H);
+    }
+  }
+
+  const baseId = ctx.getImageData(0, 0, ATLAS_W, ATLAS_H);
+  const base = baseId.data;
+
+  for (let ay = 0; ay < ATLAS_H; ay++) {
+    for (let ax = 0; ax < ATLAS_W; ax++) {
+      const lx = ax & (TILE_W - 1);
+      const ly = ay & (TILE_H - 1);
+      const ii = (ay * ATLAS_W + ax) * 4;
+      if (!DIAMOND_MASK[ly * TILE_W + lx]) {
+        base[ii + 3] = 0;
+      }
+    }
+  }
+
+  const forestMult: [number, number, number] = [0.78, 0.9, 0.72];
+  const treeMult: [number, number, number] = [0.74, 0.86, 0.68];
+
+  const makeTinted = (mult: [number, number, number]): ImageData => {
+    const out = new Uint8ClampedArray(base.length);
+    out.set(base);
+    const mr = mult[0];
+    const mg = mult[1];
+    const mb = mult[2];
+    for (let ay = 0; ay < ATLAS_H; ay++) {
+      for (let ax = 0; ax < ATLAS_W; ax++) {
+        const lx = ax & (TILE_W - 1);
+        const ly = ay & (TILE_H - 1);
+        const ii = (ay * ATLAS_W + ax) * 4;
+        const a = base[ii + 3];
+        if (a === 0) continue;
+        const t = grassEdgeTintStrength(lx, ly);
+        const o0 = base[ii];
+        const o1 = base[ii + 1];
+        const o2 = base[ii + 2];
+        const dr = o0 * mr;
+        const dg = o1 * mg;
+        const db = o2 * mb;
+        out[ii] = clamp(o0 + (dr - o0) * t);
+        out[ii + 1] = clamp(o1 + (dg - o1) * t);
+        out[ii + 2] = clamp(o2 + (db - o2) * t);
+        out[ii + 3] = a;
+      }
+    }
+    return new ImageData(out, ATLAS_W, ATLAS_H);
+  };
+
+  const makeMountainFromGrass = (): ImageData => {
+    const out = new Uint8ClampedArray(base.length);
+    out.set(base);
+    const rockMix = 0.44;
+    const mr = MOUNTAIN.r;
+    const mg = MOUNTAIN.g;
+    const mb = MOUNTAIN.b;
+    for (let ay = 0; ay < ATLAS_H; ay++) {
+      for (let ax = 0; ax < ATLAS_W; ax++) {
+        const lx = ax & (TILE_W - 1);
+        const ly = ay & (TILE_H - 1);
+        const ii = (ay * ATLAS_W + ax) * 4;
+        const a = base[ii + 3];
+        if (a === 0) continue;
+        const t = grassEdgeTintStrength(lx, ly);
+        const o0 = base[ii];
+        const o1 = base[ii + 1];
+        const o2 = base[ii + 2];
+        const rr = o0 * (1 - rockMix) + mr * rockMix;
+        const gg = o1 * (1 - rockMix) + mg * rockMix;
+        const bb = o2 * (1 - rockMix) + mb * rockMix;
+        out[ii] = clamp(o0 + (rr - o0) * t);
+        out[ii + 1] = clamp(o1 + (gg - o1) * t);
+        out[ii + 2] = clamp(o2 + (bb - o2) * t);
+        out[ii + 3] = a;
+      }
+    }
+    return new ImageData(out, ATLAS_W, ATLAS_H);
+  };
+
+  return {
+    grass: canvasFromImageData(baseId),
+    forest: canvasFromImageData(makeTinted(forestMult)),
+    tree: canvasFromImageData(makeTinted(treeMult)),
+    mountain: canvasFromImageData(makeMountainFromGrass()),
+  };
+}
+
 export class TerrainTextures {
   private atlases = new Map<string, HTMLCanvasElement>();
   private roadAtlas: HTMLCanvasElement;
@@ -536,6 +678,31 @@ export class TerrainTextures {
     }
     this.roadAtlas = buildRoadAtlas(noise);
     this.waterAtlas = buildWaterAtlas(noise);
+    this.loadGrassPhotoAtlas();
+  }
+
+  private loadGrassPhotoAtlas(): void {
+    const img = new Image();
+    img.decoding = 'async';
+    const apply = (): void => {
+      if (!img.naturalWidth) return;
+      try {
+        const built = buildGrassPhotoAtlases(img, GRASS_TEXTURE_REPEAT);
+        if (!built) return;
+        this.atlases.set('grass', built.grass);
+        this.atlases.set('forest', built.forest);
+        this.atlases.set('tree', built.tree);
+        this.atlases.set('mountain', built.mountain);
+      } catch {
+        /* keep procedural atlases */
+      }
+    };
+    img.onload = apply;
+    img.onerror = () => {
+      /* procedural */
+    };
+    img.src = GRASS_TEXTURE_SRC;
+    if (img.complete) apply();
   }
 
   drawTile(ctx: CanvasRenderingContext2D, terrain: string, tileX: number, tileY: number, screenCenterX: number, screenCenterY: number): void {
@@ -547,8 +714,14 @@ export class TerrainTextures {
 
     ctx.drawImage(
       atlas,
-      gx * TILE_W, gy * TILE_H, TILE_W, TILE_H,
-      screenCenterX - TILE_W / 2, screenCenterY - TILE_H / 2, TILE_W, TILE_H
+      gx * TILE_W,
+      gy * TILE_H,
+      TILE_W,
+      TILE_H,
+      screenCenterX - TILE_W / 2,
+      screenCenterY - TILE_H / 2,
+      TILE_W,
+      TILE_H
     );
   }
 

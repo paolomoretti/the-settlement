@@ -58,46 +58,252 @@
       right: 10px;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 4px;
       z-index: 50;
       pointer-events: auto;
     }
 
-    .topbar-icon-btn {
-      width: 42px;
-      height: 42px;
-      padding: 0;
+    /* Icon-only controls: no green chrome; light hover wash + glow on artwork */
+    button.chromeless-icon-btn {
+      padding: 6px;
+      margin: 0;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      border-radius: 6px;
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      border-radius: 10px;
       line-height: 0;
+      cursor: pointer;
+      font-family: 'Courier New', monospace;
+      box-sizing: border-box;
     }
 
-    .btn-options-icon,
-    .btn-exit-door-icon {
-      width: 30px;
-      height: 30px;
+    button.chromeless-icon-btn:hover,
+    button.chromeless-icon-btn:active {
+      background: rgba(255, 255, 255, 0.06) !important;
+      border: none !important;
+    }
+
+    button.chromeless-icon-btn:focus-visible {
+      outline: 2px solid #9ab791;
+      outline-offset: 3px;
+    }
+
+    button.chromeless-icon-btn:hover img,
+    button.chromeless-icon-btn:hover .icon-palette-img-wrap--placeholder {
+      filter: brightness(1.15) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45));
+    }
+
+    #top-right-actions button.chromeless-icon-btn {
+      min-width: 72px;
+      min-height: 72px;
+    }
+
+    #top-right-actions button.chromeless-icon-btn .btn-options-icon,
+    #top-right-actions button.chromeless-icon-btn .btn-exit-icon {
+      width: 64px;
+      height: 64px;
       display: block;
       object-fit: contain;
       image-rendering: pixelated;
       image-rendering: crisp-edges;
       flex-shrink: 0;
-    }
-
-    .btn-options-gear:hover .btn-options-icon,
-    .btn-exit-door:hover .btn-exit-door-icon {
-      filter: brightness(1.12);
+      pointer-events: none;
     }
 
     #controls {
       position: absolute;
-      bottom: 10px;
-      left: 10px;
-      background: rgba(0, 0, 0, 0.7);
-      padding: 15px;
-      border-radius: 4px;
+      bottom: 6px;
+      left: 6px;
+      background: rgba(0, 0, 0, 0.38);
+      /* Less pad above content, more below labels — total bar height stays stable */
+      padding: 2px 5px 11px 5px;
+      border-radius: 6px;
       pointer-events: auto;
+      box-sizing: border-box;
+      min-height: 120px;
+      display: flex;
+      align-items: flex-start;
+    }
+
+    #controls .controls-row {
+      display: flex;
+      flex-direction: row;
+      flex-wrap: nowrap;
+      align-items: flex-start;
+      gap: 0;
+      overflow-x: auto;
+      flex: 1;
+      min-height: 106px;
+    }
+
+    /* Bottom dock: same chromeless treatment as top-right; icon + caption column */
+    #controls button.chromeless-icon-btn.dock-toolbar-btn {
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 0;
+      padding: 0 3px 0;
+      min-width: 92px;
+      max-width: 104px;
+      min-height: 106px;
+      line-height: normal;
+      box-sizing: border-box;
+    }
+
+    #controls button.chromeless-icon-btn.dock-toolbar-btn.selected {
+      background: rgba(255, 255, 255, 0.06) !important;
+    }
+
+    #controls button.chromeless-icon-btn.dock-toolbar-btn.selected img,
+    #controls button.chromeless-icon-btn.dock-toolbar-btn.selected .icon-palette-img-wrap--placeholder {
+      filter: brightness(1.2) drop-shadow(0 0 10px rgba(200, 220, 160, 0.42));
+    }
+
+    #controls .dock-toolbar-btn .icon-palette-img-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: 86px;
+      flex-shrink: 0;
+    }
+
+    #controls .dock-toolbar-btn .icon-palette-img-wrap--placeholder {
+      font-size: 54px;
+      line-height: 1;
+      color: #8a9a82;
+      font-weight: bold;
+      letter-spacing: 0;
+    }
+
+    #controls .dock-toolbar-btn img {
+      width: 86px;
+      height: 86px;
+      object-fit: contain;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      display: block;
+      pointer-events: none;
+    }
+
+    #controls .dock-toolbar-btn .icon-palette-label {
+      display: block;
+      text-align: center;
+      width: 100%;
+      padding: 0 1px 0;
+      margin-top: -4px;
+      flex-shrink: 0;
+    }
+
+    #controls .dock-toolbar-btn .dock-toolbar-caption {
+      display: block;
+      font-size: 10px;
+      line-height: 1.15;
+      color: #e8e8e8;
+      font-weight: normal;
+      white-space: normal;
+    }
+
+    #controls .dock-toolbar-btn .dock-toolbar-caption .shortcut-hint {
+      font-size: 9px;
+      margin-left: 3px;
+      color: #9ab791;
+      opacity: 0.9;
+    }
+
+    #controls .dock-toolbar-btn .dock-toolbar-subhint {
+      font-size: 9px;
+      color: #9ab791;
+      opacity: 0.85;
+      margin-left: 3px;
+      font-weight: normal;
+    }
+
+    /* Welcome only: tiled green buttons */
+    .welcome-buttons button.icon-palette-btn {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 6px;
+      width: 132px;
+      max-width: none;
+      padding: 10px 8px 8px;
+      margin: 0;
+      background: rgba(36, 48, 32, 0.92);
+      border: 2px solid #5d7a52;
+      border-radius: 8px;
+      color: #eaeaea;
+      cursor: pointer;
+      font-family: 'Courier New', monospace;
+      box-sizing: border-box;
+    }
+
+    .welcome-buttons button.icon-palette-btn:hover {
+      background: rgba(50, 68, 44, 0.95);
+      border-color: #7a9a6a;
+    }
+
+    .welcome-buttons button.icon-palette-btn:active {
+      background: rgba(30, 42, 26, 0.98);
+    }
+
+    .welcome-buttons .icon-palette-img-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: 56px;
+    }
+
+    .welcome-buttons .icon-palette-img-wrap--placeholder {
+      font-size: 36px;
+      line-height: 1;
+      color: #7a8a72;
+      font-weight: bold;
+      letter-spacing: 0;
+    }
+
+    .welcome-buttons .icon-palette-img-wrap--symbol {
+      font-size: 44px;
+      line-height: 56px;
+      color: #c8dc6a;
+      text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+    }
+
+    .welcome-buttons button.icon-palette-btn img {
+      width: 52px;
+      height: 52px;
+      object-fit: contain;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      display: block;
+    }
+
+    .welcome-buttons .icon-palette-label {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      text-align: center;
+      width: 100%;
+    }
+
+    .welcome-buttons .icon-palette-title {
+      font-size: 10px;
+      line-height: 1.2;
+      color: #ddd;
+      font-weight: normal;
+    }
+
+    .welcome-buttons .icon-palette-meta {
+      font-size: 9px;
+      line-height: 1.2;
+      color: #9ab791;
+      opacity: 0.85;
     }
 
     button {
@@ -642,20 +848,20 @@
     .welcome-buttons {
       display: flex;
       flex-direction: column;
+      align-items: center;
       gap: 12px;
     }
 
-    .welcome-buttons button {
-      width: 220px;
-      padding: 12px 24px;
-      font-size: 16px;
+    .welcome-buttons button.icon-palette-btn:disabled {
+      background: #2a2a2a;
+      border-color: #444;
+      opacity: 0.55;
+      cursor: not-allowed;
     }
 
-    .welcome-buttons button:disabled {
-      background: #333;
-      border-color: #555;
-      color: #666;
-      cursor: not-allowed;
+    .welcome-buttons button.icon-palette-btn:disabled img {
+      opacity: 0.45;
+      filter: grayscale(0.6);
     }
 
     /* Dialog Overlay */
@@ -904,8 +1110,20 @@
     <h1>The Settler</h1>
     <p class="welcome-subtitle">by Paolo Moretti</p>
     <div class="welcome-buttons">
-      <button id="btn-start-game">Start Game</button>
-      <button id="btn-load-game-welcome">Load Game</button>
+      <button id="btn-start-game" type="button" class="icon-palette-btn">
+        <span class="icon-palette-img-wrap icon-palette-img-wrap--symbol" aria-hidden="true">▶</span>
+        <span class="icon-palette-label">
+          <span class="icon-palette-title">Start Game</span>
+        </span>
+      </button>
+      <button id="btn-load-game-welcome" type="button" class="icon-palette-btn">
+        <span class="icon-palette-img-wrap">
+          <img src="/assets/ui/load.png" alt="" decoding="async">
+        </span>
+        <span class="icon-palette-label">
+          <span class="icon-palette-title">Load Game</span>
+        </span>
+      </button>
     </div>
   </div>
 
@@ -942,23 +1160,61 @@
         <div>Mode: <span id="current-mode">View</span></div>
       </div>
       <div id="top-right-actions">
-        <button type="button" id="btn-options" class="topbar-icon-btn btn-options-gear" aria-label="Settings">
-          <img class="btn-options-icon" src="/assets/ui/options_gear.png" width="30" height="30" alt="" decoding="async">
+        <button type="button" id="btn-options" class="chromeless-icon-btn btn-top-options" aria-label="Settings">
+          <img class="btn-options-icon" src="/assets/ui/options.png" alt="" decoding="async">
         </button>
-        <button type="button" id="btn-exit" class="topbar-icon-btn btn-exit-door" aria-label="Exit to menu">
-          <img class="btn-exit-door-icon" src="/assets/ui/exit_door.png" width="30" height="30" alt="" decoding="async">
+        <button type="button" id="btn-exit" class="chromeless-icon-btn btn-top-exit" aria-label="Exit to menu">
+          <img class="btn-exit-icon" src="/assets/ui/exit.png" alt="" decoding="async">
         </button>
       </div>
       <div id="controls">
-        <div>
-          <button id="btn-road">Build Road <span class="shortcut-hint">[R]</span></button>
-          <button id="btn-erase">Erase <span class="shortcut-hint">[E]</span></button>
-          <button id="btn-building-menu">Buildings <span class="shortcut-hint">[B]</span></button>
-        </div>
-        <div style="margin-top: 10px;">
-          <button id="btn-save">Save Game <span class="shortcut-hint">[S]</span></button>
-          <button id="btn-save-as">Save As...</button>
-          <button id="btn-load">Load Game</button>
+        <div class="controls-row">
+          <button id="btn-road" type="button" class="chromeless-icon-btn dock-toolbar-btn">
+            <span class="icon-palette-img-wrap">
+              <img src="/assets/ui/road.png" alt="" decoding="async">
+            </span>
+            <span class="icon-palette-label">
+              <span class="dock-toolbar-caption">Build Road <span class="shortcut-hint">[R]</span></span>
+            </span>
+          </button>
+          <button id="btn-erase" type="button" class="chromeless-icon-btn dock-toolbar-btn">
+            <span class="icon-palette-img-wrap">
+              <img src="/assets/ui/erase.png" alt="" decoding="async">
+            </span>
+            <span class="icon-palette-label">
+              <span class="dock-toolbar-caption">Erase <span class="shortcut-hint">[E]</span></span>
+            </span>
+          </button>
+          <button id="btn-building-menu" type="button" class="chromeless-icon-btn dock-toolbar-btn">
+            <span class="icon-palette-img-wrap">
+              <img src="/assets/ui/building_menu.png" alt="" decoding="async">
+            </span>
+            <span class="icon-palette-label">
+              <span class="dock-toolbar-caption">Buildings <span class="shortcut-hint">[B]</span></span>
+            </span>
+          </button>
+          <button id="btn-save" type="button" class="chromeless-icon-btn dock-toolbar-btn">
+            <span class="icon-palette-img-wrap">
+              <img src="/assets/ui/save.png" alt="" decoding="async">
+            </span>
+            <span class="icon-palette-label">
+              <span class="dock-toolbar-caption">Save Game <span class="shortcut-hint">[S]</span></span>
+            </span>
+          </button>
+          <button id="btn-save-as" type="button" class="chromeless-icon-btn dock-toolbar-btn">
+            <span class="icon-palette-img-wrap icon-palette-img-wrap--placeholder" aria-hidden="true">⋯</span>
+            <span class="icon-palette-label">
+              <span class="dock-toolbar-caption">Save As… <span class="dock-toolbar-subhint">Pick a slot</span></span>
+            </span>
+          </button>
+          <button id="btn-load" type="button" class="chromeless-icon-btn dock-toolbar-btn">
+            <span class="icon-palette-img-wrap">
+              <img src="/assets/ui/load.png" alt="" decoding="async">
+            </span>
+            <span class="icon-palette-label">
+              <span class="dock-toolbar-caption">Load Game</span>
+            </span>
+          </button>
         </div>
       </div>
       <div id="inventory-overlay" class="game-panel-overlay" aria-hidden="true">

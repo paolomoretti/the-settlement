@@ -251,15 +251,27 @@ function setupGameUI(game: Game): void {
     document.getElementById('exit-dialog')!.style.display = 'flex';
   });
 
+  const iconBarTippy = {
+    placement: 'bottom' as const,
+    animation: 'fade' as const,
+    duration: [180, 120] as [number, number],
+    arrow: true,
+    touch: ['hold', 400] as ['hold', number],
+  };
+
   const exitButton = document.getElementById('btn-exit');
   if (exitButton) {
     tippy(exitButton, {
+      ...iconBarTippy,
       content: 'Exit to menu',
-      placement: 'bottom',
-      animation: 'fade',
-      duration: [180, 120],
-      arrow: true,
-      touch: ['hold', 400],
+    });
+  }
+
+  const optionsButton = document.getElementById('btn-options');
+  if (optionsButton) {
+    tippy(optionsButton, {
+      ...iconBarTippy,
+      content: 'Settings',
     });
   }
 

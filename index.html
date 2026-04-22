@@ -334,12 +334,9 @@
       position: absolute;
       z-index: 10;
       background: rgba(10, 10, 10, 0.92);
-      border: 2px solid #4a6741;
-      border-radius: 6px;
       min-width: 220px;
       max-width: 280px;
       pointer-events: auto;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
       font-size: 12px;
     }
 
@@ -347,7 +344,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 10px 12px;
+      padding: 4px 0 10px;
       border-bottom: 1px solid #3a5731;
     }
 
@@ -376,7 +373,7 @@
     }
 
     .game-popover-body {
-      padding: 10px 12px 12px;
+      padding: 8px 0 0;
     }
 
     .popover-desc {
@@ -474,16 +471,12 @@
 
     #inventory-panel {
       position: relative;
-      background: rgba(0, 0, 0, 0.9);
-      padding: 20px;
-      border-radius: 8px;
       pointer-events: auto;
       min-width: 400px;
       max-width: 500px;
       max-height: 90vh;
-      overflow: auto;
-      border: 3px solid #8b1a1a;
-      box-shadow: 0 0 20px rgba(139, 26, 26, 0.5);
+      display: flex;
+      flex-direction: column;
     }
 
     #inventory-panel h3 {
@@ -535,14 +528,11 @@
 
     #building-menu-panel {
       position: relative;
-      background: rgba(0, 0, 0, 0.95);
-      padding: 20px;
-      border-radius: 8px;
       pointer-events: auto;
       width: min(700px, 100%);
       max-height: 85vh;
-      border: 3px solid #4a6741;
-      box-shadow: 0 0 30px rgba(74, 103, 65, 0.6);
+      display: flex;
+      flex-direction: column;
       overflow: hidden;
     }
 
@@ -587,6 +577,11 @@
       max-height: 500px;
       overflow-y: auto;
       padding: 10px;
+    }
+
+    #building-menu-panel .building-cards-container {
+      flex: 1;
+      min-height: 0;
     }
 
     .building-card {
@@ -704,24 +699,75 @@
       cursor: not-allowed;
     }
 
-    /* Wooden frame via 9-slice (navigator-frame.png); inner map stays 200×200 */
-    #minimap {
-      position: absolute;
-      bottom: 10px;
-      right: 10px;
+    /*
+     * Wooden frame (9-slice, navigator-frame.png) — minimap, dialogs, sheets, popover.
+     * border + border-image-width match minimap navigator styling.
+     */
+    .dialog-panel,
+    #inventory-panel,
+    #building-menu-panel,
+    #options-panel,
+    #minimap,
+    .game-popover {
       box-sizing: border-box;
-      width: 244px;
-      height: 244px;
-      padding: 0;
       border: 12px solid transparent;
       border-radius: 0;
-      background: transparent;
       border-image-source: url(/assets/ui/navigator-frame.png);
-      /* PNG 458×432 — slightly asymmetric slice for corner alignment */
       border-image-slice: 91 96 91 96 fill;
       border-image-width: 22px;
       border-image-outset: 0;
       border-image-repeat: stretch;
+    }
+
+    /* No fill behind the wood — avoids dark bleeding past the frame */
+    .dialog-panel,
+    #inventory-panel,
+    #building-menu-panel,
+    #options-panel,
+    .game-popover {
+      background: transparent;
+      padding: 0;
+    }
+
+    /* Dark inset for text/content only; tune padding here */
+    .dialog-panel-body {
+      box-sizing: border-box;
+      width: 100%;
+      /* Dark brown, ~10% transparent (similar to first brown pass) */
+      background: rgba(42, 28, 18, 0.9);
+      padding: 16px 20px;
+      border-radius: 4px;
+    }
+
+    .game-popover .dialog-panel-body {
+      padding: 10px 12px;
+    }
+
+    #inventory-panel .dialog-panel-body,
+    #options-panel .dialog-panel-body {
+      flex: 1;
+      min-height: 0;
+      max-height: 100%;
+      overflow: auto;
+    }
+
+    #building-menu-panel .dialog-panel-body {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Wooden frame via 9-slice; inner map stays 200×200 */
+    #minimap {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      width: 244px;
+      height: 244px;
+      padding: 0;
+      background: transparent;
       pointer-events: auto;
       cursor: pointer;
     }
@@ -735,16 +781,12 @@
     /* Options Panel (sheet inside .game-panel-overlay) */
     #options-panel {
       position: relative;
-      background: rgba(0, 0, 0, 0.95);
-      padding: 20px;
-      border-radius: 8px;
       pointer-events: auto;
       min-width: 340px;
       max-width: 400px;
       max-height: 90vh;
-      overflow: auto;
-      border: 3px solid #4a6741;
-      box-shadow: 0 0 30px rgba(74, 103, 65, 0.6);
+      display: flex;
+      flex-direction: column;
     }
 
     .options-row {
@@ -888,13 +930,8 @@
     }
 
     .dialog-panel {
-      background: rgba(0, 0, 0, 0.95);
-      border: 3px solid #4a6741;
-      border-radius: 8px;
-      padding: 20px;
       min-width: 500px;
       max-width: 600px;
-      box-shadow: 0 0 30px rgba(74, 103, 65, 0.6);
     }
 
     .dialog-header {
@@ -1139,23 +1176,27 @@
   <!-- Save/Load Dialog -->
   <div id="save-load-dialog" class="dialog-overlay">
     <div class="dialog-panel">
-      <div class="dialog-header">
-        <h3 id="save-load-title">Save Game</h3>
-        <button id="btn-close-save-load" style="padding: 4px 12px; margin: 0;">✕</button>
+      <div class="dialog-panel-body">
+        <div class="dialog-header">
+          <h3 id="save-load-title">Save Game</h3>
+          <button id="btn-close-save-load" style="padding: 4px 12px; margin: 0;">✕</button>
+        </div>
+        <div id="save-load-slots"></div>
       </div>
-      <div id="save-load-slots"></div>
     </div>
   </div>
 
   <!-- Exit Confirmation Dialog -->
   <div id="exit-dialog" class="dialog-overlay">
     <div class="dialog-panel dialog-small">
-      <h3>Exit Game</h3>
-      <p>Do you want to save your progress?</p>
-      <div class="exit-buttons">
-        <button id="btn-save-and-exit">Save & Exit</button>
-        <button id="btn-exit-no-save" class="btn-danger">Exit Without Saving</button>
-        <button id="btn-cancel-exit" class="btn-secondary">Cancel</button>
+      <div class="dialog-panel-body">
+        <h3>Exit Game</h3>
+        <p>Do you want to save your progress?</p>
+        <div class="exit-buttons">
+          <button id="btn-save-and-exit">Save & Exit</button>
+          <button id="btn-exit-no-save" class="btn-danger">Exit Without Saving</button>
+          <button id="btn-cancel-exit" class="btn-secondary">Cancel</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1228,78 +1269,84 @@
       </div>
       <div id="inventory-overlay" class="game-panel-overlay" aria-hidden="true">
         <div id="inventory-panel" role="dialog" aria-labelledby="inventory-title">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-          <h3 id="inventory-title" style="margin: 0;">🏕️ Base Camp</h3>
-          <button type="button" id="btn-close-inventory" style="padding: 4px 12px; margin: 0;">✕</button>
-        </div>
-        <div style="font-size: 11px; margin-bottom: 10px; opacity: 0.8;">
-          <div>Population: <span id="population-display">0/0</span></div>
-        </div>
-        <h4 style="margin: 10px 0 5px 0; font-size: 12px;">Resources</h4>
-        <div id="inventory-list" style="max-height: 400px; overflow-y: auto; font-size: 11px;"></div>
+          <div class="dialog-panel-body">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <h3 id="inventory-title" style="margin: 0;">🏕️ Base Camp</h3>
+              <button type="button" id="btn-close-inventory" style="padding: 4px 12px; margin: 0;">✕</button>
+            </div>
+            <div style="font-size: 11px; margin-bottom: 10px; opacity: 0.8;">
+              <div>Population: <span id="population-display">0/0</span></div>
+            </div>
+            <h4 style="margin: 10px 0 5px 0; font-size: 12px;">Resources</h4>
+            <div id="inventory-list" style="max-height: 400px; overflow-y: auto; font-size: 11px;"></div>
+          </div>
         </div>
       </div>
       <div id="building-menu-overlay" class="game-panel-overlay" aria-hidden="true">
         <div id="building-menu-panel" role="dialog" aria-labelledby="building-menu-title">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-          <h3 id="building-menu-title" style="margin: 0;">🏗️ Building Menu</h3>
-          <button type="button" id="btn-close-building-menu" style="padding: 4px 12px; margin: 0;">✕</button>
-        </div>
+          <div class="dialog-panel-body">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+              <h3 id="building-menu-title" style="margin: 0;">🏗️ Building Menu</h3>
+              <button type="button" id="btn-close-building-menu" style="padding: 4px 12px; margin: 0;">✕</button>
+            </div>
 
-        <div class="building-tabs">
-          <button type="button" id="tab-residential" class="tab-button">🏘️ Residential</button>
-          <button type="button" id="tab-production" class="tab-button active">🏭 Production</button>
-          <button type="button" id="tab-military" class="tab-button">🛡️ Military</button>
-          <button type="button" id="tab-infrastructure" class="tab-button">🏛️ Infrastructure</button>
-        </div>
+            <div class="building-tabs">
+              <button type="button" id="tab-residential" class="tab-button">🏘️ Residential</button>
+              <button type="button" id="tab-production" class="tab-button active">🏭 Production</button>
+              <button type="button" id="tab-military" class="tab-button">🛡️ Military</button>
+              <button type="button" id="tab-infrastructure" class="tab-button">🏛️ Infrastructure</button>
+            </div>
 
-        <div id="building-cards-container" class="building-cards-container">
-          <!-- Building cards will be inserted here dynamically -->
-        </div>
+            <div id="building-cards-container" class="building-cards-container">
+              <!-- Building cards will be inserted here dynamically -->
+            </div>
+          </div>
         </div>
       </div>
 
       <div id="options-overlay" class="game-panel-overlay" aria-hidden="true">
         <div id="options-panel" role="dialog" aria-labelledby="options-title">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-          <h3 id="options-title" style="margin: 0; font-size: 18px; color: #ffff00;">Options</h3>
-          <button type="button" id="btn-close-options" style="padding: 4px 12px; margin: 0;">&#10005;</button>
-        </div>
-        <div class="options-row">
-          <span class="options-label">Auto-save</span>
-          <label class="options-toggle">
-            <input type="checkbox" id="opt-autosave">
-            <span class="slider"></span>
-          </label>
-        </div>
-        <div class="options-row">
-          <span class="options-label">Show debug info</span>
-          <label class="options-toggle">
-            <input type="checkbox" id="opt-debug-info" checked>
-            <span class="slider"></span>
-          </label>
-        </div>
-        <div class="options-row">
-          <span class="options-label">Show building labels</span>
-          <label class="options-toggle">
-            <input type="checkbox" id="opt-building-labels" checked>
-            <span class="slider"></span>
-          </label>
-        </div>
-        <div class="options-row">
-          <span class="options-label">Show navigator</span>
-          <label class="options-toggle">
-            <input type="checkbox" id="opt-navigator" checked>
-            <span class="slider"></span>
-          </label>
-        </div>
-        <div class="options-row">
-          <span class="options-label">Sound effects</span>
-          <label class="options-toggle">
-            <input type="checkbox" id="opt-sound-effects" checked>
-            <span class="slider"></span>
-          </label>
-        </div>
+          <div class="dialog-panel-body">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+              <h3 id="options-title" style="margin: 0; font-size: 18px; color: #ffff00;">Options</h3>
+              <button type="button" id="btn-close-options" style="padding: 4px 12px; margin: 0;">&#10005;</button>
+            </div>
+            <div class="options-row">
+              <span class="options-label">Auto-save</span>
+              <label class="options-toggle">
+                <input type="checkbox" id="opt-autosave">
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="options-row">
+              <span class="options-label">Show debug info</span>
+              <label class="options-toggle">
+                <input type="checkbox" id="opt-debug-info" checked>
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="options-row">
+              <span class="options-label">Show building labels</span>
+              <label class="options-toggle">
+                <input type="checkbox" id="opt-building-labels" checked>
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="options-row">
+              <span class="options-label">Show navigator</span>
+              <label class="options-toggle">
+                <input type="checkbox" id="opt-navigator" checked>
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="options-row">
+              <span class="options-label">Sound effects</span>
+              <label class="options-toggle">
+                <input type="checkbox" id="opt-sound-effects" checked>
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
         </div>
       </div>
 

@@ -37,8 +37,11 @@ export class GamePopover {
     this.bodyEl = document.createElement('div');
     this.bodyEl.className = 'game-popover-body';
 
-    this.el.appendChild(this.headerEl);
-    this.el.appendChild(this.bodyEl);
+    const inner = document.createElement('div');
+    inner.className = 'dialog-panel-body';
+    inner.appendChild(this.headerEl);
+    inner.appendChild(this.bodyEl);
+    this.el.appendChild(inner);
     container.appendChild(this.el);
 
     this.escHandler = (e: KeyboardEvent) => {

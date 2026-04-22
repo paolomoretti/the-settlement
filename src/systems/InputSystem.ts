@@ -22,6 +22,8 @@ export class InputSystem {
   private spacebarPressed = false;
   private lastRoadBuildPos: { x: number; y: number } | null = null;
   private lastErasePos: { x: number; y: number } | null = null;
+  /** Last known Shift key (for straight road row while dragging). */
+  private shiftKeyHeld = false;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -47,9 +49,15 @@ export class InputSystem {
 
   private setupEventListeners(): void {
     // Mouse events
-    this.canvas.addEventListener('mousedown', (e) => this.handlePointerDown(e.clientX, e.clientY));
-    this.canvas.addEventListener('mousemove', (e) => this.handlePointerMove(e.clientX, e.clientY));
-    this.canvas.addEventListener('mouseup', (e) => this.handlePointerUp(e.clientX, e.clientY));
+    this.canvas.addEventListener('mousedown', (e) =>
+      this.handlePointerDown(e.clientX, e.clientY, e.shiftKey)
+    );
+    this.canvas.addEventListener('mousemove', (e) =>
+      this.handlePointerMove(e.clientX, e.clientY, e.shiftKey)
+    );
+    this.canvas.addEventListener('mouseup', (e) =>
+      this.handlePointerUp(e.clientX, e.clientY, e.shiftKey)
+    );
     this.canvas.addEventListener('wheel', (e) => this.handleWheel(e));
 
     // Touch events
@@ -66,8 +74,9 @@ export class InputSystem {
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
-  private handlePointerDown(clientX: number, clientY: number): void {
+  private handlePointerDown(clientX: number, clientY: number, shiftKey = false): void {
     this.hoverClientPos = { x: clientX, y: clientY };
+    this.shiftKeyHeld = shiftKey;
     this.isDragging = true;
     this.lastPos = { x: clientX, y: clientY };
 
@@ -77,10 +86,10 @@ export class InputSystem {
       return;
     }
 
-    const worldPos = this.renderSystem.screenToWorld(clientX, clientY);
+    const worldPos = this.renderSystem.clientToGrid(clientX, clientY);
     this.dragStartGridPos = {
-      x: Math.floor(worldPos.x),
-      y: Math.floor(worldPos.y)
+      x: worldPos.x,
+      y: worldPos.y
     };
 
     // Check if clicking on a selected entity to start dragging it
@@ -100,14 +109,33 @@ export class InputSystem {
     }
   }
 
-  private handlePointerMove(clientX: number, clientY: number): void {
+  private handlePointerMove(clientX: number, clientY: number, shiftKey = false): void {
     this.hoverClientPos = { x: clientX, y: clientY };
-    // Update hover position for build preview
-    const worldPos = this.renderSystem.screenToWorld(clientX, clientY);
-    this.hoverGridPos = {
-      x: Math.floor(worldPos.x),
-      y: Math.floor(worldPos.y)
-    };
+    this.shiftKeyHeld = shiftKey;
+
+    const raw = this.renderSystem.clientToGrid(clientX, clientY);
+    let gx = raw.x;
+    let gy = raw.y;
+
+    if (
+      this.isDragging &&
+      this.mode === 'build_road' &&
+      this.dragStartGridPos &&
+      shiftKey
+    ) {
+      const snapped = this.renderSystem.snapRoadHoverToAxisAlignedRow(
+        this.dragStartGridPos.x,
+        this.dragStartGridPos.y,
+        gx,
+        gy,
+        clientX,
+        clientY
+      );
+      gx = snapped.x;
+      gy = snapped.y;
+    }
+
+    this.hoverGridPos = { x: gx, y: gy };
 
     if (this.isDragging) {
       // Spacebar + drag = always pan camera (regardless of mode)
@@ -147,7 +175,8 @@ export class InputSystem {
     }
   }
 
-  private handlePointerUp(clientX: number, clientY: number): void {
+  private handlePointerUp(clientX: number, clientY: number, shiftKey = false): void {
+    this.shiftKeyHeld = shiftKey;
     // If spacebar was held, this was just panning - don't do anything else
     if (this.spacebarPressed) {
       this.canvas.style.cursor = 'grab';
@@ -157,9 +186,9 @@ export class InputSystem {
     }
 
     // Use the actual mouse position at release time, not lastPos (which gets modified during panning)
-    const worldPos = this.renderSystem.screenToWorld(clientX, clientY);
-    const gridX = Math.floor(worldPos.x);
-    const gridY = Math.floor(worldPos.y);
+    const worldPos = this.renderSystem.clientToGrid(clientX, clientY);
+    const gridX = worldPos.x;
+    const gridY = worldPos.y;
 
     if (this.isDragging) {
       if (this.mode === 'select') {
@@ -244,6 +273,21 @@ export class InputSystem {
 
   getMode(): InputMode {
     return this.mode;
+  }
+
+  /** True between pointer down and up (road / erase / drag). */
+  isPointerDragging(): boolean {
+    return this.isDragging;
+  }
+
+  getShiftKeyHeld(): boolean {
+    return this.shiftKeyHeld;
+  }
+
+  /** First cell of the current pointer gesture (road row anchor while dragging). */
+  getRoadDragAnchorGrid(): { x: number; y: number } | null {
+    if (this.mode !== 'build_road' || !this.isDragging || !this.dragStartGridPos) return null;
+    return { ...this.dragStartGridPos };
   }
 
   getHoverClientPos(): { x: number; y: number } | null {

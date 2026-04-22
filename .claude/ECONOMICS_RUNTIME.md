@@ -2,7 +2,7 @@
 
 How production, storage, and transport actually work at runtime. This is the **implemented** system — for design goals and balance theory, see [ECONOMY_DESIGN.md](ECONOMY_DESIGN.md).
 
-**Last Updated**: 2026-04-20
+**Last Updated**: 2026-04-22
 
 ---
 
@@ -32,8 +32,8 @@ Each production building has a `Production` component (`src/components/Productio
    - **Local storage mode** (buildings with inputs): check `storage.getFreeSpace()` against output total
    - **Output buffer mode** (buildings without inputs): check `production.hasBufferSpace()`
 4. Check inputs:
-   - **Local storage mode**: check if building's own Storage has required inputs
-   - **Output buffer mode**: check if global inventory has required inputs (via `ResourceManager`)
+   - **Local storage mode**: each input type must meet its `production.inputs` amount in the building's own `Storage` (all types at once — no timer until the full recipe is on site)
+   - **Output buffer mode**: `ResourceManager.hasAvailableInputsForProduction` — each input must have `getAvailableAmount(resource) >= amount` (global storages minus goods already reserved in the transport pickup queue), so a cycle does not start while the last ore is only en route to HQ
 5. If all checks pass, advance the production timer by `deltaTime`
 6. When timer reaches `productionTime`, one cycle completes:
    - **Local storage mode**: inputs consumed from building's Storage, outputs added to building's Storage
@@ -70,7 +70,9 @@ Example: A lumberjack produces 1 wood_log every 20 seconds. After 200 seconds wi
 
 Buildings with inputs (sawmill, bakery, iron smelter, etc.) consume resources from the **global inventory** — the sum of all Storage components across warehouses and base camp. Inputs are consumed at the moment production completes, not when it starts.
 
-If inputs become unavailable mid-cycle, the cycle pauses at completion time and the building enters `stopped_no_inputs`.
+**Multi-input buildings** (e.g. iron smelter, bakery, pig farm with local storage): production **starts** (timer advances) only when **every** required input is available under the rules above; see [Building Dependencies — Multi-input recipes](BUILDING_DEPENDENCIES.md#multi-input-recipes-all-types-before-production) for HQ dispatch pairing.
+
+If inputs become unavailable mid-cycle, the cycle pauses at completion time and the building enters `stopped_no_inputs`. `applyProductionCycleOutputs` also re-checks `hasAvailableInputsForProduction` before deducting for output-buffer buildings.
 
 ---
 

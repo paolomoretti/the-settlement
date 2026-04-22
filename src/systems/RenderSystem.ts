@@ -77,6 +77,16 @@ const CONSTRUCTION_SPRITES: Record<string, string[]> = {
     '/assets/buildings/farm_build_1.png',
     '/assets/buildings/farm_build_2.png',
   ],
+  pig_farm: [
+    '/assets/buildings/pig_farm_build_0.png',
+    '/assets/buildings/pig_farm_build_1.png',
+    '/assets/buildings/pig_farm_build_2.png',
+  ],
+  slaughterhouse: [
+    '/assets/buildings/slaughterhouse_build_0.png',
+    '/assets/buildings/slaughterhouse_build_1.png',
+    '/assets/buildings/slaughterhouse_build_2.png',
+  ],
 };
 
 // Production phase sprites per building type (shown only while actively producing).
@@ -100,7 +110,15 @@ export class RenderSystem extends System {
   private canvas: HTMLCanvasElement;
   private iso: Isometric;
   private camera = { x: 0, y: 0, zoom: 1 };
-  public buildPreview: { mode: string; gridX: number; gridY: number } | null = null;
+  public buildPreview: {
+    mode: string;
+    gridX: number;
+    gridY: number;
+    /** Straight row preview (Shift + road drag): all tiles that would be built. */
+    roadLineTiles?: { x: number; y: number }[];
+    /** Locked while dragging a road stroke; otherwise inferred from tile under cursor (matches `Game.buildRoad`). */
+    roadDragIntent?: 'create' | 'delete';
+  } | null = null;
   public selectedEntityId: number | null = null;
   public dragPreviewPosition: { x: number; y: number } | null = null;
   private terrainTextures: TerrainTextures;
@@ -165,6 +183,8 @@ export class RenderSystem extends System {
       '/assets/buildings/sawmill.png',
       '/assets/buildings/quarry.png',
       '/assets/buildings/farm.png',
+      '/assets/buildings/pig_farm.png',
+      '/assets/buildings/slaughterhouse.png',
       '/assets/buildings/house.png',
     ];
     for (const stages of Object.values(CONSTRUCTION_SPRITES)) {
@@ -468,11 +488,17 @@ export class RenderSystem extends System {
     }
   }
 
-  private renderBuildPreview(preview: { mode: string; gridX: number; gridY: number }): void {
-    const { mode, gridX, gridY } = preview;
+  private renderBuildPreview(preview: {
+    mode: string;
+    gridX: number;
+    gridY: number;
+    roadLineTiles?: { x: number; y: number }[];
+    roadDragIntent?: 'create' | 'delete';
+  }): void {
+    const { mode, gridX, gridY, roadLineTiles, roadDragIntent } = preview;
 
     if (mode === 'build_road') {
-      this.renderRoadPreview(gridX, gridY);
+      this.renderRoadPreview(gridX, gridY, roadLineTiles, roadDragIntent ?? 'create');
       return;
     }
 
@@ -649,31 +675,183 @@ export class RenderSystem extends System {
     }
   }
 
-  private renderRoadPreview(gridX: number, gridY: number): void {
-    const tile = this.tileMap.getTile(gridX, gridY);
-    const isExistingRoad = tile && tile.hasRoad && !tile.isOccupied();
-    const canBuild = tile && tile.walkable && !tile.isOccupied() && !tile.hasRoad;
-    const corners = this.iso.getTileCorners(gridX, gridY);
+  private renderRoadPreview(
+    gridX: number,
+    gridY: number,
+    roadLineTiles: { x: number; y: number }[] | undefined,
+    roadDragIntent: 'create' | 'delete'
+  ): void {
+    const addKeys = new Set<string>();
+    const removeKeys = new Set<string>();
 
+    if (roadDragIntent === 'delete') {
+      removeKeys.add(`${gridX},${gridY}`);
+    } else {
+      const tiles =
+        roadLineTiles && roadLineTiles.length > 0
+          ? roadLineTiles
+          : [{ x: gridX, y: gridY }];
+      for (const t of tiles) {
+        addKeys.add(`${t.x},${t.y}`);
+      }
+    }
+
+    const topologyKeys = this.collectRoadTopologyPreviewKeys(addKeys, removeKeys);
+
+    // Ghost road atlas on preview topology (neighbors included so T-junctions read correctly).
+    // Only tiles in `addKeys` are visually emphasized (rim below); neighbor overlays stay softer.
+    for (const key of topologyKeys) {
+      const [x, y] = key.split(',').map(Number);
+      if (!this.tileMap.isInBounds(x, y)) continue;
+      if (!this.effectiveRoadForPreview(x, y, addKeys, removeKeys)) continue;
+      const mask = this.getRoadMaskForPreview(x, y, addKeys, removeKeys);
+      const center = this.iso.gridToScreen(x, y);
+      const inAdd = addKeys.has(key);
+      let alpha: number;
+      if (roadDragIntent === 'delete') {
+        alpha = 0.88;
+      } else {
+        alpha = inAdd ? 0.94 : 0.74;
+      }
+      this.ctx.save();
+      this.ctx.globalAlpha = alpha;
+      this.terrainTextures.drawRoad(this.ctx, mask, center.x, center.y);
+      this.ctx.restore();
+    }
+
+    // Gold rim only on tiles you are placing (hover or shift row), not on adjacent retiles.
+    if (roadDragIntent === 'create') {
+      for (const key of addKeys) {
+        const [x, y] = key.split(',').map(Number);
+        if (!this.tileMap.isInBounds(x, y)) continue;
+        if (!this.effectiveRoadForPreview(x, y, addKeys, removeKeys)) continue;
+        const corners = this.iso.getTileCorners(x, y);
+        this.ctx.beginPath();
+        this.ctx.moveTo(corners[0].x, corners[0].y);
+        corners.forEach(c => this.ctx.lineTo(c.x, c.y));
+        this.ctx.closePath();
+        this.ctx.strokeStyle = 'rgba(255, 224, 150, 0.92)';
+        this.ctx.lineWidth = 2.6;
+        this.ctx.lineJoin = 'round';
+        this.ctx.stroke();
+      }
+    }
+
+    if (roadDragIntent === 'create') {
+      for (const key of addKeys) {
+        const [x, y] = key.split(',').map(Number);
+        if (!this.tileMap.isInBounds(x, y)) continue;
+        if (this.canPreviewAddRoadAt(x, y)) continue;
+        this.strokeRoadPreviewInvalidTile(x, y);
+      }
+    } else {
+      this.strokeRoadPreviewDeleteTarget(gridX, gridY);
+    }
+  }
+
+  private collectRoadTopologyPreviewKeys(
+    addKeys: Set<string>,
+    removeKeys: Set<string>
+  ): Set<string> {
+    const out = new Set<string>();
+    const add = (gx: number, gy: number): void => {
+      if (!this.tileMap.isInBounds(gx, gy)) return;
+      out.add(`${gx},${gy}`);
+      const neigh: [number, number][] = [
+        [gx - 1, gy],
+        [gx, gy - 1],
+        [gx + 1, gy],
+        [gx, gy + 1],
+      ];
+      for (const [nx, ny] of neigh) {
+        if (this.tileMap.isInBounds(nx, ny)) out.add(`${nx},${ny}`);
+      }
+    };
+    for (const k of addKeys) {
+      const [sx, sy] = k.split(',').map(Number);
+      add(sx, sy);
+    }
+    for (const k of removeKeys) {
+      const [sx, sy] = k.split(',').map(Number);
+      add(sx, sy);
+    }
+    return out;
+  }
+
+  /** Same placement rules as `TileMap.buildRoad` + fog (preview only). */
+  private canPreviewAddRoadAt(x: number, y: number): boolean {
+    const tile = this.tileMap.getTile(x, y);
+    return !!(
+      tile &&
+      tile.isExplored() &&
+      !tile.hasRoad &&
+      tile.terrain !== 'water' &&
+      tile.terrain !== 'mountain' &&
+      !tile.isOccupied()
+    );
+  }
+
+  private effectiveRoadForPreview(
+    x: number,
+    y: number,
+    addKeys: Set<string>,
+    removeKeys: Set<string>
+  ): boolean {
+    const key = `${x},${y}`;
+    const tile = this.tileMap.getTile(x, y);
+    if (!tile) return false;
+    if (removeKeys.has(key)) return false;
+    if (addKeys.has(key)) {
+      if (tile.hasRoad && !tile.isOccupied()) return true;
+      return this.canPreviewAddRoadAt(x, y);
+    }
+    return !!tile.hasRoad;
+  }
+
+  private getRoadMaskForPreview(
+    gx: number,
+    gy: number,
+    addKeys: Set<string>,
+    removeKeys: Set<string>
+  ): number {
+    const hasRoadAt = (nx: number, ny: number): boolean =>
+      this.effectiveRoadForPreview(nx, ny, addKeys, removeKeys);
+    let config = 0;
+    if (hasRoadAt(gx - 1, gy)) config |= 1;
+    if (hasRoadAt(gx, gy - 1)) config |= 2;
+    if (hasRoadAt(gx + 1, gy)) config |= 4;
+    if (hasRoadAt(gx, gy + 1)) config |= 8;
+    return config;
+  }
+
+  private strokeRoadPreviewInvalidTile(gridX: number, gridY: number): void {
+    const corners = this.iso.getTileCorners(gridX, gridY);
     this.ctx.beginPath();
     this.ctx.moveTo(corners[0].x, corners[0].y);
-    corners.forEach(corner => this.ctx.lineTo(corner.x, corner.y));
+    corners.forEach(c => this.ctx.lineTo(c.x, c.y));
     this.ctx.closePath();
-
-    if (isExistingRoad) {
-      this.ctx.fillStyle = 'rgba(200, 50, 50, 0.35)';
-      this.ctx.fill();
-      this.ctx.strokeStyle = 'rgba(200, 50, 50, 0.9)';
-    } else if (canBuild) {
-      this.ctx.fillStyle = 'rgba(196, 165, 114, 0.7)';
-      this.ctx.fill();
-      this.ctx.strokeStyle = 'rgba(166, 138, 90, 0.9)';
-    } else {
-      this.ctx.fillStyle = 'rgba(200, 50, 50, 0.5)';
-      this.ctx.fill();
-      this.ctx.strokeStyle = 'rgba(200, 50, 50, 0.9)';
-    }
+    this.ctx.fillStyle = 'rgba(200, 50, 50, 0.22)';
+    this.ctx.fill();
+    this.ctx.strokeStyle = 'rgba(200, 50, 50, 0.85)';
     this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+  }
+
+  private strokeRoadPreviewDeleteTarget(gridX: number, gridY: number): void {
+    const tile = this.tileMap.getTile(gridX, gridY);
+    if (!tile || !tile.hasRoad || tile.isOccupied()) {
+      this.strokeRoadPreviewInvalidTile(gridX, gridY);
+      return;
+    }
+    const corners = this.iso.getTileCorners(gridX, gridY);
+    this.ctx.beginPath();
+    this.ctx.moveTo(corners[0].x, corners[0].y);
+    corners.forEach(c => this.ctx.lineTo(c.x, c.y));
+    this.ctx.closePath();
+    this.ctx.fillStyle = 'rgba(220, 60, 60, 0.18)';
+    this.ctx.fill();
+    this.ctx.strokeStyle = 'rgba(255, 120, 110, 0.95)';
+    this.ctx.lineWidth = 2.5;
     this.ctx.stroke();
   }
 
@@ -2862,10 +3040,59 @@ export class RenderSystem extends System {
     this.camera.y = screenY - worldY * newZoom;
   }
 
-  screenToWorld(screenX: number, screenY: number): { x: number; y: number } {
-    const worldX = (screenX - this.camera.x) / this.camera.zoom;
-    const worldY = (screenY - this.camera.y) / this.camera.zoom;
-    return this.iso.screenToGrid(worldX, worldY);
+  /**
+   * Canvas buffer coordinates (0 … canvas.width/height) → grid cell.
+   * For browser pointer coordinates use `clientToGrid`.
+   */
+  screenToWorld(canvasX: number, canvasY: number): { x: number; y: number } {
+    const worldX = (canvasX - this.camera.x) / this.camera.zoom;
+    const worldY = (canvasY - this.camera.y) / this.camera.zoom;
+    return this.iso.screenToGridNearest(worldX, worldY);
+  }
+
+  /** Viewport client coordinates → canvas pixels → nearest grid cell. */
+  clientToGrid(clientX: number, clientY: number): { x: number; y: number } {
+    const { x: canvasX, y: canvasY } = this.clientToCanvas(clientX, clientY);
+    return this.screenToWorld(canvasX, canvasY);
+  }
+
+  private clientToCanvas(clientX: number, clientY: number): { x: number; y: number } {
+    const rect = this.canvas.getBoundingClientRect();
+    const scaleX = this.canvas.width / Math.max(rect.width, 1e-6);
+    const scaleY = this.canvas.height / Math.max(rect.height, 1e-6);
+    return {
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY,
+    };
+  }
+
+  /** Pointer in iso world plane (before camera), for road-row snapping. */
+  pointerToIsoWorld(clientX: number, clientY: number): { wx: number; wy: number } {
+    const { x: canvasX, y: canvasY } = this.clientToCanvas(clientX, clientY);
+    return {
+      wx: (canvasX - this.camera.x) / this.camera.zoom,
+      wy: (canvasY - this.camera.y) / this.camera.zoom,
+    };
+  }
+
+  /**
+   * Lock free hover to horizontal or vertical row from anchor (same x or same y),
+   * picking whichever axis passes closer to the pointer in screen space.
+   */
+  snapRoadHoverToAxisAlignedRow(
+    anchorX: number,
+    anchorY: number,
+    hoverX: number,
+    hoverY: number,
+    clientX: number,
+    clientY: number
+  ): { x: number; y: number } {
+    const { wx, wy } = this.pointerToIsoWorld(clientX, clientY);
+    const h = this.iso.gridToScreen(hoverX, anchorY);
+    const v = this.iso.gridToScreen(anchorX, hoverY);
+    const dh = (h.x - wx) ** 2 + (h.y - wy) ** 2;
+    const dv = (v.x - wx) ** 2 + (v.y - wy) ** 2;
+    return dh <= dv ? { x: hoverX, y: anchorY } : { x: anchorX, y: hoverY };
   }
 
   gridToScreen(gridX: number, gridY: number): { x: number; y: number } {

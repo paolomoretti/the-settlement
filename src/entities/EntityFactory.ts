@@ -82,6 +82,8 @@ export function createBuilding(
     fisher: '/assets/buildings/fisher.png',
     well: '/assets/buildings/well.png',
     farm: '/assets/buildings/farm.png',
+    pig_farm: '/assets/buildings/pig_farm.png',
+    slaughterhouse: '/assets/buildings/slaughterhouse.png',
   };
   const spritePath = SPRITE_PATHS[buildingType];
 

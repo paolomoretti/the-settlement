@@ -2,7 +2,7 @@
 
 How production buildings with inputs receive materials and produce outputs. This covers the local storage model and the demand-based transport routing system.
 
-**Last Updated**: 2026-04-19
+**Last Updated**: 2026-04-22
 
 ---
 
@@ -69,6 +69,21 @@ When a building has `isProductionStorage`, the `ProductionSystem` switches to lo
 2. **Check inputs**: each input type must exist in local Storage in sufficient quantity
 3. **Consume inputs**: `storage.removeItem(inputResource, amount)` (not global inventory)
 4. **Produce outputs**: `storage.addItem(outputResource, amount)` (not outputBuffer)
+
+### Multi-input recipes (all types before production)
+
+If `production.inputs` lists **more than one** resource type (e.g. pig farm: grain + water), the building **does not advance the production timer** until **every** type is present in local `Storage` in at least the configured amount for one cycle (same check as step 2 — no “half batch” while waiting for the second input).
+
+**HQ →building dispatch (`Game.tryDispatchHqProductionInputsForBuilding`)** uses the same rule for **what may leave headquarters**: for each unit considered for shipment, `Game.canDispatchHqProductionInputForMultiRecipe` blocks pulling resource `R` from HQ if some *other* input `T` still has a shortfall (required amount minus what is already in the building’s storage **plus** units already **in transit** to that building) and HQ does not hold enough `T` to cover that shortfall. That way the pipe is not flooded with only grain when there is no water to pair it with. Single-input buildings are unchanged (`inputTypes.length <= 1` bypasses the gate).
+
+Related helpers: `Game.countInTransitToBuildingForResource`, `ResourceManager.hasAvailableInputsForProduction` (global / output-buffer buildings).
+
+### Input headroom (multi-input local storage)
+
+A full shared store must still leave **physical slots** for every other ingredient that has not yet reached its recipe amount. `Game.canAddProductionInputToLocalStorage` enforces: remaining free space (capacity − stored − all in-flight to this building) minus the **new** occupancy from this shipment must be **≥** the largest shortfall among **other** inputs (`need[O] − pipeline(O)`). For **HQ→junction** spawns, the shipment is not yet in `countInTransitToBuilding`, so the “new occupancy” term subtracts `amount`. For **worker drop-off**, the carried unit is **already** counted in transit, so pass `incomingAlreadyInTransit: true` — otherwise free space is double-counted and valid water (etc.) bounces back to HQ.
+
+- **HQ dispatch** and **worker drop-off** to the building both call this check; otherwise the item is not sent / is bounced to the base camp as a junction item toward HQ.
+- **`rescueStuckMultiInputProductionStorage`** (runs on the same throttled pass as HQ input recheck) fixes legacy saves: if the recipe is still incomplete, the store is full, and there is not enough free space for the largest remaining shortfall, it removes one unit at a time from the most over-stocked **input** (above its recipe line), then if needed from **output-only** stacks, and spawns each unit at the camp entrance for HQ.
 
 ### Status Mapping
 

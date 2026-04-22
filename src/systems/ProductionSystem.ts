@@ -31,6 +31,15 @@ export function applyProductionCycleOutputs(entity: Entity): void {
     }
   } else {
     if (production.hasInputs()) {
+      if (!resourceManager.hasAvailableInputsForProduction(production.inputs)) {
+        production.status = 'stopped_no_inputs';
+        production.timer = 0;
+        eventBus.emit('production:stopped', {
+          entityId: entity.id,
+          reason: 'no_inputs',
+        });
+        return;
+      }
       const consumed = resourceManager.consumeInputsForProduction(production.inputs);
       if (!consumed) {
         production.status = 'stopped_no_inputs';
@@ -175,7 +184,10 @@ export class ProductionSystem extends System {
           building.outOfMapResources = false;
           continue;
         }
-      } else if (production.hasInputs() && !resourceManager.canAfford(production.inputs)) {
+      } else if (
+        production.hasInputs() &&
+        !resourceManager.hasAvailableInputsForProduction(production.inputs)
+      ) {
         if (production.status !== 'stopped_no_inputs') {
           production.status = 'stopped_no_inputs';
           eventBus.emit('production:stopped', {

@@ -64,6 +64,19 @@ export class ResourceManager {
     return true;
   }
 
+  /**
+   * True when every listed input can be satisfied from storages **minus** goods already reserved
+   * in the transport pickup queue (`getAvailableAmount`). Use for production gating so a cycle does
+   * not start when e.g. all grain is still en route to HQ.
+   */
+  hasAvailableInputsForProduction(inputs: Record<string, number>): boolean {
+    for (const [resource, amount] of Object.entries(inputs)) {
+      if (amount <= 0) continue;
+      if (this.getAvailableAmount(resource) < amount) return false;
+    }
+    return true;
+  }
+
   deductResources(costs: Record<string, number>): boolean {
     if (!this.canAfford(costs)) return false;
 

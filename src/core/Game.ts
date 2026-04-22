@@ -29,6 +29,7 @@ import { createWorker, createBuilding, createBaseCamp } from '@/entities/EntityF
 import { GameWorkerRegistry } from '@/workers';
 import { isInsightAltHeld } from '@/input/InsightAltKey';
 import { isInsightRockTile } from '@/ui/hoverInsight/buildHoverLines';
+import { axisAlignedGridLine } from '@/utils/gridLine';
 
 export class Game {
   private entities: Entity[] = [];
@@ -947,6 +948,185 @@ export class Game {
     return inTransit;
   }
 
+  /** In-transit units of a specific resource bound for this building (junction, visuals, road workers). */
+  private countInTransitToBuildingForResource(destEntityId: number, resourceType: string): number {
+    let n = 0;
+
+    for (const [, items] of transportManager.getJunctionItemsMap()) {
+      for (const item of items) {
+        if (item.destinationEntityId === destEntityId && item.resourceType === resourceType) {
+          n++;
+        }
+      }
+    }
+
+    for (const [, items] of transportManager.getPendingPickupVisualsMap()) {
+      for (const item of items) {
+        if (item.destinationEntityId === destEntityId && item.resourceType === resourceType) {
+          n++;
+        }
+      }
+    }
+
+    for (const seg of roadSegmentManager.getSegments()) {
+      if (seg.assignedWorkerId === null) continue;
+      const workerEntity = this.entities.find(e => e.id === seg.assignedWorkerId && e.active);
+      if (!workerEntity) continue;
+      const worker = workerEntity.getComponent(Worker);
+      const task = worker?.transportTask;
+      if (
+        task &&
+        task.destEntityId === destEntityId &&
+        task.resourceType === resourceType
+      ) {
+        if (task.phase === 'to_dropoff') {
+          n++;
+        } else if (task.phase === 'to_pickup' && task.sourceEntityId != null) {
+          n++;
+        }
+      }
+    }
+
+    return n;
+  }
+
+  /**
+   * For multi-input recipes, do not pull `res` from HQ unless every other input type either already
+   * satisfies its per-cycle amount in the building (plus in-flight to it) or HQ still holds enough
+   * of that type to cover the remainder. Prevents filling local storage with only grain when water
+   * is missing.
+   */
+  private canDispatchHqProductionInputForMultiRecipe(
+    entityId: number,
+    storage: Storage,
+    hqStorage: Storage,
+    inputs: Record<string, number>,
+    res: string
+  ): boolean {
+    const types = Object.keys(inputs).filter(k => (inputs[k] ?? 0) > 0);
+    if (types.length <= 1) return true;
+
+    const pipeline = (t: string) =>
+      storage.getAmount(t) + this.countInTransitToBuildingForResource(entityId, t);
+
+    for (const other of types) {
+      if (other === res) continue;
+      const need = inputs[other] ?? 0;
+      if (need <= 0) continue;
+      const shortfall = Math.max(0, need - pipeline(other));
+      if (shortfall <= 0) continue;
+      if (hqStorage.getAmount(other) < shortfall) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * For multi-input local storage, refuse a delivery that would leave less free space than another
+   * input still needs to reach its recipe amount (prevents filling the whole store with grain when
+   * water still has to fit).
+   *
+   * @param incomingAlreadyInTransit — when true, `amount` is already included in
+   *   `countInTransitToBuilding` (worker at drop-off). Do not subtract `amount` again from free
+   *   space or we reject valid deliveries (e.g. last water unit while grain fills the rest).
+   */
+  private canAddProductionInputToLocalStorage(
+    entity: Entity,
+    storage: Storage,
+    production: Production | null,
+    resourceType: string,
+    amount: number,
+    incomingAlreadyInTransit: boolean = false
+  ): boolean {
+    if (!production?.hasInputs() || !storage.isProductionStorage) return true;
+
+    const inputs = production.inputs;
+    const types = Object.keys(inputs).filter(k => (inputs[k] ?? 0) > 0);
+    if (types.length <= 1) return true;
+
+    const inFlight = this.countInTransitToBuilding(entity.id);
+    const freeEff = storage.capacity - storage.getTotalStored() - inFlight;
+
+    if (incomingAlreadyInTransit) {
+      if (freeEff < 0) return false;
+    } else if (freeEff < amount) {
+      return false;
+    }
+
+    const freeAfterAccept = incomingAlreadyInTransit ? freeEff : freeEff - amount;
+
+    const pipeline = (t: string) =>
+      storage.getAmount(t) + this.countInTransitToBuildingForResource(entity.id, t);
+
+    let maxOtherShortfall = 0;
+    for (const o of types) {
+      if (o === resourceType) continue;
+      maxOtherShortfall = Math.max(
+        maxOtherShortfall,
+        Math.max(0, (inputs[o] ?? 0) - pipeline(o))
+      );
+    }
+    return freeAfterAccept >= maxOtherShortfall;
+  }
+
+  /**
+   * If a multi-input building is full but the recipe cannot run (missing another input), eject one
+   * unit at a time from the most over-stocked type toward HQ until there is enough headroom.
+   */
+  private rescueStuckMultiInputProductionStorage(entity: Entity): void {
+    const storage = entity.getComponent(Storage);
+    const production = entity.getComponent(Production);
+    const building = entity.getComponent(Building);
+    if (!storage?.isProductionStorage || !production?.hasInputs() || !building?.isComplete() || !building.isActive) {
+      return;
+    }
+
+    const inputs = production.inputs;
+    const types = Object.keys(inputs).filter(k => (inputs[k] ?? 0) > 0);
+    if (types.length <= 1) return;
+
+    if (types.every(t => storage.getAmount(t) >= (inputs[t] ?? 0))) return;
+
+    const maxShortfall = () =>
+      Math.max(0, ...types.map(t => Math.max(0, (inputs[t] ?? 0) - storage.getAmount(t))));
+
+    if (storage.getFreeSpace() >= maxShortfall()) return;
+
+    const spawnTile = this.workers.getBaseCampSpawnTile();
+    if (!spawnTile || !this.baseCampEntity) return;
+
+    let ejected = false;
+    while (storage.getFreeSpace() < maxShortfall()) {
+      let victim: string | null = null;
+      let bestScore = 0;
+      for (const t of types) {
+        const excess = storage.getAmount(t) - (inputs[t] ?? 0);
+        if (excess > bestScore) {
+          bestScore = excess;
+          victim = t;
+        }
+      }
+      if (bestScore <= 0) {
+        for (const t of Object.keys(storage.items)) {
+          if (types.includes(t)) continue;
+          const n = storage.getAmount(t);
+          if (n > bestScore) {
+            bestScore = n;
+            victim = t;
+          }
+        }
+      }
+      if (!victim || bestScore <= 0) break;
+      if (storage.removeItem(victim, 1) < 1) break;
+      transportManager.addJunctionItem(spawnTile.x, spawnTile.y, victim, this.baseCampEntity.id);
+      ejected = true;
+    }
+    if (ejected) {
+      eventBus.emit('resource:updated');
+    }
+  }
+
   /** Pull HQ inventory onto the base-camp spawn junction for production buildings with local input storage. */
   private tryDispatchHqProductionInputsForBuilding(entity: Entity): void {
     if (!this.baseCampEntity) return;
@@ -977,6 +1157,20 @@ export class Game {
         if (dispatchSlots <= 0) break;
         if (hqStorage.getAmount(res) <= 0) continue;
         if (!storage.canAccept(res)) continue;
+        if (
+          !this.canDispatchHqProductionInputForMultiRecipe(
+            entity.id,
+            storage,
+            hqStorage,
+            production.inputs,
+            res
+          )
+        ) {
+          continue;
+        }
+        if (!this.canAddProductionInputToLocalStorage(entity, storage, production, res, 1)) {
+          continue;
+        }
         hqStorage.removeItem(res, 1);
         transportManager.addJunctionItem(spawnTile.x, spawnTile.y, res, entity.id);
         dispatchSlots--;
@@ -998,6 +1192,7 @@ export class Game {
 
     for (const entity of this.entities) {
       if (!entity.active) continue;
+      this.rescueStuckMultiInputProductionStorage(entity);
       this.tryDispatchHqProductionInputsForBuilding(entity);
     }
   }
@@ -1257,7 +1452,19 @@ export class Game {
                 }
               } else {
                 const destStorage = destEntity.getComponent(Storage);
-                if (destStorage && destStorage.canAccept(res)) {
+                const destProduction = destEntity.getComponent(Production);
+                if (
+                  destStorage &&
+                  destStorage.canAccept(res) &&
+                  this.canAddProductionInputToLocalStorage(
+                    destEntity,
+                    destStorage,
+                    destProduction ?? null,
+                    res,
+                    1,
+                    true
+                  )
+                ) {
                   destStorage.addItem(res, 1);
                 } else {
                   transportManager.addJunctionItem(task.dropoffPos.x, task.dropoffPos.y, res, this.baseCampEntity?.id ?? null);
@@ -1419,10 +1626,30 @@ export class Game {
     // Update build preview based on input mode and hover position
     const mode = this.inputSystem.getMode();
     if (mode !== 'view' && mode !== 'select' && this.inputSystem.hoverGridPos) {
+      const gx = this.inputSystem.hoverGridPos.x;
+      const gy = this.inputSystem.hoverGridPos.y;
+      let roadLineTiles: { x: number; y: number }[] | undefined;
+      let roadDragIntent: 'create' | 'delete' | undefined;
+      if (mode === 'build_road') {
+        const t = this.tileMap.getTile(gx, gy);
+        const isExistingRoad = !!(t && t.hasRoad && !t.isOccupied());
+        roadDragIntent = this.roadDragMode ?? (isExistingRoad ? 'delete' : 'create');
+        if (
+          this.inputSystem.isPointerDragging() &&
+          this.inputSystem.getShiftKeyHeld()
+        ) {
+          const anchor = this.inputSystem.getRoadDragAnchorGrid();
+          if (anchor && (anchor.x !== gx || anchor.y !== gy)) {
+            roadLineTiles = axisAlignedGridLine(anchor.x, anchor.y, gx, gy);
+          }
+        }
+      }
       this.renderSystem.buildPreview = {
         mode,
-        gridX: this.inputSystem.hoverGridPos.x,
-        gridY: this.inputSystem.hoverGridPos.y
+        gridX: gx,
+        gridY: gy,
+        roadLineTiles,
+        roadDragIntent
       };
     } else {
       this.renderSystem.buildPreview = null;

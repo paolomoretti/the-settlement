@@ -30,6 +30,36 @@ export class Isometric {
     };
   }
 
+  /**
+   * Nearest tile center in world/iso plane (same space as `gridToScreen`).
+   * Fixes off-by-one hover at diamond edges vs plain `floor` of the inverse map.
+   */
+  screenToGridNearest(screenX: number, screenY: number): Point {
+    const tw = this.tileWidth / 2;
+    const th = this.tileHeight / 2;
+    const fx = (screenX / tw + screenY / th) / 2;
+    const fy = (screenY / th - screenX / tw) / 2;
+    const i0 = Math.floor(fx);
+    const j0 = Math.floor(fy);
+    let bestX = i0;
+    let bestY = j0;
+    let bestD = Infinity;
+    for (let di = -1; di <= 1; di++) {
+      for (let dj = -1; dj <= 1; dj++) {
+        const ix = i0 + di;
+        const iy = j0 + dj;
+        const c = this.gridToScreen(ix, iy);
+        const d = (c.x - screenX) ** 2 + (c.y - screenY) ** 2;
+        if (d < bestD) {
+          bestD = d;
+          bestX = ix;
+          bestY = iy;
+        }
+      }
+    }
+    return { x: bestX, y: bestY };
+  }
+
   // Get the four corner points of a tile in screen space
   getTileCorners(gridX: number, gridY: number): Point[] {
     const center = this.gridToScreen(gridX, gridY);

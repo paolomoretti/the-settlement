@@ -58,8 +58,15 @@ Animation workers are cleaned up on:
 - Save load (`loadSaveData`)
 - Worker entity disappearing (e.g., bug)
 
+### Map gather range and “out of resources”
+
+- **`production.maxGatherRadius`** — search box radius (Manhattan) from the building **entrance** for candidate trees, rock, or water tiles.
+- **`production.maxGatherWalkCells`** — max **off-road path steps** (`findOffRoadPath` length) from entrance to a candidate; defaults to `maxGatherRadius` or animation `searchRadius` if omitted.
+- Candidates are tried in **order of increasing Manhattan distance** so a nearer tile with a short path wins over a farther tile with a long path.
+- If **no** candidate has a path within the walk limit, `Building.outOfMapResources` is set, **production time is paused** (lumberjack / quarry / fisher), the **building popover** shows an extra warning under the description, and an **orange X** bobs above the roof in `RenderSystem`. A successful spawn clears the flag.
+
 ### Edge Cases
-- **No trees nearby**: no worker spawns, production still completes normally
+- **No reachable map sources** (nothing in radius, depleted rock/fish, or path longer than `maxGatherWalkCells`): no worker spawns; production pauses until terrain changes or limits are adjusted in `buildings.json`.
 - **Building deleted while worker out**: worker entity removed, reserved tree released
 - **Worker returns before timer**: fine — sits idle until next cycle
 - **Worker still out when timer completes**: fine — output added normally, worker returns whenever

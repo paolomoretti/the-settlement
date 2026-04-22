@@ -919,10 +919,33 @@ export class RenderSystem extends System {
     return pos.x + pos.y;
   }
 
+  /**
+   * Depth used for ordering and diagonal buckets. Must match `compareEntityDrawOrder`.
+   *
+   * **Footprint awareness (buildings):** We sort each building using one number: the grid
+   * `x+y` of its **front** (south-most) footprint tile — same as `pos + width + height - 2`
+   * from the placement anchor. The PNG also draws **upward** in pixels; that does not change
+   * ground depth (things “above” the base don’t need a separate z unless we split the mesh).
+   *
+   * **Workers vs that metric:** `Position` is interpolated along paths, so `pos.x+pos.y` can
+   * stay a fraction **behind** the façade while the sprite is already on a **forward** tile
+   * (larger `x+y` = lower on screen in this projection). We therefore clamp walker sort depth
+   * to at least the **south-east step** of the tile they are standing in: `floor(x)+floor(y)+1`.
+   * That matches “lower on screen ⇒ drawn later” with how buildings are keyed.
+   */
+  private getEntityDrawDepthForSort(entity: Entity): number {
+    const base = this.getEntityDrawDepthFloat(entity);
+    if (!entity.hasComponent(Worker)) return base;
+    const pos = entity.getComponent(Position);
+    if (!pos) return base;
+    const southCellSum = Math.floor(pos.x) + Math.floor(pos.y) + 1;
+    return Math.max(base, southCellSum);
+  }
+
   /** Primary: float depth; tie: workers render after buildings so carriers are not hidden by facades. */
   private compareEntityDrawOrder(a: Entity, b: Entity): number {
-    const da = this.getEntityDrawDepthFloat(a);
-    const db = this.getEntityDrawDepthFloat(b);
+    const da = this.getEntityDrawDepthForSort(a);
+    const db = this.getEntityDrawDepthForSort(b);
     if (da < db) return -1;
     if (da > db) return 1;
     const wa = a.hasComponent(Worker);
@@ -952,10 +975,10 @@ export class RenderSystem extends System {
       else blocksByDepth.set(depth, [block]);
     }
 
-    // Index entities by integer depth slice (floor of float depth, aligned with tile x+y)
+    // Index entities by integer depth slice (floor of sort depth — must match compareEntityDrawOrder)
     const entitiesByDepth = new Map<number, Entity[]>();
     for (const entity of sortedEntities) {
-      const d = Math.floor(this.getEntityDrawDepthFloat(entity));
+      const d = Math.floor(this.getEntityDrawDepthForSort(entity));
       const list = entitiesByDepth.get(d);
       if (list) {
         list.push(entity);
@@ -1814,8 +1837,41 @@ export class RenderSystem extends System {
           this.renderProductionBubble(building, production, false);
         }
       }
+      if (
+        building.isActive &&
+        building.outOfMapResources &&
+        (building.buildingType === 'lumberjack' ||
+          building.buildingType === 'quarry' ||
+          building.buildingType === 'fisher')
+      ) {
+        this.renderMapResourcesExhaustedMarker(building);
+      }
     }
 
+    this.ctx.restore();
+  }
+
+  /** Orange X above roof when lumberjack / quarry / fisher cannot reach any map source. */
+  private renderMapResourcesExhaustedMarker(building: Building): void {
+    const tileW = this.iso.tileWidth;
+    const tileH = this.iso.tileHeight;
+    const centerX = ((building.width - building.height) * tileW) / 4;
+    const centerY = ((building.width + building.height) * tileH) / 4;
+    const bob = Math.sin(Date.now() * 0.004) * 2.5;
+    const y = centerY - building.buildingHeight - 28 + bob;
+    const size = 11;
+
+    this.ctx.save();
+    this.ctx.translate(centerX, y);
+    this.ctx.strokeStyle = '#ff7043';
+    this.ctx.lineWidth = 3;
+    this.ctx.lineCap = 'round';
+    this.ctx.beginPath();
+    this.ctx.moveTo(-size, -size);
+    this.ctx.lineTo(size, size);
+    this.ctx.moveTo(size, -size);
+    this.ctx.lineTo(-size, size);
+    this.ctx.stroke();
     this.ctx.restore();
   }
 

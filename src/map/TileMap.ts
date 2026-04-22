@@ -496,6 +496,90 @@ export class TileMap {
     return best ? { x: best.x, y: best.y } : null;
   }
 
+  /**
+   * All matching terrain tiles in the radius box, sorted by Manhattan distance from (cx, cy).
+   * Used to pick a gather target that also satisfies a max path length.
+   */
+  listNearbyTerrainSorted(
+    cx: number,
+    cy: number,
+    radius: number,
+    types: string[],
+    exclude?: Set<string>
+  ): { x: number; y: number }[] {
+    const found: { x: number; y: number; d: number }[] = [];
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const x = cx + dx;
+        const y = cy + dy;
+        const tile = this.getTile(x, y);
+        if (!tile) continue;
+        if (!types.includes(tile.terrain)) continue;
+        if (tile.hasRoad || tile.isOccupied()) continue;
+        if (exclude && exclude.has(`${x},${y}`)) continue;
+        const d = Math.abs(dx) + Math.abs(dy);
+        found.push({ x, y, d });
+      }
+    }
+    found.sort((a, b) => a.d - b.d);
+    return found.map(({ x, y }) => ({ x, y }));
+  }
+
+  listHarvestableRocksSorted(
+    cx: number,
+    cy: number,
+    radius: number,
+    types: string[],
+    stonesPerFull: number,
+    exclude?: Set<string>
+  ): { x: number; y: number }[] {
+    const found: { x: number; y: number; d: number }[] = [];
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const x = cx + dx;
+        const y = cy + dy;
+        const tile = this.getTile(x, y);
+        if (!tile) continue;
+        if (!types.includes(tile.terrain)) continue;
+        if (tile.hasRoad || tile.isOccupied()) continue;
+        if (exclude && exclude.has(`${x},${y}`)) continue;
+        const remaining = tile.rockHarvestsRemaining ?? stonesPerFull;
+        if (remaining <= 0) continue;
+        const d = Math.abs(dx) + Math.abs(dy);
+        found.push({ x, y, d });
+      }
+    }
+    found.sort((a, b) => a.d - b.d);
+    return found.map(({ x, y }) => ({ x, y }));
+  }
+
+  listHarvestableWaterSorted(
+    cx: number,
+    cy: number,
+    radius: number,
+    fishPerFull: number,
+    exclude?: Set<string>
+  ): { x: number; y: number }[] {
+    const found: { x: number; y: number; d: number }[] = [];
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const x = cx + dx;
+        const y = cy + dy;
+        const tile = this.getTile(x, y);
+        if (!tile) continue;
+        if (tile.terrain !== 'water') continue;
+        if (tile.hasRoad || tile.isOccupied()) continue;
+        if (exclude && exclude.has(`${x},${y}`)) continue;
+        const remaining = tile.waterFishRemaining ?? fishPerFull;
+        if (remaining <= 0) continue;
+        const d = Math.abs(dx) + Math.abs(dy);
+        found.push({ x, y, d });
+      }
+    }
+    found.sort((a, b) => a.d - b.d);
+    return found.map(({ x, y }) => ({ x, y }));
+  }
+
   isInBounds(x: number, y: number): boolean {
     return x >= 0 && x < this.width && y >= 0 && y < this.height;
   }

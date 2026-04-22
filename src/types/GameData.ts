@@ -139,8 +139,10 @@ export interface ProductionRule {
   continuous: boolean;
   // Max items the building can buffer before pickup (default 10)
   maxOutputBuffer?: number;
-  /** Max Manhattan distance from building to search for gather sources (e.g. quarry rock). */
+  /** Max Manhattan distance from building entrance to search for gather sources (trees, rock, water). */
   maxGatherRadius?: number;
+  /** Max off-road path steps from entrance to a source tile; candidates with longer paths are skipped. Defaults to `maxGatherRadius` or animation `searchRadius`. */
+  maxGatherWalkCells?: number;
   /** Harvests left per rock tile before terrain clears (quarry `rock_depletion` gather). */
   stonesPerRockTile?: number;
   /** Fish catches per water tile before depleted (fisher `water_depletion` gather). */

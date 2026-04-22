@@ -76,7 +76,9 @@
       "outputs": { "wood_log": 1 },
       "productionTime": 240,
       "continuous": true,
-      "maxOutputBuffer": 6
+      "maxOutputBuffer": 6,
+      "maxGatherRadius": 10,
+      "maxGatherWalkCells": 18
     },
     "animation": {
       "type": "gather",
@@ -136,6 +138,7 @@
       "continuous": true,
       "maxOutputBuffer": 6,
       "maxGatherRadius": 15,
+      "maxGatherWalkCells": 22,
       "stonesPerRockTile": 10
     },
     "animation": {
@@ -194,6 +197,7 @@
       "continuous": true,
       "maxOutputBuffer": 6,
       "maxGatherRadius": 15,
+      "maxGatherWalkCells": 22,
       "fishPerWaterTile": 15
     },
     "animation": {

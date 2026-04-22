@@ -19,6 +19,7 @@ export class BuildingPopover {
   private stoppedLabel: HTMLElement | null = null;
   private bufferContainer: HTMLElement | null = null;
   private requirementsContainer: HTMLElement | null = null;
+  private gatherWarningEl: HTMLElement | null = null;
   private productionTimeSec: number = 0;
 
   constructor(game: Game) {
@@ -38,6 +39,7 @@ export class BuildingPopover {
       this.stoppedLabel = null;
       this.bufferContainer = null;
       this.requirementsContainer = null;
+      this.gatherWarningEl = null;
     };
   }
 
@@ -64,6 +66,7 @@ export class BuildingPopover {
       this.updateProgressBar();
       this.updateBufferDisplay();
       this.updateRequirements();
+      this.updateGatherWarning();
 
       const p = entity.getComponent(Position);
       if (!p) return { x: 0, y: 0 };
@@ -85,11 +88,32 @@ export class BuildingPopover {
     this.stoppedLabel = null;
     this.bufferContainer = null;
     this.requirementsContainer = null;
+    this.gatherWarningEl = null;
     this.popover.hide();
   }
 
   isVisible(): boolean {
     return this.popover.isVisible();
+  }
+
+  private updateGatherWarning(): void {
+    if (!this.gatherWarningEl || !this.currentEntity) return;
+    const building = this.currentEntity.getComponent(Building);
+    const production = this.currentEntity.getComponent(Production);
+    if (!building || !production) return;
+
+    const mapGather =
+      building.buildingType === 'lumberjack' ||
+      building.buildingType === 'quarry' ||
+      building.buildingType === 'fisher';
+    if (!mapGather || !building.outOfMapResources || production.status !== 'producing') {
+      this.gatherWarningEl.style.display = 'none';
+      return;
+    }
+
+    this.gatherWarningEl.style.display = '';
+    this.gatherWarningEl.textContent =
+      'Nothing to gather within reach of this building.';
   }
 
   private updateProgressBar(): void {
@@ -229,6 +253,16 @@ export class BuildingPopover {
       desc.textContent = def.description;
       el.appendChild(desc);
     }
+
+    const gatherWarn = document.createElement('div');
+    gatherWarn.className = 'popover-gather-warning';
+    gatherWarn.style.display = 'none';
+    gatherWarn.style.color = '#ffb74d';
+    gatherWarn.style.fontSize = '11px';
+    gatherWarn.style.marginTop = '8px';
+    gatherWarn.style.lineHeight = '1.4';
+    this.gatherWarningEl = gatherWarn;
+    el.appendChild(gatherWarn);
 
     const status = document.createElement('div');
     status.className = 'popover-row';

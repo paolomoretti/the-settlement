@@ -97,6 +97,7 @@ export class ProductionSystem extends System {
       if (!building.hasOperator) continue;
 
       if (!building.isActive) {
+        building.outOfMapResources = false;
         if (production.status !== 'stopped_no_road') {
           production.status = 'stopped_no_road';
           production.timer = 0;
@@ -109,6 +110,11 @@ export class ProductionSystem extends System {
       }
 
       const buildingDef = dataManager.getBuilding(building.buildingType);
+      const mapLinkedGather =
+        buildingDef?.animation?.type === 'gather' &&
+        (building.buildingType === 'lumberjack' ||
+          building.buildingType === 'quarry' ||
+          building.buildingType === 'fisher');
       const storage = entity.getComponent(Storage);
       const useLocalStorage = storage?.isProductionStorage;
       const rockDepletionGather =
@@ -131,6 +137,7 @@ export class ProductionSystem extends System {
                 reason: 'buffer_full',
               });
             }
+            building.outOfMapResources = false;
             continue;
           }
         } else {
@@ -142,6 +149,7 @@ export class ProductionSystem extends System {
                 reason: 'buffer_full',
               });
             }
+            building.outOfMapResources = false;
             continue;
           }
         }
@@ -164,6 +172,7 @@ export class ProductionSystem extends System {
               reason: 'no_inputs',
             });
           }
+          building.outOfMapResources = false;
           continue;
         }
       } else if (production.hasInputs() && !resourceManager.canAfford(production.inputs)) {
@@ -174,10 +183,12 @@ export class ProductionSystem extends System {
             reason: 'no_inputs',
           });
         }
+        building.outOfMapResources = false;
         continue;
       }
 
       if (production.status !== 'producing') {
+        building.outOfMapResources = false;
         production.status = 'producing';
         eventBus.emit('production:resumed', { entityId: entity.id });
       }
@@ -186,7 +197,9 @@ export class ProductionSystem extends System {
       const foresterPlanting =
         building.buildingType === 'forester' && building.animationWorkerId != null;
       const depletionGatherPausing = resourceDepletionGather && building.animationWorkerId != null;
-      if (!foresterPlanting && !depletionGatherPausing) {
+      const mapGatherSourceBlocked =
+        mapLinkedGather && building.outOfMapResources;
+      if (!foresterPlanting && !depletionGatherPausing && !mapGatherSourceBlocked) {
         production.timer += deltaTime;
       }
 

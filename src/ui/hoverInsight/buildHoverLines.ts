@@ -53,7 +53,25 @@ export function buildBuildingHoverLines(entity: Entity): { title: string; lines:
   const title = def?.name ?? building.buildingType;
   const lines: string[] = [];
 
+  const pushDescriptionAndGatherHint = (production: Production | null): void => {
+    if (def?.description) {
+      lines.push(def.description);
+    }
+    const mapGather =
+      building.buildingType === 'lumberjack' ||
+      building.buildingType === 'quarry' ||
+      building.buildingType === 'fisher';
+    if (
+      mapGather &&
+      building.outOfMapResources &&
+      production?.status === 'producing'
+    ) {
+      lines.push('Nothing to gather within reach of this building.');
+    }
+  };
+
   if (building.state === 'awaiting_materials' && building.constructionMaterials) {
+    pushDescriptionAndGatherHint(entity.getComponent(Production) ?? null);
     lines.push('Awaiting construction materials.');
     for (const [res, required] of Object.entries(building.constructionMaterials)) {
       const delivered = building.materialsDelivered[res] || 0;
@@ -65,12 +83,25 @@ export function buildBuildingHoverLines(entity: Entity): { title: string; lines:
   }
 
   if (building.state === 'under_construction') {
+    pushDescriptionAndGatherHint(entity.getComponent(Production) ?? null);
     const pct = Math.floor(building.constructionProgress * 100);
     lines.push(`Under construction — ${pct}% complete.`);
     return { title, lines };
   }
 
   if (building.state === 'complete') {
+    const production = entity.getComponent(Production);
+
+    if (def?.isHeadquarters) {
+      const hq = buildHeadquartersInventoryTooltip();
+      if (def.description) {
+        hq.lines.unshift(def.description);
+      }
+      return hq;
+    }
+
+    pushDescriptionAndGatherHint(production ?? null);
+
     if (building.requiresRoad && !building.isActive) {
       lines.push('No road connection — workers and goods cannot reach this building.');
     }
@@ -80,11 +111,6 @@ export function buildBuildingHoverLines(entity: Entity): { title: string; lines:
       lines.push(`Waiting for the ${toolName} worker to arrive.`);
     }
 
-    if (def?.isHeadquarters) {
-      return buildHeadquartersInventoryTooltip();
-    }
-
-    const production = entity.getComponent(Production);
     if (def?.production && production && building.isComplete()) {
       if (building.animationWorkerId != null && def.animation?.type === 'gather') {
         lines.push('A worker is out gathering resources…');

@@ -1437,9 +1437,12 @@ export class GameWorkerRegistry {
 
     const stonesPer = buildingDef.production?.stonesPerRockTile ?? 10;
     const fishPer = buildingDef.production?.fishPerWaterTile ?? 15;
-    const gatherRadius = rockGather || waterGather
-      ? (buildingDef.production?.maxGatherRadius ?? anim.searchRadius)
-      : anim.searchRadius;
+    const gatherRadius =
+      buildingDef.production?.maxGatherRadius ?? anim.searchRadius;
+    const maxWalkCells =
+      buildingDef.production?.maxGatherWalkCells ??
+      buildingDef.production?.maxGatherRadius ??
+      anim.searchRadius;
 
     const gatherExclude = new Set(this.reservedTreeTiles);
     if (rockGather || waterGather) {
@@ -1450,38 +1453,77 @@ export class GameWorkerRegistry {
       }
     }
 
-    const sourceTile = rockGather
-      ? tileMap.findNearestHarvestableRock(
-          entranceX,
-          entranceY,
-          gatherRadius,
-          anim.targetTerrain,
-          stonesPer,
-          gatherExclude
-        )
-      : waterGather
-        ? tileMap.findNearestHarvestableWater(
-            entranceX,
-            entranceY,
-            gatherRadius,
-            fishPer,
-            gatherExclude
-          )
-        : tileMap.findNearbyTerrain(
-            entranceX,
-            entranceY,
-            gatherRadius,
-            anim.targetTerrain,
-            this.reservedTreeTiles
-          );
-    if (!sourceTile) return;
+    let sourceTile: { x: number; y: number } | null = null;
+    let path: Position[] = [];
 
-    const path = pathFinder.findOffRoadPath(
-      new Position(entranceX, entranceY),
-      new Position(sourceTile.x, sourceTile.y),
-      tileMap
-    );
-    if (path.length === 0) return;
+    if (rockGather) {
+      const candidates = tileMap.listHarvestableRocksSorted(
+        entranceX,
+        entranceY,
+        gatherRadius,
+        anim.targetTerrain,
+        stonesPer,
+        gatherExclude
+      );
+      for (const c of candidates) {
+        const p = pathFinder.findOffRoadPath(
+          new Position(entranceX, entranceY),
+          new Position(c.x, c.y),
+          tileMap
+        );
+        if (p.length > 0 && p.length <= maxWalkCells) {
+          sourceTile = c;
+          path = p;
+          break;
+        }
+      }
+    } else if (waterGather) {
+      const candidates = tileMap.listHarvestableWaterSorted(
+        entranceX,
+        entranceY,
+        gatherRadius,
+        fishPer,
+        gatherExclude
+      );
+      for (const c of candidates) {
+        const p = pathFinder.findOffRoadPath(
+          new Position(entranceX, entranceY),
+          new Position(c.x, c.y),
+          tileMap
+        );
+        if (p.length > 0 && p.length <= maxWalkCells) {
+          sourceTile = c;
+          path = p;
+          break;
+        }
+      }
+    } else {
+      const candidates = tileMap.listNearbyTerrainSorted(
+        entranceX,
+        entranceY,
+        gatherRadius,
+        anim.targetTerrain,
+        this.reservedTreeTiles
+      );
+      for (const c of candidates) {
+        const p = pathFinder.findOffRoadPath(
+          new Position(entranceX, entranceY),
+          new Position(c.x, c.y),
+          tileMap
+        );
+        if (p.length > 0 && p.length <= maxWalkCells) {
+          sourceTile = c;
+          path = p;
+          break;
+        }
+      }
+    }
+
+    if (!sourceTile || path.length === 0) {
+      building.outOfMapResources = true;
+      return;
+    }
+    building.outOfMapResources = false;
 
     this.reservedTreeTiles.add(`${sourceTile.x},${sourceTile.y}`);
 

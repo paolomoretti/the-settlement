@@ -1001,19 +1001,25 @@ export class GameWorkerRegistry {
     }
 
     const spawnTile = this.findBaseCampSpawnTile();
-    const center = roadSegmentManager.getCenterTile(segment);
+    const rest = roadSegmentManager.getCenterRestPosition(segment);
+    const near = roadSegmentManager.nearestSegmentTileToPoint(segment, rest.x, rest.y);
     const tileMap = this.world.getTileMap();
     const pathFinder = this.world.getPathFinder();
 
-    const spawnX = spawnTile?.x ?? center.x;
-    const spawnY = spawnTile?.y ?? center.y;
+    const spawnX = spawnTile?.x ?? rest.x;
+    const spawnY = spawnTile?.y ?? rest.y;
 
     const worker = createWorker(spawnX, spawnY);
     this.world.addEntity(worker);
 
-    if (spawnTile && (spawnX !== center.x || spawnY !== center.y)) {
-      const path = pathFinder.findPath(new Position(spawnX, spawnY), new Position(center.x, center.y), tileMap);
+    if (spawnTile && (spawnX !== near.x || spawnY !== near.y)) {
+      let path = pathFinder.findPath(new Position(spawnX, spawnY), new Position(near.x, near.y), tileMap);
       if (path.length > 0) {
+        const endX = path[path.length - 1]!.x;
+        const endY = path[path.length - 1]!.y;
+        if (Math.hypot(endX - rest.x, endY - rest.y) > 1e-3) {
+          path = [...path, new Position(rest.x, rest.y)];
+        }
         const movable = worker.getComponent(Movable);
         const workerComp = worker.getComponent(Worker);
         if (movable && workerComp) {
@@ -1021,9 +1027,16 @@ export class GameWorkerRegistry {
           workerComp.setState('walking');
         }
       }
+    } else if (Math.hypot(spawnX - rest.x, spawnY - rest.y) > 1e-3) {
+      const movable = worker.getComponent(Movable);
+      const workerComp = worker.getComponent(Worker);
+      if (movable && workerComp) {
+        movable.setPath([new Position(rest.x, rest.y)]);
+        workerComp.setState('walking');
+      }
     }
 
-    console.log(`Road worker spawned for segment #${segment.id} at (${spawnX},${spawnY}) → center (${center.x},${center.y})`);
+    console.log(`Road worker spawned for segment #${segment.id} at (${spawnX},${spawnY}) → rest (${rest.x},${rest.y})`);
     return worker.id;
   }
 
@@ -1090,26 +1103,43 @@ export class GameWorkerRegistry {
     const pos = entity.getComponent(Position);
     if (!pos) return;
 
-    const center = roadSegmentManager.getCenterTile(segment);
-    if (Math.floor(pos.x) === center.x && Math.floor(pos.y) === center.y) return;
+    const rest = roadSegmentManager.getCenterRestPosition(segment);
+    if (Math.hypot(pos.x - rest.x, pos.y - rest.y) < 0.04) return;
 
+    const near = roadSegmentManager.nearestSegmentTileToPoint(segment, rest.x, rest.y);
     const tileMap = this.world.getTileMap();
     const pathFinder = this.world.getPathFinder();
-    const path = pathFinder.findPath(
+    let path = pathFinder.findPath(
       new Position(Math.floor(pos.x), Math.floor(pos.y)),
-      new Position(center.x, center.y),
+      new Position(near.x, near.y),
       tileMap
     );
 
     if (path.length > 0) {
+      const endX = path[path.length - 1]!.x;
+      const endY = path[path.length - 1]!.y;
+      if (Math.hypot(endX - rest.x, endY - rest.y) > 1e-3) {
+        path = [...path, new Position(rest.x, rest.y)];
+      }
       const movable = entity.getComponent(Movable);
       const workerComp = entity.getComponent(Worker);
       if (movable && workerComp) {
         movable.setPath(path);
         workerComp.setState('walking');
       }
+    } else if (
+      Math.floor(pos.x + 1e-9) === near.x &&
+      Math.floor(pos.y + 1e-9) === near.y &&
+      Math.hypot(pos.x - rest.x, pos.y - rest.y) > 1e-3
+    ) {
+      const movable = entity.getComponent(Movable);
+      const workerComp = entity.getComponent(Worker);
+      if (movable && workerComp) {
+        movable.setPath([new Position(rest.x, rest.y)]);
+        workerComp.setState('walking');
+      }
     } else {
-      pos.set(center.x, center.y);
+      pos.set(rest.x, rest.y);
     }
   }
 

@@ -1112,7 +1112,7 @@ export class Game {
             sourceEntityId: ep.entityId,
             destEntityId,
           };
-          const path = this.getSegmentPath(segment, pos, ep.x, ep.y);
+          const path = this.getSegmentPathToTile(segment, pos, ep.x, ep.y);
           if (path.length > 0) {
             movable.setPath(path);
             worker.setState('walking');
@@ -1136,7 +1136,7 @@ export class Game {
           sourceEntityId: null,
           destEntityId: junctionItem.destinationEntityId,
         };
-        const path = this.getSegmentPath(segment, pos, ep.x, ep.y);
+        const path = this.getSegmentPathToTile(segment, pos, ep.x, ep.y);
         if (path.length > 0) {
           movable.setPath(path);
           worker.setState('walking');
@@ -1179,7 +1179,7 @@ export class Game {
         sourceEntityId: null,
         destEntityId,
       };
-      const path = this.getSegmentPath(segment, pos, tile.x, tile.y);
+      const path = this.getSegmentPathToTile(segment, pos, tile.x, tile.y);
       if (path.length > 0) {
         movable.setPath(path);
         worker.setState('walking');
@@ -1221,7 +1221,7 @@ export class Game {
           return;
         }
         task.phase = 'to_dropoff';
-        const path = this.getSegmentPath(segment, pos, task.dropoffPos.x, task.dropoffPos.y);
+        const path = this.getSegmentPathToTile(segment, pos, task.dropoffPos.x, task.dropoffPos.y);
         if (path.length > 0) {
           movable.setPath(path);
           worker.setState('carrying');
@@ -1285,15 +1285,70 @@ export class Game {
   }
 
   private walkWorkerToCenter(segment: RoadSegment, movable: Movable, pos: Position, worker: Worker): void {
-    const center = roadSegmentManager.getCenterTile(segment);
-    const path = this.getSegmentPath(segment, pos, center.x, center.y);
+    const path = this.getSegmentPath(segment, pos);
     if (path.length > 0) {
       movable.setPath(path);
       worker.setState('walking');
     }
   }
 
-  private getSegmentPath(segment: RoadSegment, fromPos: Position, toX: number, toY: number): Position[] {
+  /** Walk along segment tile centers, then optional fractional step to geometric center. */
+  private getSegmentPath(segment: RoadSegment, fromPos: Position): Position[] {
+    const tiles = segment.tiles;
+    const n = tiles.length;
+    if (n === 0) return [];
+
+    const rest = roadSegmentManager.getCenterRestPosition(segment);
+    const toX = rest.x;
+    const toY = rest.y;
+    const mid = (n - 1) / 2;
+    const lo = Math.floor(mid);
+    const hi = Math.ceil(mid);
+
+    const fromX = Math.floor(fromPos.x);
+    const fromY = Math.floor(fromPos.y);
+    let fromIdx = tiles.findIndex(t => t.x === fromX && t.y === fromY);
+    if (fromIdx === -1) {
+      let minDist = Infinity;
+      tiles.forEach((t, i) => {
+        const d = Math.abs(t.x - fromX) + Math.abs(t.y - fromY);
+        if (d < minDist) {
+          minDist = d;
+          fromIdx = i;
+        }
+      });
+    }
+    if (fromIdx === -1) return [];
+
+    let toIdx: number;
+    if (fromIdx < lo) toIdx = lo;
+    else if (fromIdx > hi) toIdx = hi;
+    else toIdx = fromIdx;
+
+    const path: Position[] = [];
+    if (fromIdx !== toIdx) {
+      const step = fromIdx < toIdx ? 1 : -1;
+      for (let i = fromIdx + step; step > 0 ? i <= toIdx : i >= toIdx; i += step) {
+        path.push(new Position(tiles[i]!.x, tiles[i]!.y));
+      }
+    }
+
+    const lastX = path.length > 0 ? path[path.length - 1]!.x : fromPos.x;
+    const lastY = path.length > 0 ? path[path.length - 1]!.y : fromPos.y;
+    if (Math.hypot(lastX - toX, lastY - toY) > 1e-3) {
+      path.push(new Position(toX, toY));
+    }
+
+    return path;
+  }
+
+  /** Walk along segment tile centers from `fromPos` to integer tile `(toX, toY)` on the segment. */
+  private getSegmentPathToTile(
+    segment: RoadSegment,
+    fromPos: Position,
+    toX: number,
+    toY: number
+  ): Position[] {
     const tiles = segment.tiles;
     const fromX = Math.floor(fromPos.x);
     const fromY = Math.floor(fromPos.y);
@@ -1303,14 +1358,17 @@ export class Game {
       let minDist = Infinity;
       tiles.forEach((t, i) => {
         const d = Math.abs(t.x - fromX) + Math.abs(t.y - fromY);
-        if (d < minDist) { minDist = d; fromIdx = i; }
+        if (d < minDist) {
+          minDist = d;
+          fromIdx = i;
+        }
       });
     }
     if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return [];
     const path: Position[] = [];
     const step = fromIdx < toIdx ? 1 : -1;
     for (let i = fromIdx + step; step > 0 ? i <= toIdx : i >= toIdx; i += step) {
-      path.push(new Position(tiles[i].x, tiles[i].y));
+      path.push(new Position(tiles[i]!.x, tiles[i]!.y));
     }
     return path;
   }
@@ -1916,8 +1974,8 @@ export class Game {
         // Re-spawn workers for segments that had them
         for (const seg of roadSegmentManager.getSegments()) {
           if (seg.assignedWorkerId !== null) {
-            const center = roadSegmentManager.getCenterTile(seg);
-            const worker = createWorker(center.x, center.y);
+            const rest = roadSegmentManager.getCenterRestPosition(seg);
+            const worker = createWorker(rest.x, rest.y);
             this.addEntity(worker);
             seg.assignedWorkerId = worker.id;
           }

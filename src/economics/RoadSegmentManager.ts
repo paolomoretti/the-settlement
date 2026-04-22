@@ -57,9 +57,48 @@ export class RoadSegmentManager {
     return this.segments.find(s => s.assignedWorkerId === workerId);
   }
 
+  /**
+   * True midpoint along the segment polyline (fractional grid coords when the
+   * geometric center lies between two tiles, e.g. a 2-tile strip).
+   */
+  getCenterRestPosition(segment: RoadSegment): { x: number; y: number } {
+    const tiles = segment.tiles;
+    const n = tiles.length;
+    if (n === 0) return { x: 0, y: 0 };
+    if (n === 1) return { x: tiles[0]!.x, y: tiles[0]!.y };
+    const mid = (n - 1) / 2;
+    const lo = Math.floor(mid);
+    const hi = Math.ceil(mid);
+    if (lo === hi) return { x: tiles[lo]!.x, y: tiles[lo]!.y };
+    const t = mid - lo;
+    return {
+      x: tiles[lo]!.x + (tiles[hi]!.x - tiles[lo]!.x) * t,
+      y: tiles[lo]!.y + (tiles[hi]!.y - tiles[lo]!.y) * t,
+    };
+  }
+
+  /** Integer tile on the segment whose cell is closest to `(gx, gy)`. */
+  nearestSegmentTileToPoint(
+    segment: RoadSegment,
+    gx: number,
+    gy: number
+  ): { x: number; y: number } {
+    let best = segment.tiles[0]!;
+    let bestD = Infinity;
+    for (const t of segment.tiles) {
+      const d = (t.x - gx) ** 2 + (t.y - gy) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  /** Nearest segment tile to the geometric center (for integer-only callers). */
   getCenterTile(segment: RoadSegment): { x: number; y: number } {
-    const mid = Math.floor(segment.tiles.length / 2);
-    return segment.tiles[mid];
+    const r = this.getCenterRestPosition(segment);
+    return this.nearestSegmentTileToPoint(segment, r.x, r.y);
   }
 
   recalculate(tileMap: TileMap): void {

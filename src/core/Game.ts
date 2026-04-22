@@ -1384,6 +1384,42 @@ export class Game {
 
   }
 
+  /**
+   * After depositing at a segment endpoint, if the same tile already had (or now has) a junction
+   * item routable along this segment, start pickup immediately instead of walking to the segment
+   * center first.
+   */
+  private tryChainedJunctionPickupAfterDropoff(
+    segment: RoadSegment,
+    worker: Worker,
+    movable: Movable,
+    pos: Position,
+    tileX: number,
+    tileY: number
+  ): boolean {
+    const epIdx = segment.endpoints.findIndex(ep => ep.x === tileX && ep.y === tileY);
+    if (epIdx < 0) return false;
+    const junctionItem = transportManager.takeJunctionItemForDirection(tileX, tileY, segment.id, epIdx);
+    if (!junctionItem) return false;
+    transportManager.addPendingPickupVisual(
+      tileX,
+      tileY,
+      junctionItem.resourceType,
+      junctionItem.destinationEntityId
+    );
+    const otherEp = segment.endpoints[1 - epIdx]!;
+    worker.transportTask = {
+      phase: 'to_pickup',
+      pickupPos: { x: tileX, y: tileY },
+      dropoffPos: { x: otherEp.x, y: otherEp.y },
+      resourceType: junctionItem.resourceType,
+      sourceEntityId: null,
+      destEntityId: junctionItem.destinationEntityId,
+    };
+    this.advanceTransport(segment, worker, movable, pos);
+    return true;
+  }
+
   private advanceTransport(segment: RoadSegment, worker: Worker, movable: Movable, pos: Position): void {
     const task = worker.transportTask!;
     switch (task.phase) {
@@ -1479,6 +1515,13 @@ export class Game {
         }
 
         worker.dropResource();
+
+        const px = task.dropoffPos.x;
+        const py = task.dropoffPos.y;
+        if (this.tryChainedJunctionPickupAfterDropoff(segment, worker, movable, pos, px, py)) {
+          break;
+        }
+
         task.phase = 'to_center';
         this.walkWorkerToCenter(segment, movable, pos, worker);
         break;

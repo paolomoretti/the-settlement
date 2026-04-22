@@ -75,6 +75,7 @@ export function createBuilding(
     storehouse: '/assets/buildings/warehouse.png',
     lumberjack: '/assets/buildings/lumberjack.png',
     sawmill: '/assets/buildings/sawmill.png',
+    mill: '/assets/buildings/mill.png',
     forester: '/assets/buildings/forester.png',
     quarry: '/assets/buildings/quarry.png',
     hut: '/assets/buildings/hut.png',

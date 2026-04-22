@@ -172,6 +172,15 @@ export type AnimationConfig =
       walkLeadSec?: number;
     }
   | {
+      /** Mill operator: same cycle timing as well_operator; HQ spawn, idle/work on footprint-adjacent tiles. */
+      type: 'mill_operator';
+      workerSpeed: number;
+      drawingPhaseSec: number;
+      walkLeadSec?: number;
+      /** Resource shown overhead during the work pose (default `flour`). */
+      carriedResource?: ResourceType;
+    }
+  | {
       /** Forester: walk to a reserved grass tile, dig, return; tree appears after digging. */
       type: 'plant_tree';
       searchRadius: number;

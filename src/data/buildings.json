@@ -315,7 +315,7 @@
     "name": "Mill",
     "description": "Grinds grain into flour.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 75, "color": "#f5deb3" },
+    "visual": { "buildingHeight": 75, "color": "#f5deb3", "spriteScale": 1.4, "offsetX": -3, "offsetY": 2 },
     "buildCost": { "wood_plank": 2, "stone": 2 },
     "buildTime": 30,
     "requiresRoad": true,
@@ -329,7 +329,14 @@
     "population": { "requires": 1 },
     "category": "production",
     "tier": 1,
-    "plotType": "medium"
+    "plotType": "medium",
+    "animation": {
+      "type": "mill_operator",
+      "workerSpeed": 1.2,
+      "drawingPhaseSec": 7,
+      "walkLeadSec": 4,
+      "carriedResource": "flour"
+    }
   },
 
   "bakery": {

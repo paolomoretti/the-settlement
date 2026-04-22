@@ -30,6 +30,7 @@ export type WorkerVisualActivity =
   | 'deliver_tool'
   | 'production_gather'
   | 'production_well'
+  | 'production_mill'
   | 'production_plant';
 
 /** Tools held at the hip / one hand; bulk goods use overhead carry. */
@@ -92,6 +93,8 @@ export class Worker extends Component {
   public heldItemStyle: WorkerHeldItemStyle = 'overhead';
   /** Job-driven animation bucket for render + brief gameplay (patrol pauses). */
   public visualActivity: WorkerVisualActivity = 'general';
+  /** When set, the worker is inside this building entity and must not be drawn (e.g. mill operator). */
+  public concealedInBuildingId: number | null = null;
   /** Builder may hammer on site only after `beginConstruction()` runs. */
   public hammerConstructionEnabled = false;
   /** Builder stands and plays hammer idle until this time (ms since epoch). */

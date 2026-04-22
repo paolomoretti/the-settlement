@@ -18,7 +18,7 @@ Violations look like workers **teleporting** next to the well or hut; that must 
 |------|--------|--------|
 | Builder | `spawnBuilder` | Base camp road → road near site |
 | Tool delivery | `spawnToolWorker` | Base camp road → road near building |
-| Well operator | `spawnWellOperator` | Base camp road → road near well → off-road to idle |
+| Well / mill operator | `spawnSiteOperator` | Base camp road → road near building → off-road to idle/work tiles |
 
 ## Gather animation (woodcutter)
 

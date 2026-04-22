@@ -37,7 +37,7 @@ type GatherAnimState = {
 type WellOperatorAnimState = {
   kind: 'well_operator';
   buildingEntityId: number;
-  phase: 'idle_left' | 'to_entrance' | 'waiting_at_well' | 'drawing' | 'to_idle';
+  phase: 'idle_left' | 'to_entrance' | 'waiting_at_well' | 'drawing' | 'to_idle' | 'mill_inside';
   idleTile: { x: number; y: number };
   workTile: { x: number; y: number };
   lastProductionTimer: number;
@@ -409,7 +409,13 @@ export class GameWorkerRegistry {
         const buildingDef = building ? dataManager.getBuilding(building.buildingType) : null;
         const animCfg = buildingDef?.animation;
 
-        if (!buildingEntity || !building || !production || animCfg?.type !== 'well_operator') {
+        if (
+          !buildingEntity ||
+          !building ||
+          !production ||
+          (animCfg?.type !== 'well_operator' && animCfg?.type !== 'mill_operator')
+        ) {
+          workerComp.concealedInBuildingId = null;
           this.world.removeEntity(workerEntity);
           this.cleanupAnimationWorker(workerId, state);
           continue;
@@ -418,6 +424,9 @@ export class GameWorkerRegistry {
         const speed = animCfg.workerSpeed;
         const drawingPhaseSec = animCfg.drawingPhaseSec;
         const walkLeadSec = animCfg.walkLeadSec ?? 5;
+        const isMill = animCfg.type === 'mill_operator';
+        const carriedResource: ResourceType = isMill ? (animCfg.carriedResource ?? 'flour') : 'water';
+        const workVisual = isMill ? ('production_mill' as const) : ('production_well' as const);
         const prodTime = production.productionTime;
         const timer = production.timer;
         const startWalk = Math.max(0, prodTime - drawingPhaseSec - walkLeadSec);
@@ -451,6 +460,18 @@ export class GameWorkerRegistry {
               state.phase = 'idle_left';
               workerComp.setState('idle');
             }
+          } else if (state.phase === 'mill_inside') {
+            this.revealMillWorkerAtDoor(workerComp, workerPos, movable, state.workTile);
+            const ret = pathToIdle();
+            if (ret.length > 0 && movable) {
+              movable.speed = speed;
+              movable.setPath(ret);
+              workerComp.setState('walking');
+              state.phase = 'to_idle';
+            } else {
+              state.phase = 'idle_left';
+              workerComp.setState('idle');
+            }
           } else if (state.phase !== 'to_idle' && state.phase !== 'to_entrance') {
             state.phase = 'idle_left';
             workerComp.visualActivity = 'general';
@@ -471,8 +492,17 @@ export class GameWorkerRegistry {
         if (movable?.isMoving) continue;
 
         if (production.status !== 'producing') {
-          if (state.phase === 'drawing' || state.phase === 'to_entrance' || state.phase === 'waiting_at_well') {
-            workerComp.dropResource();
+          if (
+            state.phase === 'drawing' ||
+            state.phase === 'to_entrance' ||
+            state.phase === 'waiting_at_well' ||
+            state.phase === 'mill_inside'
+          ) {
+            if (state.phase === 'drawing') {
+              workerComp.dropResource();
+            } else if (state.phase === 'mill_inside') {
+              this.revealMillWorkerAtDoor(workerComp, workerPos, movable, state.workTile);
+            }
             workerComp.visualActivity = 'general';
             const ret = pathToIdle();
             if (ret.length > 0 && movable) {
@@ -489,10 +519,19 @@ export class GameWorkerRegistry {
         }
 
         if (state.phase === 'to_entrance') {
-          if (timer >= startDraw) {
+          if (isMill) {
+            if (timer >= startDraw) {
+              state.phase = 'mill_inside';
+              this.enterMillInterior(buildingEntity, workerComp, workerPos, movable);
+            } else {
+              state.phase = 'waiting_at_well';
+              workerComp.setState('idle');
+              workerComp.visualActivity = 'general';
+            }
+          } else if (timer >= startDraw) {
             state.phase = 'drawing';
-            workerComp.pickUpResource('water', 'overhead');
-            workerComp.visualActivity = 'production_well';
+            workerComp.pickUpResource(carriedResource, 'overhead');
+            workerComp.visualActivity = workVisual;
             workerComp.setState('working');
           } else {
             state.phase = 'waiting_at_well';
@@ -514,12 +553,21 @@ export class GameWorkerRegistry {
             }
             continue;
           }
-          if (timer >= startDraw) {
+          if (isMill) {
+            if (timer >= startDraw) {
+              state.phase = 'mill_inside';
+              this.enterMillInterior(buildingEntity, workerComp, workerPos, movable);
+            }
+          } else if (timer >= startDraw) {
             state.phase = 'drawing';
-            workerComp.pickUpResource('water', 'overhead');
-            workerComp.visualActivity = 'production_well';
+            workerComp.pickUpResource(carriedResource, 'overhead');
+            workerComp.visualActivity = workVisual;
             workerComp.setState('working');
           }
+          continue;
+        }
+
+        if (state.phase === 'mill_inside') {
           continue;
         }
 
@@ -830,8 +878,8 @@ export class GameWorkerRegistry {
       const buildingDef = dataManager.getBuilding(building.buildingType);
       if (!buildingDef?.animation) continue;
 
-      if (buildingDef.animation.type === 'well_operator') {
-        this.spawnWellOperator(entity);
+      if (buildingDef.animation.type === 'well_operator' || buildingDef.animation.type === 'mill_operator') {
+        this.spawnSiteOperator(entity);
         continue;
       }
 
@@ -1296,62 +1344,202 @@ export class GameWorkerRegistry {
     }
   }
 
-  private computeWellOperatorTiles(
+  /** Idle + work tiles for well (1×1) or mill / other buildings with a road-connected footprint. */
+  private computeSiteOperatorTiles(
     buildingEntity: Entity
   ): { idle: { x: number; y: number }; work: { x: number; y: number } } | null {
     const pos = buildingEntity.getComponent(Position);
     const building = buildingEntity.getComponent(Building);
-    if (!pos || !building || building.width !== 1 || building.height !== 1) return null;
+    if (!pos || !building) return null;
 
-    const bx = pos.x;
-    const by = pos.y;
     const tileMap = this.world.getTileMap();
     const okTile = (x: number, y: number): boolean => {
       const t = tileMap.getTile(x, y);
       return !!(t && t.walkable && !t.isOccupied());
     };
 
-    let idleTile: { x: number; y: number } | null = null;
-    if (okTile(bx - 1, by)) {
-      idleTile = { x: bx - 1, y: by };
-    } else {
-      const order: [number, number][] = [
-        [1, 0],
-        [0, 1],
-        [0, -1],
-        [-1, 0],
-      ];
-      for (const [dx, dy] of order) {
-        const x = bx + dx;
-        const y = by + dy;
-        if (okTile(x, y)) {
-          idleTile = { x, y };
-          break;
+    if (building.width === 1 && building.height === 1) {
+      const bx = pos.x;
+      const by = pos.y;
+
+      let idleTile: { x: number; y: number } | null = null;
+      if (okTile(bx - 1, by)) {
+        idleTile = { x: bx - 1, y: by };
+      } else {
+        const order: [number, number][] = [
+          [1, 0],
+          [0, 1],
+          [0, -1],
+          [-1, 0],
+        ];
+        for (const [dx, dy] of order) {
+          const x = bx + dx;
+          const y = by + dy;
+          if (okTile(x, y)) {
+            idleTile = { x, y };
+            break;
+          }
         }
       }
-    }
-    if (!idleTile) return null;
+      if (!idleTile) return null;
 
-    const preferWork: [number, number][] = [
-      [0, 1],
-      [1, 0],
-      [-1, 0],
-      [0, -1],
-    ];
-    let workTile: { x: number; y: number } | null = null;
-    for (const [dx, dy] of preferWork) {
-      const x = bx + dx;
-      const y = by + dy;
-      if ((x === idleTile.x && y === idleTile.y) || !okTile(x, y)) continue;
-      workTile = { x, y };
-      break;
-    }
-    if (!workTile) return null;
+      const preferWork: [number, number][] = [
+        [0, 1],
+        [1, 0],
+        [-1, 0],
+        [0, -1],
+      ];
+      let workTile: { x: number; y: number } | null = null;
+      for (const [dx, dy] of preferWork) {
+        const x = bx + dx;
+        const y = by + dy;
+        if ((x === idleTile.x && y === idleTile.y) || !okTile(x, y)) continue;
+        workTile = { x, y };
+        break;
+      }
+      if (!workTile) return null;
 
-    return { idle: idleTile, work: workTile };
+      return { idle: idleTile, work: workTile };
+    }
+
+    const bx = Math.floor(pos.x);
+    const by = Math.floor(pos.y);
+    const w = building.width;
+    const h = building.height;
+
+    const isOrthoAdjacentToFootprint = (x: number, y: number): boolean => {
+      for (let ix = bx; ix < bx + w; ix++) {
+        for (let iy = by; iy < by + h; iy++) {
+          if (Math.abs(x - ix) + Math.abs(y - iy) === 1) return true;
+        }
+      }
+      return false;
+    };
+
+    const candidates: { x: number; y: number }[] = [];
+    for (let x = bx - 1; x <= bx + w; x++) {
+      for (let y = by - 1; y <= by + h; y++) {
+        if (x >= bx && x < bx + w && y >= by && y < by + h) continue;
+        if (!isOrthoAdjacentToFootprint(x, y)) continue;
+        if (okTile(x, y)) candidates.push({ x, y });
+      }
+    }
+    if (candidates.length < 2) return null;
+
+    const south = candidates.filter(t => t.y === by + h);
+    const idlePool = south.length > 0 ? south : candidates;
+    const idle = idlePool[0]!;
+    const work = candidates.find(t => t.x !== idle.x || t.y !== idle.y) ?? candidates[1]!;
+    return { idle, work };
   }
 
-  private spawnWellOperator(buildingEntity: Entity): void {
+  /** Mill: idle off to the side, `work` = doorstep (orthogonal to entrance cell), not an arbitrary second perimeter tile. */
+  private computeMillOperatorTiles(
+    buildingEntity: Entity
+  ): { idle: { x: number; y: number }; work: { x: number; y: number } } | null {
+    const pos = buildingEntity.getComponent(Position);
+    const building = buildingEntity.getComponent(Building);
+    if (!pos || !building) return null;
+    const entranceOff = building.getEntranceOffset();
+    if (!entranceOff) return null;
+
+    const bx = Math.floor(pos.x);
+    const by = Math.floor(pos.y);
+    const w = building.width;
+    const h = building.height;
+    const ex = bx + entranceOff.dx;
+    const ey = by + entranceOff.dy;
+
+    const tileMap = this.world.getTileMap();
+    const okTile = (x: number, y: number): boolean => {
+      const t = tileMap.getTile(x, y);
+      return !!(t && t.walkable && !t.isOccupied());
+    };
+
+    const onFootprint = (x: number, y: number): boolean =>
+      x >= bx && x < bx + w && y >= by && y < by + h;
+
+    const doorNeighbors: { x: number; y: number }[] = [];
+    for (const [dx, dy] of [
+      [0, 1],
+      [0, -1],
+      [1, 0],
+      [-1, 0],
+    ] as [number, number][]) {
+      const x = ex + dx;
+      const y = ey + dy;
+      if (onFootprint(x, y)) continue;
+      if (okTile(x, y)) doorNeighbors.push({ x, y });
+    }
+    if (doorNeighbors.length === 0) return null;
+
+    doorNeighbors.sort((a, b) => b.y - a.y || Math.abs(a.x - ex) - Math.abs(b.x - ex));
+    const doorApproach = doorNeighbors[0]!;
+
+    const perimeter: { x: number; y: number }[] = [];
+    for (let x = bx - 1; x <= bx + w; x++) {
+      for (let y = by - 1; y <= by + h; y++) {
+        if (x >= bx && x < bx + w && y >= by && y < by + h) continue;
+        let edge = false;
+        for (let ix = bx; ix < bx + w; ix++) {
+          for (let iy = by; iy < by + h; iy++) {
+            if (Math.abs(x - ix) + Math.abs(y - iy) === 1) {
+              edge = true;
+              break;
+            }
+          }
+          if (edge) break;
+        }
+        if (!edge) continue;
+        if (okTile(x, y)) perimeter.push({ x, y });
+      }
+    }
+
+    const idleCandidates = perimeter.filter(
+      t => !(t.x === doorApproach.x && t.y === doorApproach.y)
+    );
+    if (idleCandidates.length === 0) return null;
+
+    const south = idleCandidates.filter(t => t.y === by + h);
+    const idle = (south.length > 0 ? south[0] : idleCandidates[0])!;
+
+    return { idle, work: doorApproach };
+  }
+
+  private enterMillInterior(
+    buildingEntity: Entity,
+    workerComp: Worker,
+    workerPos: Position,
+    movable: Movable | null | undefined
+  ): void {
+    const bpos = buildingEntity.getComponent(Position);
+    const building = buildingEntity.getComponent(Building);
+    if (!bpos || !building) return;
+    const bx = Math.floor(bpos.x);
+    const by = Math.floor(bpos.y);
+    const cx = bx + (building.width - 1) / 2 + 0.5;
+    const cy = by + (building.height - 1) / 2 + 0.5;
+    workerPos.set(cx, cy);
+    movable?.clearPath();
+    workerComp.dropResource();
+    workerComp.visualActivity = 'general';
+    workerComp.setState('working');
+    workerComp.concealedInBuildingId = buildingEntity.id;
+  }
+
+  private revealMillWorkerAtDoor(
+    workerComp: Worker,
+    workerPos: Position,
+    movable: Movable | null | undefined,
+    door: { x: number; y: number }
+  ): void {
+    workerPos.set(door.x + 0.5, door.y + 0.5);
+    workerComp.concealedInBuildingId = null;
+    workerComp.visualActivity = 'general';
+    movable?.clearPath();
+  }
+
+  private spawnSiteOperator(buildingEntity: Entity): void {
     const building = buildingEntity.getComponent(Building);
     const pos = buildingEntity.getComponent(Position);
     const production = buildingEntity.getComponent(Production);
@@ -1360,9 +1548,13 @@ export class GameWorkerRegistry {
     if (this.world.getAvailablePeasantSlotCount() <= 0) return;
 
     const buildingDef = dataManager.getBuilding(building.buildingType);
-    if (buildingDef?.animation?.type !== 'well_operator') return;
+    const anim = buildingDef?.animation;
+    if (anim?.type !== 'well_operator' && anim?.type !== 'mill_operator') return;
 
-    const tiles = this.computeWellOperatorTiles(buildingEntity);
+    const tiles =
+      anim.type === 'mill_operator'
+        ? this.computeMillOperatorTiles(buildingEntity)
+        : this.computeSiteOperatorTiles(buildingEntity);
     if (!tiles) return;
 
     const spawnTile = this.findBaseCampSpawnTile();
@@ -1380,8 +1572,7 @@ export class GameWorkerRegistry {
     );
     if (path.length === 0) return;
 
-    const anim = buildingDef.animation;
-    const speed = anim.type === 'well_operator' ? anim.workerSpeed : 1.2;
+    const speed = anim.workerSpeed;
 
     const worker = createWorker(spawnTile.x, spawnTile.y);
     this.world.addEntity(worker);
@@ -1391,6 +1582,16 @@ export class GameWorkerRegistry {
     if (workerComp) {
       workerComp.visualActivity = 'general';
       workerComp.setState('walking');
+      if (anim.type === 'mill_operator') {
+        workerComp.appearance = {
+          skin: '#e8d4c4',
+          hair: '#4a3020',
+          tunic: '#f4f4f0',
+          pants: '#e8e4dc',
+          boots: '#5a5048',
+          variant: 'hat',
+        };
+      }
     }
     if (movable) {
       movable.speed = speed;

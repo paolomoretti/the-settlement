@@ -42,6 +42,11 @@ const CONSTRUCTION_SPRITES: Record<string, string[]> = {
     '/assets/buildings/sawmill_build_1.png',
     '/assets/buildings/sawmill_build_2.png',
   ],
+  mill: [
+    '/assets/buildings/mill_build_0.png',
+    '/assets/buildings/mill_build_1.png',
+    '/assets/buildings/mill_build_2.png',
+  ],
   forester: [
     '/assets/buildings/forester_build_0.png',
     '/assets/buildings/forester_build_1.png',
@@ -181,6 +186,7 @@ export class RenderSystem extends System {
       '/assets/buildings/warehouse.png', // used for storehouse
       '/assets/buildings/lumberjack.png',
       '/assets/buildings/sawmill.png',
+      '/assets/buildings/mill.png',
       '/assets/buildings/quarry.png',
       '/assets/buildings/farm.png',
       '/assets/buildings/pig_farm.png',
@@ -1963,7 +1969,9 @@ export class RenderSystem extends System {
     } else if (entity.hasComponent(Worker)) {
       const movable = entity.getComponent(Movable) ?? null;
       const worker = entity.getComponent(Worker)!;
-      this.renderWorkerSprite(movable, worker);
+      if (worker.concealedInBuildingId == null) {
+        this.renderWorkerSprite(movable, worker);
+      }
     } else {
       switch (renderable.type) {
         case 'circle':
@@ -2568,7 +2576,10 @@ export class RenderSystem extends System {
 
   private updateIdleAnimation(worker: Worker): void {
     const now = Date.now();
-    if (worker.visualActivity === 'production_well' && worker.state === 'working') {
+    if (
+      (worker.visualActivity === 'production_well' || worker.visualActivity === 'production_mill') &&
+      worker.state === 'working'
+    ) {
       return;
     }
     if (worker.visualActivity === 'production_plant' && worker.state === 'working') {
@@ -2709,7 +2720,12 @@ export class RenderSystem extends System {
       worker.state === 'working' &&
       !isMoving &&
       worker.carryingResource === 'water';
-    if (isWellDrawing) {
+    const isMillDrawing =
+      worker.visualActivity === 'production_mill' &&
+      worker.state === 'working' &&
+      !isMoving &&
+      !!worker.carryingResource;
+    if (isWellDrawing || isMillDrawing) {
       const bob = Math.sin(now / 420) * 1.8;
       const sway = Math.sin(now / 510) * 0.5;
       this.ctx.translate(sway * s, bob * s);
@@ -2790,8 +2806,8 @@ export class RenderSystem extends System {
       rightHandY = -4 - wobble;
     } else if (
       isOverheadCarry &&
-      worker.visualActivity === 'production_well' &&
-      worker.carryingResource === 'water'
+      ((worker.visualActivity === 'production_well' && worker.carryingResource === 'water') ||
+        (worker.visualActivity === 'production_mill' && worker.carryingResource))
     ) {
       const pull = Math.sin(now / 200);
       const a1 = pull * 2.5;
@@ -2934,8 +2950,8 @@ export class RenderSystem extends System {
         }
       } else if (
         isOverheadCarry &&
-        worker.visualActivity === 'production_well' &&
-        worker.carryingResource === 'water'
+        ((worker.visualActivity === 'production_well' && worker.carryingResource === 'water') ||
+          (worker.visualActivity === 'production_mill' && worker.carryingResource))
       ) {
         const wob = Math.sin(now / 200) * 1.2 * s;
         if (resSprite) {

@@ -680,6 +680,8 @@ All three locations use the same path pattern `/assets/resources/{resourceId}.pn
 
 **Food:** `grain`, `flour`, `bread`, `water`, `fish`, `meat`
 
+**Sprite to add when you have art (mill / UI):** `assets/resources/flour.png` — used for flour in inventory, production bubbles, building popovers, and the mill operator’s overhead carry. Until this file exists, flour falls back to a simple placeholder in-world.
+
 **Tools:** `hammer`, `axe`, `saw`, `pickaxe`, `shovel`, `fishing_rod`, `scythe`, `bow`
 
 **Weapons:** `sword`, `shield`

@@ -704,15 +704,24 @@
       cursor: not-allowed;
     }
 
+    /* Wooden frame via 9-slice (navigator-frame.png); inner map stays 200×200 */
     #minimap {
       position: absolute;
       bottom: 10px;
       right: 10px;
-      width: 200px;
-      height: 200px;
-      background: rgba(0, 0, 0, 0.8);
-      border: 2px solid #6b8e5f;
-      border-radius: 4px;
+      box-sizing: border-box;
+      width: 244px;
+      height: 244px;
+      padding: 0;
+      border: 12px solid transparent;
+      border-radius: 0;
+      background: transparent;
+      border-image-source: url(/assets/ui/navigator-frame.png);
+      /* PNG 458×432 — slightly asymmetric slice for corner alignment */
+      border-image-slice: 91 96 91 96 fill;
+      border-image-width: 22px;
+      border-image-outset: 0;
+      border-image-repeat: stretch;
       pointer-events: auto;
       cursor: pointer;
     }

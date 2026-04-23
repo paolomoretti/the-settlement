@@ -12,7 +12,6 @@ import { Movable } from '@/components/Movable';
 import { TileMap } from '@/map/TileMap';
 import { Isometric } from '@/utils/Isometric';
 import { Tile } from '@/map/Tile';
-import { ensureWaterFishSchool, getWaterFishRemaining } from '@/map/waterFishSchool';
 import { Production } from '@/components/Production';
 import { dataManager } from '@/data/DataManager';
 import { BuildingType, ResourceType } from '@/types/GameData';
@@ -1982,14 +1981,12 @@ export class RenderSystem extends System {
     const bounds = this.getViewportBounds();
     const w = bounds.maxX - bounds.minX + 1;
     const h = bounds.maxY - bounds.minY + 1;
-    const mapSeed = this.tileMap.getSeed();
     for (let attempt = 0; attempt < 40; attempt++) {
       const x = bounds.minX + Math.floor(Math.random() * w);
       const y = bounds.minY + Math.floor(Math.random() * h);
       const tile = this.tileMap.getTile(x, y);
       if (!tile || tile.terrain !== 'water' || !tile.isExplored()) continue;
-      ensureWaterFishSchool(tile, mapSeed, x, y);
-      if (getWaterFishRemaining(tile, mapSeed, x, y) <= 0) continue;
+      if (this.tileMap.getWaterFishRemainingAt(x, y) <= 0) continue;
       this.fishJumps.push({ x, y, startTime: Date.now() });
       return;
     }

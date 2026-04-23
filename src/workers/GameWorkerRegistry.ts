@@ -10,7 +10,6 @@
 import { Entity } from '@/core/Entity';
 import { TileMap } from '@/map/TileMap';
 import { pickRandomReachableWaterFishTarget } from '@/map/fisherFishProbe';
-import { getWaterFishRemaining, takeOneFishFromSchool } from '@/map/waterFishSchool';
 import { PathFinder } from '@/pathfinding/AStar';
 import { RenderSystem } from '@/systems/RenderSystem';
 import { Position } from '@/components/Position';
@@ -781,12 +780,8 @@ export class GameWorkerRegistry {
               if (gather.waterGather && bldg && anim && bDef?.production) {
                 const bPos = buildingEntity.getComponent(Position);
                 if (bPos) {
-                  const mapSeed = tileMap.getSeed();
                   const ft = gather.fisherWaterTile;
-                  const wtile = ft ? tileMap.getTile(ft.x, ft.y) : null;
-                  const rem = wtile && ft
-                    ? getWaterFishRemaining(wtile, mapSeed, ft.x, ft.y)
-                    : 0;
+                  const rem = ft ? tileMap.getWaterFishRemainingAt(ft.x, ft.y) : 0;
                   if (rem <= 0) {
                     gather.waterFishPickAttempts = (gather.waterFishPickAttempts ?? 0) + 1;
                     if (gather.waterFishPickAttempts <= 4) {
@@ -891,8 +886,7 @@ export class GameWorkerRegistry {
                   'fish';
                 let tookFish = false;
                 if (tile && tile.terrain === 'water') {
-                  const mapSeed = tileMap.getSeed();
-                  tookFish = takeOneFishFromSchool(tile, mapSeed, fishWx, fishWy);
+                  tookFish = tileMap.takeOneWaterFishAt(fishWx, fishWy);
                   if (tookFish) {
                     render.updateMinimapTiles([{ x: fishWx, y: fishWy }]);
                   }

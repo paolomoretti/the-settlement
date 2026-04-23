@@ -8,11 +8,7 @@ import { Building } from '@/components/Building';
 import { Production } from '@/components/Production';
 import { Storage } from '@/components/Storage';
 import { Tile } from '@/map/Tile';
-import {
-  ensureWaterFishSchool,
-  getWaterFishRemaining,
-  getWaterFishSchoolMax,
-} from '@/map/waterFishSchool';
+import type { TileMap } from '@/map/TileMap';
 import { dataManager } from '@/data/DataManager';
 import { resourceManager } from '@/economics/ResourceManager';
 import { BuildingType, ResourceType } from '@/types/GameData';
@@ -200,35 +196,25 @@ export function buildBuildingHoverLines(entity: Entity): { title: string; lines:
 
 export function buildWaterFishHoverLines(
   tile: Tile,
-  mapSeed: number,
+  tileMap: TileMap,
   gx: number,
   gy: number
 ): { title: string; lines: string[] } | null {
   if (tile.terrain !== 'water') return null;
 
   const title = 'Water';
-  if (tile.waterFishSchoolMax === undefined && tile.waterFishRemaining === undefined) {
-    return {
-      title,
-      lines: [
-        'Fish schools (5–15 catches per tile) are rolled the first time this cell is used for fishing or for a decorative jump.',
-        'Schools gain +1 fish (up to their cap) every 2 in-game hours.',
-      ],
-    };
-  }
-
-  ensureWaterFishSchool(tile, mapSeed, gx, gy);
-  const fishPer = getWaterFishSchoolMax(tile, mapSeed, gx, gy);
-  const remaining = getWaterFishRemaining(tile, mapSeed, gx, gy);
+  tileMap.ensureWaterFishClusterAt(gx, gy);
+  const fishPer = tileMap.getWaterFishClusterMaxAt(gx, gy);
+  const remaining = tileMap.getWaterFishRemainingAt(gx, gy);
   const used = Math.max(0, fishPer - remaining);
   const remainingPct = fishPer > 0 ? Math.round((remaining / fishPer) * 100) : 0;
 
   const lines: string[] = [
-    `This tile’s fish school holds up to ${fishPer} catches.`,
-    `Fish remaining: ${remaining} (${remainingPct}% of the school).`,
+    `This lake’s shared fish stock can hold up to ${fishPer} catches (5–15 per water cell, summed for the whole lake).`,
+    `Fish remaining: ${remaining} (${remainingPct}% of the lake stock).`,
   ];
   if (used > 0) {
-    lines.push(`${used} catch${used === 1 ? '' : 'es'} already taken from this tile.`);
+    lines.push(`${used} catch${used === 1 ? '' : 'es'} already taken from this lake.`);
   }
   return { title, lines };
 }

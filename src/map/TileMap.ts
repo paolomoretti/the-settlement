@@ -5,7 +5,22 @@
 import { Tile, TerrainType } from './Tile';
 import { cellMineralTotal } from './CellMinerals';
 import { NoiseGenerator } from '@/utils/NoiseGenerator';
-import { ensureWaterFishSchool, getWaterFishRemaining, regenWaterFishOne } from './waterFishSchool';
+import { rollWaterFishSchoolMax } from './waterFishSchool';
+
+/** Orthogonal flood-fill cap (avoids runaway work on pathological maps). */
+const WATER_FISH_CLUSTER_BFS_CAP = 262144;
+const WATER_CARDINALS: readonly [number, number][] = [
+  [-1, 0],
+  [1, 0],
+  [0, -1],
+  [0, 1],
+];
+
+export type WaterFishClusterState = {
+  remaining: number;
+  max: number;
+  cellCount: number;
+};
 
 const TERRAIN_CODES: Record<TerrainType, string> = {
   grass: 'g', water: 'w', mountain: 'm', forest: 'f', tree: 't', hill: 'h', desert: 'd'
@@ -20,6 +35,12 @@ export class TileMap {
   public readonly width: number;
   public readonly height: number;
   private seed: number;
+  /**
+   * Shared fish stock per orthogonal water body. Populated lazily via {@link ensureWaterFishClusterAt}.
+   * Public so {@link TileMap.deserialize} can attach state when using `Object.create` (no constructor run).
+   */
+  public waterFishClusterById = new Map<number, WaterFishClusterState>();
+  public nextWaterFishClusterId = 1;
 
   constructor(width: number, height: number, seed?: number) {
     this.width = width;
@@ -409,6 +430,115 @@ export class TileMap {
     tile.walkable = terrain !== 'water' && terrain !== 'mountain';
   }
 
+  /** All orthogonally connected water cells from (sx, sy), capped for safety. */
+  private collectOrthogonalWaterCells(sx: number, sy: number): { x: number; y: number }[] {
+    const start = this.getTile(sx, sy);
+    if (!start || start.terrain !== 'water') return [];
+
+    const out: { x: number; y: number }[] = [];
+    const seen = new Set<string>();
+    const q: { x: number; y: number }[] = [{ x: sx, y: sy }];
+    seen.add(`${sx},${sy}`);
+
+    while (q.length > 0 && out.length < WATER_FISH_CLUSTER_BFS_CAP) {
+      const cur = q.shift()!;
+      const tile = this.getTile(cur.x, cur.y);
+      if (!tile || tile.terrain !== 'water') continue;
+      out.push(cur);
+      for (const [dx, dy] of WATER_CARDINALS) {
+        const nx = cur.x + dx;
+        const ny = cur.y + dy;
+        if (!this.isInBounds(nx, ny)) continue;
+        const k = `${nx},${ny}`;
+        if (seen.has(k)) continue;
+        const nt = this.getTile(nx, ny);
+        if (!nt || nt.terrain !== 'water') continue;
+        seen.add(k);
+        q.push({ x: nx, y: ny });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Lazily builds one fish stock for the whole orthogonal water body containing (wx, wy).
+   * Fishing from any shore cell shares this pool.
+   */
+  ensureWaterFishClusterAt(wx: number, wy: number): void {
+    const tile = this.getTile(wx, wy);
+    if (!tile || tile.terrain !== 'water') return;
+    if (tile.waterClusterId !== undefined) return;
+
+    const cells = this.collectOrthogonalWaterCells(wx, wy);
+    if (cells.length === 0) return;
+
+    const mapSeed = this.seed;
+    let sumMax = 0;
+    let sumRem = 0;
+
+    for (const { x, y } of cells) {
+      const t = this.tiles[y][x];
+      const legacyM = t.waterFishSchoolMax;
+      const legacyR = t.waterFishRemaining;
+      const hasLegacy = legacyM !== undefined || legacyR !== undefined;
+      const cellMax = hasLegacy
+        ? (legacyM ?? rollWaterFishSchoolMax(mapSeed, x, y))
+        : rollWaterFishSchoolMax(mapSeed, x, y);
+      const cellRem =
+        legacyR !== undefined
+          ? Math.min(cellMax, Math.max(0, legacyR))
+          : cellMax;
+      sumMax += cellMax;
+      sumRem += cellRem;
+    }
+
+    const clusterRemaining = Math.min(sumMax, sumRem);
+    const id = this.nextWaterFishClusterId++;
+    this.waterFishClusterById.set(id, {
+      remaining: clusterRemaining,
+      max: sumMax,
+      cellCount: cells.length,
+    });
+
+    for (const { x, y } of cells) {
+      const t = this.tiles[y][x];
+      t.waterClusterId = id;
+      delete t.waterFishSchoolMax;
+      delete t.waterFishRemaining;
+    }
+  }
+
+  getWaterFishRemainingAt(x: number, y: number): number {
+    const tile = this.getTile(x, y);
+    if (!tile || tile.terrain !== 'water') return 0;
+    this.ensureWaterFishClusterAt(x, y);
+    const id = tile.waterClusterId;
+    if (id === undefined) return 0;
+    return this.waterFishClusterById.get(id)?.remaining ?? 0;
+  }
+
+  getWaterFishClusterMaxAt(x: number, y: number): number {
+    const tile = this.getTile(x, y);
+    if (!tile || tile.terrain !== 'water') return 0;
+    this.ensureWaterFishClusterAt(x, y);
+    const id = tile.waterClusterId;
+    if (id === undefined) return 0;
+    return this.waterFishClusterById.get(id)?.max ?? 0;
+  }
+
+  /** Returns false if the lake cluster has no fish left for this water cell. */
+  takeOneWaterFishAt(x: number, y: number): boolean {
+    const tile = this.getTile(x, y);
+    if (!tile || tile.terrain !== 'water') return false;
+    this.ensureWaterFishClusterAt(x, y);
+    const id = tile.waterClusterId;
+    if (id === undefined) return false;
+    const st = this.waterFishClusterById.get(id);
+    if (!st || st.remaining <= 0) return false;
+    st.remaining--;
+    return true;
+  }
+
   findNearbyTerrain(cx: number, cy: number, radius: number, types: string[], exclude?: Set<string>): { x: number; y: number } | null {
     let best: { x: number; y: number; dist: number } | null = null;
 
@@ -476,7 +606,6 @@ export class TileMap {
     exclude?: Set<string>
   ): { x: number; y: number } | null {
     let best: { x: number; y: number; dist: number } | null = null;
-    const mapSeed = this.seed;
 
     for (let dy = -radius; dy <= radius; dy++) {
       for (let dx = -radius; dx <= radius; dx++) {
@@ -487,8 +616,7 @@ export class TileMap {
         if (tile.terrain !== 'water') continue;
         if (tile.hasRoad || tile.isOccupied()) continue;
         if (exclude && exclude.has(`${x},${y}`)) continue;
-        ensureWaterFishSchool(tile, mapSeed, x, y);
-        if (getWaterFishRemaining(tile, mapSeed, x, y) <= 0) continue;
+        if (this.getWaterFishRemainingAt(x, y) <= 0) continue;
         const dist = Math.abs(dx) + Math.abs(dy);
         if (!best || dist < best.dist) {
           best = { x, y, dist };
@@ -564,7 +692,6 @@ export class TileMap {
     exclude?: Set<string>
   ): { x: number; y: number }[] {
     const found: { x: number; y: number; d: number }[] = [];
-    const mapSeed = this.seed;
     for (let dy = -radius; dy <= radius; dy++) {
       for (let dx = -radius; dx <= radius; dx++) {
         const x = cx + dx;
@@ -574,8 +701,7 @@ export class TileMap {
         if (tile.terrain !== 'water') continue;
         if (tile.hasRoad || tile.isOccupied()) continue;
         if (exclude && exclude.has(`${x},${y}`)) continue;
-        ensureWaterFishSchool(tile, mapSeed, x, y);
-        if (getWaterFishRemaining(tile, mapSeed, x, y) <= 0) continue;
+        if (this.getWaterFishRemainingAt(x, y) <= 0) continue;
         const d = Math.abs(dx) + Math.abs(dy);
         found.push({ x, y, d });
       }
@@ -584,14 +710,13 @@ export class TileMap {
     return found.map(({ x, y }) => ({ x, y }));
   }
 
-  /** Every ~2h of in-game time: +1 fish on each water tile that already has a fish school (capped at school max). */
+  /**
+   * Every ~2h of in-game time: each initialized lake cluster gains +1 fish per water cell in that body
+   * (capped at the cluster max), matching the old per-tile regen rate across the whole pond.
+   */
   applyWaterFishPopulationRegen(): void {
-    for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++) {
-        const tile = this.tiles[y][x];
-        if (tile.terrain !== 'water') continue;
-        regenWaterFishOne(tile);
-      }
+    for (const st of this.waterFishClusterById.values()) {
+      st.remaining = Math.min(st.max, st.remaining + st.cellCount);
     }
   }
 
@@ -636,6 +761,7 @@ export class TileMap {
 
     const rockHarvests: { x: number; y: number; r: number }[] = [];
     const waterFish: { x: number; y: number; r: number; m: number }[] = [];
+    const waterFishClusters: { r: number; m: number; cells: string[] }[] = [];
     const cellMinerals: { x: number; y: number; c: number; i: number; g: number; r: number }[] = [];
     const wellWater: { x: number; y: number; w: number }[] = [];
 
@@ -659,7 +785,10 @@ export class TileMap {
           rockHarvests.push({ x, y, r: tile.rockHarvestsRemaining });
         }
 
-        if (tile.waterFishSchoolMax !== undefined || tile.waterFishRemaining !== undefined) {
+        if (
+          (tile.waterFishSchoolMax !== undefined || tile.waterFishRemaining !== undefined) &&
+          tile.waterClusterId === undefined
+        ) {
           const m = tile.waterFishSchoolMax ?? 15;
           const r = tile.waterFishRemaining ?? m;
           waterFish.push({ x, y, r, m });
@@ -676,6 +805,25 @@ export class TileMap {
       }
     }
 
+    const cellsByClusterId = new Map<number, string[]>();
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        const tile = this.tiles[y][x];
+        if (tile.waterClusterId === undefined) continue;
+        const id = tile.waterClusterId;
+        if (!cellsByClusterId.has(id)) cellsByClusterId.set(id, []);
+        cellsByClusterId.get(id)!.push(`${x},${y}`);
+      }
+    }
+    const sortedClusterIds = Array.from(cellsByClusterId.keys()).sort((a, b) => a - b);
+    for (const id of sortedClusterIds) {
+      const st = this.waterFishClusterById.get(id);
+      const cells = cellsByClusterId.get(id);
+      if (!st || !cells) continue;
+      const sortedCells = [...cells].sort();
+      waterFishClusters.push({ r: st.remaining, m: st.max, cells: sortedCells });
+    }
+
     return {
       seed: this.seed,
       width: this.width,
@@ -686,6 +834,7 @@ export class TileMap {
       occupied,
       rockHarvests,
       waterFish,
+      waterFishClusters,
       cellMinerals,
       wellWater,
     };
@@ -747,7 +896,38 @@ export class TileMap {
       }
     }
 
-    if (data.waterFish && Array.isArray(data.waterFish)) {
+    map.waterFishClusterById = new Map();
+    map.nextWaterFishClusterId = 1;
+
+    if (data.waterFishClusters && Array.isArray(data.waterFishClusters)) {
+      for (const entry of data.waterFishClusters as { r: number; m: number; cells: string[] }[]) {
+        const max = Math.max(entry.m, entry.r, 0);
+        const remaining = Math.min(max, Math.max(0, entry.r));
+        const cellKeys = Array.isArray(entry.cells) ? entry.cells : [];
+        const memberTiles: Tile[] = [];
+        for (const key of cellKeys) {
+          const parts = key.split(',').map(Number);
+          const x = parts[0]!;
+          const y = parts[1]!;
+          const tile = map.getTile(x, y);
+          if (tile && tile.terrain === 'water') {
+            memberTiles.push(tile);
+          }
+        }
+        if (memberTiles.length === 0) continue;
+        const id = map.nextWaterFishClusterId++;
+        for (const t of memberTiles) {
+          t.waterClusterId = id;
+          delete t.waterFishSchoolMax;
+          delete t.waterFishRemaining;
+        }
+        map.waterFishClusterById.set(id, {
+          remaining,
+          max,
+          cellCount: memberTiles.length,
+        });
+      }
+    } else if (data.waterFish && Array.isArray(data.waterFish)) {
       for (const entry of data.waterFish as { x: number; y: number; f?: number; r?: number; m?: number }[]) {
         const tile = map.getTile(entry.x, entry.y);
         if (tile) {

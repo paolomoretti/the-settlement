@@ -9,6 +9,8 @@ import { resourceManager } from '@/economics/ResourceManager';
 import { dataManager } from '@/data/DataManager';
 import { rollWellAquiferCapacity } from '@/map/wellAquifer';
 import type { TileMap } from '@/map/TileMap';
+import type { PathFinder } from '@/pathfinding/AStar';
+import { fisherHasReachableFish } from '@/map/fisherFishProbe';
 import { ResourceType } from '@/types/GameData';
 
 /**
@@ -129,7 +131,10 @@ export function applyProductionCycleOutputs(
 }
 
 export class ProductionSystem extends System {
-  constructor(private readonly getTileMap: () => TileMap) {
+  constructor(
+    private readonly getTileMap: () => TileMap,
+    private readonly getPathFinder: () => PathFinder
+  ) {
     super();
   }
 
@@ -259,6 +264,46 @@ export class ProductionSystem extends System {
         wellTile != null &&
         wellTile.cellWellWaterRemaining !== undefined &&
         wellTile.cellWellWaterRemaining <= 0;
+
+      if (
+        waterDepletionGather &&
+        building.buildingType === 'fisher' &&
+        pos &&
+        building.animationWorkerId == null
+      ) {
+        const now = Date.now();
+        if (now - building.lastWaterFishProbeAt >= 500) {
+          building.lastWaterFishProbeAt = now;
+          const foot = new Set<string>();
+          for (let dy = 0; dy < building.height; dy++) {
+            for (let dx = 0; dx < building.width; dx++) {
+              foot.add(`${pos.x + dx},${pos.y + dy}`);
+            }
+          }
+          const entrance = building.getEntranceOffset();
+          const entranceX = entrance ? pos.x + entrance.dx : pos.x;
+          const entranceY = entrance ? pos.y + entrance.dy : pos.y;
+          const gatherAnim =
+            buildingDef.animation?.type === 'gather' ? buildingDef.animation : null;
+          const animSearch = gatherAnim?.searchRadius ?? 7;
+          const gatherRadius = buildingDef.production?.maxGatherRadius ?? animSearch;
+          const maxWalkCells =
+            buildingDef.production?.maxGatherWalkCells ??
+            buildingDef.production?.maxGatherRadius ??
+            animSearch ??
+            gatherRadius;
+          const ok = fisherHasReachableFish(
+            this.getTileMap(),
+            this.getPathFinder(),
+            entranceX,
+            entranceY,
+            gatherRadius,
+            maxWalkCells,
+            foot
+          );
+          building.outOfMapResources = !ok;
+        }
+      }
 
       if (production.status !== 'producing') {
         if (!(building.buildingType === 'well' && wellAquiferDry)) {

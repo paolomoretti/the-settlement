@@ -81,6 +81,10 @@ export class Game {
   /** Full transport heal (segment graph + route maps + junction rescue); mirrors road `scheduleSegmentRecalc`. */
   private lastPeriodicTransportHealTime = 0;
   private lastOutputTransportKickTime = 0;
+  /** In-world seconds (uncapped); used for fish school regen on a fixed interval. */
+  private worldTimeSeconds = 0;
+  /** Next `worldTimeSeconds` at which we run water fish population regen (+1 per school tile). */
+  private nextWaterFishRegenWorldSecond = 7200;
 
   private readonly frameHooks: Array<() => void> = [];
 
@@ -93,7 +97,7 @@ export class Game {
     // Initialize systems
     this.renderSystem = new RenderSystem(canvas, this.tileMap);
     this.movementSystem = new MovementSystem();
-    this.productionSystem = new ProductionSystem(() => this.tileMap);
+    this.productionSystem = new ProductionSystem(() => this.tileMap, () => this.pathFinder);
     this.inputSystem = new InputSystem(canvas, this.renderSystem);
     this.pathFinder = new PathFinder();
 
@@ -1761,6 +1765,12 @@ export class Game {
 
     const deltaTime = Math.min((currentTime - this.lastTime) / 1000, 0.1);
     this.lastTime = currentTime;
+
+    this.worldTimeSeconds += deltaTime;
+    while (this.worldTimeSeconds >= this.nextWaterFishRegenWorldSecond) {
+      this.nextWaterFishRegenWorldSecond += 7200;
+      this.tileMap.applyWaterFishPopulationRegen();
+    }
 
     // Update FPS
     this.frameCount++;

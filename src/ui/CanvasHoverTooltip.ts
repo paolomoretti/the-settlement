@@ -143,7 +143,7 @@ export class CanvasHoverTooltip {
         this.bodyEl.innerHTML = rock.lines.map(l => `<div class="canvas-hover-tooltip-line">${escapeHtml(l)}</div>`).join('');
         return;
       }
-      const water = buildWaterFishHoverLines(t);
+      const water = buildWaterFishHoverLines(t, game.tileMap.getSeed(), gx, gy);
       if (water) {
         this.titleEl.textContent = water.title;
         this.bodyEl.innerHTML = water.lines.map(l => `<div class="canvas-hover-tooltip-line">${escapeHtml(l)}</div>`).join('');

@@ -16,6 +16,7 @@ import {
   paintWorkerFloorNap,
   WORKER_BODY_RESOURCE_SPRITE_PATHS,
 } from '@/rendering/WorkerSpritePainter';
+import { economySection, scheduleEconomyMermaid } from '@/debug/economySection';
 
 const root = document.getElementById('catalog-root');
 if (!root) throw new Error('#catalog-root missing');
@@ -488,6 +489,7 @@ function basePatch(
     isCarrying: boolean;
     isHammerConstruct: boolean;
     isPlantDigging: boolean;
+    isFisherFishing: boolean;
     isStoneGathering: boolean;
     isSideCarryTool: boolean;
     isOverheadCarry: boolean;
@@ -509,6 +511,7 @@ function basePatch(
     isCarrying,
     isHammerConstruct: overrides.isHammerConstruct ?? false,
     isPlantDigging: overrides.isPlantDigging ?? false,
+    isFisherFishing: overrides.isFisherFishing ?? false,
     isStoneGathering: overrides.isStoneGathering ?? false,
     isSideCarryTool: overrides.isSideCarryTool ?? false,
     isOverheadCarry: overrides.isOverheadCarry ?? false,
@@ -650,6 +653,23 @@ function workerSection(): HTMLElement {
       }),
   });
 
+  const fisher = new Worker('Fisher', 'peasant');
+  fisher.carryingResource = 'fishing_rod';
+  fisher.heldItemStyle = inferHeldItemStyle('fishing_rod');
+  fisher.visualActivity = 'production_gather';
+  fisher.state = 'working';
+  addCard('fishing-rod', 'Fishing (shore sit)', {
+    kind: 'normal',
+    worker: fisher,
+    patch: (now) =>
+      basePatch(now, {
+        isCarrying: true,
+        isFisherFishing: true,
+        anim: 'none',
+        armAnim: 'none',
+      }),
+  });
+
   const axe = new Worker('Axe', 'peasant');
   axe.carryingResource = 'axe';
   axe.heldItemStyle = inferHeldItemStyle('axe');
@@ -755,6 +775,7 @@ function workerSection(): HTMLElement {
         isCarrying: o.isCarrying,
         isHammerConstruct: o.isHammerConstruct,
         isPlantDigging: o.isPlantDigging,
+        isFisherFishing: o.isFisherFishing,
         isStoneGathering: o.isStoneGathering,
         isSideCarryTool: o.isSideCarryTool,
         isOverheadCarry: o.isOverheadCarry,
@@ -773,3 +794,5 @@ function workerSection(): HTMLElement {
 
 root.appendChild(buildingSection());
 root.appendChild(workerSection());
+root.appendChild(economySection());
+scheduleEconomyMermaid();

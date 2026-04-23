@@ -61,7 +61,8 @@
       scroll-margin-top: 58px;
     }
     #section-buildings,
-    #section-workers {
+    #section-workers,
+    #section-economy {
       scroll-margin-top: 58px;
     }
     .catalog-section-toc {
@@ -319,6 +320,57 @@
       line-height: 1.3;
     }
     code { font-size: 0.92em; background: #eee; padding: 2px 6px; border-radius: 4px; }
+    #section-economy h3 {
+      font-size: 18px;
+      margin: 28px 0 12px;
+      color: #0d3d0d;
+      scroll-margin-top: 72px;
+    }
+    .economy-intro {
+      color: #444;
+      font-size: 15px;
+      margin-bottom: 16px;
+      max-width: 56rem;
+    }
+    .economy-table-wrap {
+      overflow-x: auto;
+      margin-bottom: 22px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+    }
+    .economy-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    .economy-table th,
+    .economy-table td {
+      border-bottom: 1px solid #e8e8e8;
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .economy-table th {
+      background: #f4faf4;
+      font-weight: 700;
+      color: #1a4d1a;
+      white-space: nowrap;
+    }
+    .economy-table tr:last-child td { border-bottom: none; }
+    .economy-table .muted { color: #666; font-size: 13px; }
+    .mermaid-wrap {
+      margin: 16px 0 28px;
+      padding: 16px;
+      background: #fafafa;
+      border: 1px solid #e0e0e0;
+      border-radius: 10px;
+      overflow-x: auto;
+    }
+    .mermaid-wrap pre.mermaid {
+      margin: 0;
+      background: transparent;
+      font-size: 13px;
+    }
   </style>
 </head>
 <body>
@@ -326,10 +378,13 @@
     <a href="#section-buildings">Buildings</a>
     <span class="catalog-nav-sep" aria-hidden="true">·</span>
     <a href="#section-workers">Workers</a>
+    <span class="catalog-nav-sep" aria-hidden="true">·</span>
+    <a href="#section-economy">Economy</a>
   </nav>
   <h1>Asset catalogue (debug)</h1>
   <p class="sub">Standalone page — not linked from the game. Open <code>/debug.html</code> on the Vite dev server (same origin as the main game).</p>
   <div id="catalog-root"></div>
+  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
   <script type="module" src="/src/debug/catalogPage.ts"></script>
 </body>
 </html>

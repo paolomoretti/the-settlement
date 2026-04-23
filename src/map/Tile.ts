@@ -15,7 +15,12 @@ export class Tile {
   public forestDepth: number = 0;
   /** Remaining quarry harvests on this rock tile before `terrainTransition` clears it (lazy-init). */
   public rockHarvestsRemaining?: number;
-  /** Remaining fish catches this water tile can yield (fisher); undefined = full capacity; `0` = depleted. */
+  /**
+   * Lazy fish school on water: max school size (5–15) once assigned; remaining catches stored in
+   * `waterFishRemaining`. Undefined max means the school has not been rolled yet.
+   */
+  public waterFishSchoolMax?: number;
+  /** Remaining fish in this water tile’s school; `0` = empty until regen or new assignment. */
   public waterFishRemaining?: number;
   /** Lazy-assigned underground ores (10 units total across coal / iron_ore / gold_ore / granite). */
   public cellMinerals?: CellMinerals;

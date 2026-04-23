@@ -12,6 +12,7 @@ import { Movable } from '@/components/Movable';
 import { TileMap } from '@/map/TileMap';
 import { Isometric } from '@/utils/Isometric';
 import { Tile } from '@/map/Tile';
+import { ensureWaterFishSchool, getWaterFishRemaining } from '@/map/waterFishSchool';
 import { Production } from '@/components/Production';
 import { dataManager } from '@/data/DataManager';
 import { BuildingType, ResourceType } from '@/types/GameData';
@@ -37,6 +38,14 @@ const FLAT_SHORE_CLIP_EXTENT = 1_000_000;
 
 /** Uniform draw scale for `/assets/resources/*.png` on the main canvas (workers, junctions, map bubbles). */
 const RESOURCE_ICON_DRAW_SCALE = 1.25;
+
+/** TEMP (visual QA): time between decorative fish jumps — restore to `30_000` / `300_000` when done. */
+const FISH_SPAWN_GAP_MIN_MS = 400;
+const FISH_SPAWN_GAP_MAX_MS = 2_000;
+
+function nextFishSpawnGapMs(): number {
+  return FISH_SPAWN_GAP_MIN_MS + Math.random() * (FISH_SPAWN_GAP_MAX_MS - FISH_SPAWN_GAP_MIN_MS);
+}
 
 export class RenderSystem extends System {
   private ctx: CanvasRenderingContext2D;
@@ -115,6 +124,8 @@ export class RenderSystem extends System {
 
     // Center camera on map
     this.centerCamera();
+
+    this.nextFishSpawn = Date.now() + nextFishSpawnGapMs();
 
     this.preloadSprites(collectAllCataloguedBuildingSpritePaths());
 
@@ -1943,24 +1954,13 @@ export class RenderSystem extends System {
     }
   }
 
-  private isDeepWater(x: number, y: number): boolean {
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        if (dx === 0 && dy === 0) continue;
-        const t = this.tileMap.getTile(x + dx, y + dy);
-        if (!t || t.terrain !== 'water') return false;
-      }
-    }
-    return true;
-  }
-
   private renderFishJumps(): void {
     const now = Date.now();
     const JUMP_DURATION = 1200;
 
     if (now >= this.nextFishSpawn) {
       this.spawnFish();
-      this.nextFishSpawn = now + 5000 + Math.random() * 25000;
+      this.nextFishSpawn = now + nextFishSpawnGapMs();
     }
 
     const bounds = this.getViewportBounds();
@@ -1982,12 +1982,14 @@ export class RenderSystem extends System {
     const bounds = this.getViewportBounds();
     const w = bounds.maxX - bounds.minX + 1;
     const h = bounds.maxY - bounds.minY + 1;
-    for (let attempt = 0; attempt < 15; attempt++) {
+    const mapSeed = this.tileMap.getSeed();
+    for (let attempt = 0; attempt < 40; attempt++) {
       const x = bounds.minX + Math.floor(Math.random() * w);
       const y = bounds.minY + Math.floor(Math.random() * h);
       const tile = this.tileMap.getTile(x, y);
       if (!tile || tile.terrain !== 'water' || !tile.isExplored()) continue;
-      if (!this.isDeepWater(x, y)) continue;
+      ensureWaterFishSchool(tile, mapSeed, x, y);
+      if (getWaterFishRemaining(tile, mapSeed, x, y) <= 0) continue;
       this.fishJumps.push({ x, y, startTime: Date.now() });
       return;
     }
@@ -2049,7 +2051,7 @@ export class RenderSystem extends System {
     if (progress < 0.12 || progress > 0.88) {
       const entering = progress < 0.12;
       const sp = entering ? progress / 0.12 : (1 - progress) / 0.12;
-      const splashX = entering ? baseX : baseX + 14 * dir;
+      const splashX = entering ? baseX : baseX + 8 * dir;
       const r1 = 3 + sp * 6;
       ctx.strokeStyle = `rgba(200, 225, 245, ${(1 - sp) * 0.5})`;
       ctx.lineWidth = 0.8;
@@ -2882,6 +2884,7 @@ export class RenderSystem extends System {
     isCarrying: boolean;
     isHammerConstruct: boolean;
     isPlantDigging: boolean;
+    isFisherFishing: boolean;
     isStoneGathering: boolean;
     isSideCarryTool: boolean;
     isOverheadCarry: boolean;
@@ -2950,12 +2953,20 @@ export class RenderSystem extends System {
       worker.state === 'working' &&
       !isMoving;
 
+    const isFisherFishing =
+      isCarrying &&
+      worker.carryingResource === 'fishing_rod' &&
+      worker.visualActivity === 'production_gather' &&
+      worker.state === 'working' &&
+      !isMoving;
+
     const isSideCarryTool =
       isCarrying &&
       worker.heldItemStyle === 'side' &&
       !isHammerConstruct &&
       !isPlantDigging &&
-      !isStoneGathering;
+      !isStoneGathering &&
+      !isFisherFishing;
 
     const isOverheadCarry = isCarrying && worker.heldItemStyle === 'overhead';
 
@@ -2975,6 +2986,7 @@ export class RenderSystem extends System {
       isCarrying,
       isHammerConstruct,
       isPlantDigging,
+      isFisherFishing,
       isStoneGathering,
       isSideCarryTool,
       isOverheadCarry,

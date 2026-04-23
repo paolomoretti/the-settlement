@@ -8,6 +8,11 @@ import { Building } from '@/components/Building';
 import { Production } from '@/components/Production';
 import { Storage } from '@/components/Storage';
 import { Tile } from '@/map/Tile';
+import {
+  ensureWaterFishSchool,
+  getWaterFishRemaining,
+  getWaterFishSchoolMax,
+} from '@/map/waterFishSchool';
 import { dataManager } from '@/data/DataManager';
 import { resourceManager } from '@/economics/ResourceManager';
 import { BuildingType, ResourceType } from '@/types/GameData';
@@ -20,10 +25,6 @@ export function isInsightRockTile(tile: Tile): boolean {
 
 export function getQuarryStonesPerRockTile(): number {
   return dataManager.getBuilding('quarry' as BuildingType)?.production?.stonesPerRockTile ?? 10;
-}
-
-export function getFisherFishPerWaterTile(): number {
-  return dataManager.getBuilding('fisher' as BuildingType)?.production?.fishPerWaterTile ?? 15;
 }
 
 const INVENTORY_CATEGORIES = ['raw', 'refined', 'food', 'tool', 'weapon'] as const;
@@ -197,17 +198,33 @@ export function buildBuildingHoverLines(entity: Entity): { title: string; lines:
   return { title, lines };
 }
 
-export function buildWaterFishHoverLines(tile: Tile): { title: string; lines: string[] } | null {
+export function buildWaterFishHoverLines(
+  tile: Tile,
+  mapSeed: number,
+  gx: number,
+  gy: number
+): { title: string; lines: string[] } | null {
   if (tile.terrain !== 'water') return null;
 
-  const fishPer = getFisherFishPerWaterTile();
-  const remaining = tile.waterFishRemaining ?? fishPer;
+  const title = 'Water';
+  if (tile.waterFishSchoolMax === undefined && tile.waterFishRemaining === undefined) {
+    return {
+      title,
+      lines: [
+        'Fish schools (5–15 catches per tile) are rolled the first time this cell is used for fishing or for a decorative jump.',
+        'Schools gain +1 fish (up to their cap) every 2 in-game hours.',
+      ],
+    };
+  }
+
+  ensureWaterFishSchool(tile, mapSeed, gx, gy);
+  const fishPer = getWaterFishSchoolMax(tile, mapSeed, gx, gy);
+  const remaining = getWaterFishRemaining(tile, mapSeed, gx, gy);
   const used = Math.max(0, fishPer - remaining);
   const remainingPct = fishPer > 0 ? Math.round((remaining / fishPer) * 100) : 0;
 
-  const title = 'Water';
   const lines: string[] = [
-    `A fisher can catch up to ${fishPer} fish from a single water tile.`,
+    `This tile’s fish school holds up to ${fishPer} catches.`,
     `Fish remaining: ${remaining} (${remainingPct}% of the school).`,
   ];
   if (used > 0) {
@@ -244,6 +261,6 @@ export function getHoverTargetKey(game: {
   const tile = game.tileMap.getTile(gx, gy);
   if (!tile) return null;
   if (buildRockTileHoverLines(tile)) return `r:${gx},${gy}`;
-  if (buildWaterFishHoverLines(tile)) return `f:${gx},${gy}`;
+  if (tile.terrain === 'water') return `f:${gx},${gy}`;
   return null;
 }

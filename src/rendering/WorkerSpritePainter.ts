@@ -26,6 +26,7 @@ export interface WorkerBodyPaintInput {
   isCarrying: boolean;
   isHammerConstruct: boolean;
   isPlantDigging: boolean;
+  isFisherFishing: boolean;
   isStoneGathering: boolean;
   isSideCarryTool: boolean;
   isOverheadCarry: boolean;
@@ -51,6 +52,7 @@ export function paintWorkerSpriteBody(
     isCarrying,
     isHammerConstruct,
     isPlantDigging,
+    isFisherFishing,
     isStoneGathering,
     isSideCarryTool,
     isOverheadCarry,
@@ -93,8 +95,14 @@ export function paintWorkerSpriteBody(
     ctx.translate(lean * s, bob * s);
   }
 
+  if (isFisherFishing) {
+    const squat = Math.sin(now / 1100) * 0.22 * s;
+    const bankEdge = worker.fisherTowardWater ? 0.32 * s : 0;
+    ctx.translate(0, 2.65 * s + squat + bankEdge);
+  }
+
   const legOffsets = [[0, 0], [-1, 1], [0, 0], [1, -1]];
-  const [leftLeg, rightLeg] = legOffsets[frame];
+  const [leftLeg, rightLeg] = isFisherFishing ? ([1, -1] as [number, number]) : legOffsets[frame];
   const walkArmSwing = isMoving ? (frame === 1 ? 1 : frame === 3 ? -1 : 0) : 0;
 
   if (drawRoundFootShadow) {
@@ -153,8 +161,9 @@ export function paintWorkerSpriteBody(
     rightArmY = -8 + swing * 1.05;
     leftHandY = -5 + swing * 0.28;
     rightHandY = rightArmY + 3;
-  } else if (isSideCarryTool) {
-    const wobble = isMoving ? walkArmSwing * 0.5 : 0;
+  } else if (isSideCarryTool || isFisherFishing) {
+    /** Fisher uses the same hip/tool rig as other side tools so the rod stays glued to the hands. */
+    const wobble = isSideCarryTool && isMoving ? walkArmSwing * 0.5 : 0;
     leftArmX = -4;
     rightArmX = 4;
     leftArmY = -8 + wobble;
@@ -224,6 +233,7 @@ export function paintWorkerSpriteBody(
     !isCarrying &&
     !isHammerConstruct &&
     !isStoneGathering &&
+    !isFisherFishing &&
     !isSideCarryTool &&
     !isOverheadCarry
   ) {
@@ -315,7 +325,7 @@ export function paintWorkerSpriteBody(
       } else {
         px(tx - 1, ty, 5, 5, '#8a7a68');
       }
-    } else if (isSideCarryTool) {
+    } else if (isSideCarryTool || isFisherFishing) {
       if (resSprite) {
         ctx.drawImage(resSprite, -0.5 * s, -11 * s, toolDrawPx * s, toolDrawPx * s);
       } else {
@@ -417,6 +427,7 @@ export function paintWorkerFloorNap(
     isCarrying: false,
     isHammerConstruct: false,
     isPlantDigging: false,
+    isFisherFishing: false,
     isStoneGathering: false,
     isSideCarryTool: false,
     isOverheadCarry: false,

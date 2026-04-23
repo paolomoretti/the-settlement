@@ -5,6 +5,7 @@
 import { Tile, TerrainType } from './Tile';
 import { cellMineralTotal } from './CellMinerals';
 import { NoiseGenerator } from '@/utils/NoiseGenerator';
+import { ensureWaterFishSchool, getWaterFishRemaining, regenWaterFishOne } from './waterFishSchool';
 
 const TERRAIN_CODES: Record<TerrainType, string> = {
   grass: 'g', water: 'w', mountain: 'm', forest: 'f', tree: 't', hill: 'h', desert: 'd'
@@ -471,10 +472,11 @@ export class TileMap {
     cx: number,
     cy: number,
     radius: number,
-    fishPerFull: number,
+    _fishPerFull: number,
     exclude?: Set<string>
   ): { x: number; y: number } | null {
     let best: { x: number; y: number; dist: number } | null = null;
+    const mapSeed = this.seed;
 
     for (let dy = -radius; dy <= radius; dy++) {
       for (let dx = -radius; dx <= radius; dx++) {
@@ -485,8 +487,8 @@ export class TileMap {
         if (tile.terrain !== 'water') continue;
         if (tile.hasRoad || tile.isOccupied()) continue;
         if (exclude && exclude.has(`${x},${y}`)) continue;
-        const remaining = tile.waterFishRemaining ?? fishPerFull;
-        if (remaining <= 0) continue;
+        ensureWaterFishSchool(tile, mapSeed, x, y);
+        if (getWaterFishRemaining(tile, mapSeed, x, y) <= 0) continue;
         const dist = Math.abs(dx) + Math.abs(dy);
         if (!best || dist < best.dist) {
           best = { x, y, dist };
@@ -558,10 +560,11 @@ export class TileMap {
     cx: number,
     cy: number,
     radius: number,
-    fishPerFull: number,
+    _fishPerFull: number,
     exclude?: Set<string>
   ): { x: number; y: number }[] {
     const found: { x: number; y: number; d: number }[] = [];
+    const mapSeed = this.seed;
     for (let dy = -radius; dy <= radius; dy++) {
       for (let dx = -radius; dx <= radius; dx++) {
         const x = cx + dx;
@@ -571,14 +574,25 @@ export class TileMap {
         if (tile.terrain !== 'water') continue;
         if (tile.hasRoad || tile.isOccupied()) continue;
         if (exclude && exclude.has(`${x},${y}`)) continue;
-        const remaining = tile.waterFishRemaining ?? fishPerFull;
-        if (remaining <= 0) continue;
+        ensureWaterFishSchool(tile, mapSeed, x, y);
+        if (getWaterFishRemaining(tile, mapSeed, x, y) <= 0) continue;
         const d = Math.abs(dx) + Math.abs(dy);
         found.push({ x, y, d });
       }
     }
     found.sort((a, b) => a.d - b.d);
     return found.map(({ x, y }) => ({ x, y }));
+  }
+
+  /** Every ~2h of in-game time: +1 fish on each water tile that already has a fish school (capped at school max). */
+  applyWaterFishPopulationRegen(): void {
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        const tile = this.tiles[y][x];
+        if (tile.terrain !== 'water') continue;
+        regenWaterFishOne(tile);
+      }
+    }
   }
 
   isInBounds(x: number, y: number): boolean {
@@ -621,7 +635,7 @@ export class TileMap {
     const occupied: { x: number; y: number; id: number }[] = [];
 
     const rockHarvests: { x: number; y: number; r: number }[] = [];
-    const waterFish: { x: number; y: number; f: number }[] = [];
+    const waterFish: { x: number; y: number; r: number; m: number }[] = [];
     const cellMinerals: { x: number; y: number; c: number; i: number; g: number; r: number }[] = [];
     const wellWater: { x: number; y: number; w: number }[] = [];
 
@@ -645,8 +659,10 @@ export class TileMap {
           rockHarvests.push({ x, y, r: tile.rockHarvestsRemaining });
         }
 
-        if (tile.waterFishRemaining !== undefined) {
-          waterFish.push({ x, y, f: tile.waterFishRemaining });
+        if (tile.waterFishSchoolMax !== undefined || tile.waterFishRemaining !== undefined) {
+          const m = tile.waterFishSchoolMax ?? 15;
+          const r = tile.waterFishRemaining ?? m;
+          waterFish.push({ x, y, r, m });
         }
 
         if (tile.cellMinerals && cellMineralTotal(tile.cellMinerals) > 0) {
@@ -732,10 +748,13 @@ export class TileMap {
     }
 
     if (data.waterFish && Array.isArray(data.waterFish)) {
-      for (const entry of data.waterFish as { x: number; y: number; f: number }[]) {
+      for (const entry of data.waterFish as { x: number; y: number; f?: number; r?: number; m?: number }[]) {
         const tile = map.getTile(entry.x, entry.y);
         if (tile) {
-          tile.waterFishRemaining = entry.f;
+          const r = entry.r ?? entry.f ?? 0;
+          const m = entry.m ?? 15;
+          tile.waterFishSchoolMax = m;
+          tile.waterFishRemaining = r;
         }
       }
     }

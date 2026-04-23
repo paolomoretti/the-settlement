@@ -32,6 +32,8 @@ export class Building extends Component {
   public animationWorkerId: number | null = null;
   /** Lumberjack / quarry / fisher: no harvestable tile within search radius with a short enough off-road walk from the entrance. */
   public outOfMapResources: boolean = false;
+  /** Throttle reachability scans for the fisher’s water tiles (realtime ms). */
+  public lastWaterFishProbeAt: number = 0;
 
   constructor(
     public buildingType: BuildingType,

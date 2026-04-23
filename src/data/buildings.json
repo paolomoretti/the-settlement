@@ -193,22 +193,21 @@
     "requiredTool": "fishing_rod",
     "production": {
       "outputs": { "fish": 1 },
-      "productionTime": 30,
+      "productionTime": 90,
       "continuous": true,
       "maxOutputBuffer": 6,
-      "maxGatherRadius": 15,
-      "maxGatherWalkCells": 22,
-      "fishPerWaterTile": 15
+      "maxGatherRadius": 7,
+      "maxGatherWalkCells": 14
     },
     "animation": {
       "type": "gather",
       "gatherMode": "water_depletion",
       "targetTerrain": ["water"],
-      "searchRadius": 15,
+      "searchRadius": 7,
       "terrainTransition": {},
       "workerSpeed": 1.05,
-      "walkLeadSec": 8,
-      "digAtSiteSec": 6,
+      "walkLeadSec": 24,
+      "digAtSiteSec": 50,
       "carriedResource": "fish"
     },
     "population": { "requires": 1 },

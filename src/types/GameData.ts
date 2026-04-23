@@ -150,7 +150,10 @@ export interface ProductionRule {
   maxGatherWalkCells?: number;
   /** Harvests left per rock tile before terrain clears (quarry `rock_depletion` gather). */
   stonesPerRockTile?: number;
-  /** Fish catches per water tile before depleted (fisher `water_depletion` gather). */
+  /**
+   * Legacy JSON field; fish schools now use lazy per-tile caps (5–15) from the map seed.
+   * Ignored by runtime if omitted.
+   */
   fishPerWaterTile?: number;
 }
 

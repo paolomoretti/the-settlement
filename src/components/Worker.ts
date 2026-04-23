@@ -107,6 +107,12 @@ export class Worker extends Component {
   public nextIdleCheck = 0;
   public idleFacing = 0;
 
+  /**
+   * While shore-fishing: cardinal grid delta from stand tile toward the water cell.
+   * Used to nudge the sprite slightly toward the bank in world space (see `RenderSystem`).
+   */
+  public fisherTowardWater?: { dx: number; dy: number };
+
   /** Monotonic idle on tile (no walk / no job state); cleared when moving or non-idle. Used for rare floor naps. */
   public idleContinuousSinceMs: number | null = null;
   /** When set and `Date.now() <` this, worker is drawn napping on the ground. */

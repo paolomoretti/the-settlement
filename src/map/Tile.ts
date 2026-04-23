@@ -16,12 +16,13 @@ export class Tile {
   /** Remaining quarry harvests on this rock tile before `terrainTransition` clears it (lazy-init). */
   public rockHarvestsRemaining?: number;
   /**
-   * Lazy fish school on water: max school size (5–15) once assigned; remaining catches stored in
-   * `waterFishRemaining`. Undefined max means the school has not been rolled yet.
+   * Legacy per-tile fish fields (saves before lake clusters); cleared once a lake cluster is built.
+   * @see waterClusterId
    */
   public waterFishSchoolMax?: number;
-  /** Remaining fish in this water tile’s school; `0` = empty until regen or new assignment. */
   public waterFishRemaining?: number;
+  /** Orthogonal water body this tile belongs to for shared fish stock (assigned lazily). */
+  public waterClusterId?: number;
   /** Lazy-assigned underground ores (10 units total across coal / iron_ore / gold_ore / granite). */
   public cellMinerals?: CellMinerals;
   /**

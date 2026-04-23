@@ -6,7 +6,6 @@
 import { Position } from '@/components/Position';
 import type { PathFinder } from '@/pathfinding/AStar';
 import type { TileMap } from './TileMap';
-import { ensureWaterFishSchool, getWaterFishRemaining } from './waterFishSchool';
 
 export interface FisherWaterPick {
   waterX: number;
@@ -54,13 +53,11 @@ function tryPickStandForWater(
   waterX: number,
   waterY: number,
   maxWalkCells: number,
-  gatherExclude: Set<string>,
-  mapSeed: number
+  gatherExclude: Set<string>
 ): FisherWaterPick | null {
   const wtile = tileMap.getTile(waterX, waterY);
   if (!wtile || wtile.terrain !== 'water' || wtile.hasRoad || wtile.isOccupied()) return null;
-  ensureWaterFishSchool(wtile, mapSeed, waterX, waterY);
-  if (getWaterFishRemaining(wtile, mapSeed, waterX, waterY) <= 0) return null;
+  if (tileMap.getWaterFishRemainingAt(waterX, waterY) <= 0) return null;
 
   const standCandidates: { sx: number; sy: number; path: Position[] }[] = [];
   for (const [dx, dy] of STAND_OFFSETS) {
@@ -98,7 +95,6 @@ export function listReachableWaterFishTargets(
   maxWalkCells: number,
   gatherExclude: Set<string>
 ): FisherWaterPick[] {
-  const mapSeed = tileMap.getSeed();
   const picks: FisherWaterPick[] = [];
   for (let dy = -radius; dy <= radius; dy++) {
     for (let dx = -radius; dx <= radius; dx++) {
@@ -114,8 +110,7 @@ export function listReachableWaterFishTargets(
         wx,
         wy,
         maxWalkCells,
-        gatherExclude,
-        mapSeed
+        gatherExclude
       );
       if (pick) picks.push(pick);
     }

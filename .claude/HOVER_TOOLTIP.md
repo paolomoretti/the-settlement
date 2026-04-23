@@ -34,7 +34,7 @@ Uses quarry config **`stonesPerRockTile`** (default 10). `Tile.rockHarvestsRemai
 
 ## Water tiles (`water`)
 
-Fisher **`water_depletion`** gather (see economics / GameWorkerRegistry): **`fishPerWaterTile`** (default **15**) per cell. `Tile.waterFishRemaining` is lazy until the first catch; **`0`** means depleted (tile stays water). Tooltip shows remaining fish and % of the school.
+Fisher **`water_depletion`** gather (see `GameWorkerRegistry`, `TileMap` lake clusters in `.claude/WATER_FISH.md`). Fish stock is **shared across the whole connected lake** (orthogonal water cells). Alt-hover calls `ensureWaterFishClusterAt` then shows **lake-wide** remaining fish and % of the cluster cap (`buildWaterFishHoverLines` in `buildHoverLines.ts`).
 
 ## Styling
 

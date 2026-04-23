@@ -36,14 +36,15 @@ export interface WildRabbit {
   jumping?: RabbitJumpState;
 }
 
-/** ~20% more frequent than a 120s baseline (80% of the wait time). */
-const SPAWN_INTERVAL_MS = 96_000;
+const SPAWN_INTERVAL_MS = 120_000;
+/** Explored rabbit-habitat tiles per batch / per 3 rabbits of cap (see countExploredRabbitHabitatCells). */
+const HABITAT_TILES_PER_CHUNK = 500;
+const RABBITS_PER_HABITAT_CHUNK = 3;
 const WANDER_INTERVAL_MS = 40_000;
-const MAX_WORLD_RABBITS = 48;
 const INITIAL_MIN = 2;
 const INITIAL_MAX = 3;
 const WANDER_RADIUS_MANHATTAN = 2;
-const SPAWN_ATTEMPTS_PER_TICK = 48;
+const SPAWN_ATTEMPTS_PER_RABBIT = 96;
 
 function cellKey(x: number, y: number): string {
   return `${x},${y}`;
@@ -64,13 +65,34 @@ function isWater(t: Tile | null | undefined): boolean {
   return !!t && t.terrain === 'water';
 }
 
-function isValidRabbitStandTile(tile: Tile | null | undefined): tile is Tile {
+/** Explored, walkable rabbit terrain without roads (for population caps; ignores building occupancy). */
+function isExploredRabbitHabitatMetricTile(tile: Tile | null | undefined): tile is Tile {
   if (!tile) return false;
   if (!tile.isExplored()) return false;
-  if (!tile.walkable || tile.isOccupied()) return false;
+  if (!tile.walkable) return false;
   if (tile.hasRoad) return false;
   if (tile.terrain !== 'grass' && tile.terrain !== 'desert' && tile.terrain !== 'hill') return false;
   return true;
+}
+
+function isValidRabbitStandTile(tile: Tile | null | undefined): tile is Tile {
+  if (!isExploredRabbitHabitatMetricTile(tile)) return false;
+  if (tile.isOccupied()) return false;
+  return true;
+}
+
+/** Full-map scan; call only on spawn ticks (e.g. every 2 min), not each frame. */
+export function countExploredRabbitHabitatCells(tileMap: TileMap): number {
+  let n = 0;
+  const w = tileMap.width;
+  const h = tileMap.height;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const t = tileMap.getTile(x, y);
+      if (isExploredRabbitHabitatMetricTile(t)) n++;
+    }
+  }
+  return n;
 }
 
 export interface SerializedWildlife {
@@ -177,10 +199,16 @@ export class WildlifeCoordinator {
 
   /** After a brand-new map (HQ + initial explore), place starter rabbits and arm periodic spawns. */
   seedInitialRabbits(tileMap: TileMap, centerX: number, centerY: number): void {
-    const target = INITIAL_MIN + Math.floor(Math.random() * (INITIAL_MAX - INITIAL_MIN + 1));
-    const placed = this.tryPlaceStarterRabbits(tileMap, centerX, centerY, target);
-    if (placed < target) {
-      this.tryPlaceStarterRabbitsLoose(tileMap, centerX, centerY, target - placed);
+    const habitatCells = countExploredRabbitHabitatCells(tileMap);
+    const maxRabbits =
+      Math.floor(habitatCells / HABITAT_TILES_PER_CHUNK) * RABBITS_PER_HABITAT_CHUNK;
+    const want = INITIAL_MIN + Math.floor(Math.random() * (INITIAL_MAX - INITIAL_MIN + 1));
+    const target = Math.min(want, maxRabbits);
+    if (target > 0) {
+      const placed = this.tryPlaceStarterRabbits(tileMap, centerX, centerY, target);
+      if (placed < target) {
+        this.tryPlaceStarterRabbitsLoose(tileMap, centerX, centerY, target - placed);
+      }
     }
     this.scheduleNextSpawnFromNow();
   }
@@ -202,8 +230,9 @@ export class WildlifeCoordinator {
     }
 
     if (now >= this.nextSpawnAttemptAtMs) {
-      this.nextSpawnAttemptAtMs = now + SPAWN_INTERVAL_MS;
-      this.trySpawnOne(tileMap);
+      const jitter = Math.floor(Math.random() * 8000);
+      this.nextSpawnAttemptAtMs = now + SPAWN_INTERVAL_MS + jitter;
+      this.trySpawnBatch(tileMap);
     }
   }
 
@@ -325,7 +354,8 @@ export class WildlifeCoordinator {
   }
 
   private scheduleNextSpawnFromNow(): void {
-    this.nextSpawnAttemptAtMs = Date.now() + SPAWN_INTERVAL_MS;
+    const jitter = Math.floor(Math.random() * 8000);
+    this.nextSpawnAttemptAtMs = Date.now() + SPAWN_INTERVAL_MS + jitter;
   }
 
   private insertRabbit(r: WildRabbit): void {
@@ -433,35 +463,47 @@ export class WildlifeCoordinator {
       now + RABBIT_JUMP_DURATION_MS + WANDER_INTERVAL_MS + Math.floor(Math.random() * 2500);
   }
 
-  private trySpawnOne(tileMap: TileMap): void {
-    if (this.rabbits.length >= MAX_WORLD_RABBITS) return;
+  /**
+   * Every spawn interval: up to (habitatCells/500) rabbits, total population capped at 3× that chunk count.
+   * Stops early if random search finds no free stand tile.
+   */
+  private trySpawnBatch(tileMap: TileMap): void {
+    const habitatCells = countExploredRabbitHabitatCells(tileMap);
+    const batchCount = Math.floor(habitatCells / HABITAT_TILES_PER_CHUNK);
+    const maxRabbits = batchCount * RABBITS_PER_HABITAT_CHUNK;
+    if (batchCount <= 0 || maxRabbits <= 0) return;
+
+    const headroom = maxRabbits - this.rabbits.length;
+    const toPlace = Math.min(batchCount, headroom);
+    if (toPlace <= 0) return;
+
     const w = tileMap.width;
     const h = tileMap.height;
-    for (let i = 0; i < SPAWN_ATTEMPTS_PER_TICK; i++) {
-      const x = Math.floor(Math.random() * w);
-      const y = Math.floor(Math.random() * h);
-      const tile = tileMap.getTile(x, y);
-      if (!isValidRabbitStandTile(tile)) continue;
-      if (this.cellOccupied.has(cellKey(x, y))) continue;
+    const now = Date.now();
 
-      let score = 1;
-      const n = tileMap.getNeighbors(x, y);
-      if (n.some(isForestLike)) score += 10;
-      if (n.some(isWater)) score += 6;
-      if (score === 1 && Math.random() > 0.08) continue;
+    for (let b = 0; b < toPlace; b++) {
+      let placedOne = false;
+      for (let a = 0; a < SPAWN_ATTEMPTS_PER_RABBIT; a++) {
+        const x = Math.floor(Math.random() * w);
+        const y = Math.floor(Math.random() * h);
+        const tile = tileMap.getTile(x, y);
+        if (!isValidRabbitStandTile(tile)) continue;
+        if (this.cellOccupied.has(cellKey(x, y))) continue;
 
-      const now = Date.now();
-      this.insertRabbit({
-        id: this.nextRabbitId++,
-        originX: x,
-        originY: y,
-        x,
-        y,
-        variant: rollVariant(),
-        animSeed: Math.random() * 1000,
-        nextWanderAtMs: now + WANDER_INTERVAL_MS + Math.floor(Math.random() * 4000),
-      });
-      return;
+        this.insertRabbit({
+          id: this.nextRabbitId++,
+          originX: x,
+          originY: y,
+          x,
+          y,
+          variant: rollVariant(),
+          animSeed: Math.random() * 1000,
+          nextWanderAtMs: now + WANDER_INTERVAL_MS + Math.floor(Math.random() * 4000),
+        });
+        placedOne = true;
+        break;
+      }
+      if (!placedOne) return;
     }
   }
 }

@@ -11,6 +11,7 @@ import { rollWellAquiferCapacity } from '@/map/wellAquifer';
 import type { TileMap } from '@/map/TileMap';
 import type { PathFinder } from '@/pathfinding/AStar';
 import { fisherHasReachableFish } from '@/map/fisherFishProbe';
+import type { WildlifeCoordinator } from '@/wildlife/WildlifeCoordinator';
 import { ResourceType } from '@/types/GameData';
 
 /**
@@ -133,7 +134,8 @@ export function applyProductionCycleOutputs(
 export class ProductionSystem extends System {
   constructor(
     private readonly getTileMap: () => TileMap,
-    private readonly getPathFinder: () => PathFinder
+    private readonly getPathFinder: () => PathFinder,
+    private readonly getWildlife?: () => WildlifeCoordinator
   ) {
     super();
   }
@@ -180,6 +182,9 @@ export class ProductionSystem extends System {
       const mineSiteGather =
         buildingDef?.animation?.type === 'gather' &&
         buildingDef.animation.gatherMode === 'mine_site';
+      const wildHuntGather =
+        buildingDef?.animation?.type === 'gather' &&
+        buildingDef.animation.gatherMode === 'wild_hunt';
 
       // Check buffer/storage space for outputs (skip if cycle already in progress)
       if (production.timer === 0) {
@@ -305,6 +310,47 @@ export class ProductionSystem extends System {
         }
       }
 
+      if (
+        wildHuntGather &&
+        building.buildingType === 'hunter' &&
+        pos &&
+        building.animationWorkerId == null &&
+        this.getWildlife
+      ) {
+        const now = Date.now();
+        if (now - building.lastHuntRabbitProbeAt >= 500) {
+          building.lastHuntRabbitProbeAt = now;
+          const foot = new Set<string>();
+          for (let dy = 0; dy < building.height; dy++) {
+            for (let dx = 0; dx < building.width; dx++) {
+              foot.add(`${pos.x + dx},${pos.y + dy}`);
+            }
+          }
+          const entrance = building.getEntranceOffset();
+          const entranceX = entrance ? pos.x + entrance.dx : pos.x;
+          const entranceY = entrance ? pos.y + entrance.dy : pos.y;
+          const gatherAnim =
+            buildingDef.animation?.type === 'gather' ? buildingDef.animation : null;
+          const animSearch = gatherAnim?.searchRadius ?? 10;
+          const gatherRadius = buildingDef.production?.maxGatherRadius ?? animSearch;
+          const maxWalkCells =
+            buildingDef.production?.maxGatherWalkCells ??
+            buildingDef.production?.maxGatherRadius ??
+            animSearch ??
+            gatherRadius;
+          const ok = this.getWildlife()!.hasReachableRabbit(
+            this.getTileMap(),
+            this.getPathFinder(),
+            entranceX,
+            entranceY,
+            gatherRadius,
+            maxWalkCells,
+            foot
+          );
+          building.outOfMapResources = !ok;
+        }
+      }
+
       if (production.status !== 'producing') {
         if (!(building.buildingType === 'well' && wellAquiferDry)) {
           building.outOfMapResources = false;
@@ -320,7 +366,7 @@ export class ProductionSystem extends System {
         building.buildingType === 'forester' && building.animationWorkerId != null;
       const fieldGatherPausing =
         building.animationWorkerId != null &&
-        (resourceDepletionGather || mineSiteGather);
+        (resourceDepletionGather || mineSiteGather || wildHuntGather);
       const mapGatherSourceBlocked =
         mapLinkedGather && building.outOfMapResources;
       if (
@@ -335,6 +381,7 @@ export class ProductionSystem extends System {
       if (
         !resourceDepletionGather &&
         !mineSiteGather &&
+        !wildHuntGather &&
         production.timer >= production.productionTime
       ) {
         production.timer -= production.productionTime;

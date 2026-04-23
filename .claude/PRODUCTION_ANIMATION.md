@@ -32,6 +32,10 @@ Buildings with an `animation` config in `buildings.json` spawn a visual worker d
 - `terrainTransition` — how terrain changes when chopped (at 90% progress)
 - `workerSpeed` — worker movement speed in tiles/sec
 
+### `gatherMode: "wild_hunt"` (Hunter’s Hut)
+
+Uses the same gather state machine (`to_target → chopping → returning`) but targets **wild rabbits** from `Game.wildlife` instead of terrain. Output is applied on **return** (like quarry/fish), and `ProductionSystem` **pauses the timer** while the animation worker exists. See [.claude/WILDLIFE_RABBITS.md](WILDLIFE_RABBITS.md).
+
 ## Key Implementation Details
 
 ### Files Changed

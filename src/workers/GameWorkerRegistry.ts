@@ -760,6 +760,7 @@ export class GameWorkerRegistry {
             const dx = gather.fisherWaterTile.x - gather.targetTile.x;
             const dy = gather.fisherWaterTile.y - gather.targetTile.y;
             workerComp.idleFacing = gridFacingTowardWater(dx, dy);
+            workerComp.fisherTowardWater = { dx, dy };
           }
           break;
         }
@@ -823,6 +824,7 @@ export class GameWorkerRegistry {
                         gather.phase = 'to_target';
                         workerComp.setState('walking');
                         workerComp.visualActivity = 'general';
+                        delete workerComp.fisherTowardWater;
                         break;
                       }
                     }
@@ -905,6 +907,7 @@ export class GameWorkerRegistry {
                 workerComp.pickUpResource(carried, 'overhead');
               }
 
+              delete workerComp.fisherTowardWater;
               workerComp.setState('carrying');
               workerComp.visualActivity = 'general';
 

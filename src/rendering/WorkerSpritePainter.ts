@@ -97,7 +97,8 @@ export function paintWorkerSpriteBody(
 
   if (isFisherFishing) {
     const squat = Math.sin(now / 1100) * 0.22 * s;
-    ctx.translate(0, 2.65 * s + squat);
+    const bankEdge = worker.fisherTowardWater ? 0.32 * s : 0;
+    ctx.translate(0, 2.65 * s + squat + bankEdge);
   }
 
   const legOffsets = [[0, 0], [-1, 1], [0, 0], [1, -1]];

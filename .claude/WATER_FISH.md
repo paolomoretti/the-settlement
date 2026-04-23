@@ -16,7 +16,7 @@
 - On reaching the stand, `idleFacing` is set from grid delta stand → water (same convention as walking facing in `RenderSystem`).
 - Site time: **40–50 s** per trip (`GameWorkerRegistry` random `digSec`); `digAtSiteSec` in JSON is a ceiling for the depart buffer. Production pacing: `productionTime` and `walkLeadSec` in JSON.
 - If the worker arrives after fish were depleted, they retarget a few times, then abort and set `outOfMapResources`.
-- Seated fishing pose: `isFisherFishing` in `WorkerSpritePainter` / `RenderSystem` (rod + lower/crossed legs).
+- Seated fishing pose: `isFisherFishing` in `WorkerSpritePainter` / `RenderSystem` (rod + lower/crossed legs). `Worker.fisherTowardWater` stores stand→water grid delta; while fishing, `RenderSystem` applies a small iso nudge (~26% toward the water center) plus a slight extra squat so the figure reads closer to the bank without changing pathfinding tiles.
 
 ## Regen
 

@@ -2144,6 +2144,22 @@ export class RenderSystem extends System {
       const movable = entity.getComponent(Movable) ?? null;
       const worker = entity.getComponent(Worker)!;
       if (worker.concealedInBuildingId == null) {
+        const tw = worker.fisherTowardWater;
+        if (
+          tw &&
+          worker.carryingResource === 'fishing_rod' &&
+          worker.visualActivity === 'production_gather' &&
+          worker.state === 'working' &&
+          movable &&
+          !movable.isMoving
+        ) {
+          const gx = Math.floor(renderX);
+          const gy = Math.floor(renderY);
+          const pStand = this.iso.gridToScreen(gx, gy);
+          const pWater = this.iso.gridToScreen(gx + tw.dx, gy + tw.dy);
+          const k = 0.26;
+          this.ctx.translate((pWater.x - pStand.x) * k, (pWater.y - pStand.y) * k);
+        }
         this.renderWorkerSprite(movable, worker);
       }
     } else {

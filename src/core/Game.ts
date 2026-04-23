@@ -32,6 +32,7 @@ import { isInsightRockTile } from '@/ui/hoverInsight/buildHoverLines';
 import { axisAlignedGridLine } from '@/utils/gridLine';
 import { SurveyCoordinator } from '@/survey/SurveyCoordinator';
 import { ensureWellAquiferInitialized } from '@/map/wellAquifer';
+import { WildlifeCoordinator } from '@/wildlife/WildlifeCoordinator';
 
 export class Game {
   private entities: Entity[] = [];
@@ -67,6 +68,9 @@ export class Game {
     max: 0
   };
 
+  /** Wild rabbits (spawn, wander, hunt targets); see `.claude/WILDLIFE_RABBITS.md`. */
+  public wildlife = new WildlifeCoordinator();
+
   private workers!: GameWorkerRegistry;
   /** Geological survey: flag, surveyor, dominant-ore labels, lazy `Tile.cellMinerals`. */
   public surveys!: SurveyCoordinator;
@@ -97,9 +101,14 @@ export class Game {
     // Initialize systems
     this.renderSystem = new RenderSystem(canvas, this.tileMap);
     this.movementSystem = new MovementSystem();
-    this.productionSystem = new ProductionSystem(() => this.tileMap, () => this.pathFinder);
+    this.productionSystem = new ProductionSystem(
+      () => this.tileMap,
+      () => this.pathFinder,
+      () => this.wildlife
+    );
     this.inputSystem = new InputSystem(canvas, this.renderSystem);
     this.pathFinder = new PathFinder();
+    this.renderSystem.setWildRabbitSupplier(() => this.wildlife.getRabbits());
 
     // Production runs before movement, movement before render
     this.systems.push(this.productionSystem, this.movementSystem, this.renderSystem);
@@ -118,6 +127,7 @@ export class Game {
       getBaseCampConnectedRoads: () => this.getBaseCampConnectedRoads(),
       getAvailablePeasantSlotCount: () =>
         this.population.current - roadSegmentManager.getWorkerCount() - this.workers.getReservedPopulationCount(),
+      getWildlife: () => this.wildlife,
     });
 
     this.surveys = new SurveyCoordinator({
@@ -219,6 +229,8 @@ export class Game {
 
     // Build base camp — no roads, no workers. Roads are built by the player.
     this.buildBaseCamp(centerX, centerY);
+
+    this.wildlife.seedInitialRabbits(this.tileMap, centerX, centerY);
 
     console.log(`World initialized at (${centerX}, ${centerY}) - Map size: ${this.tileMap.width}x${this.tileMap.height}`);
   }
@@ -1772,6 +1784,8 @@ export class Game {
       this.tileMap.applyWaterFishPopulationRegen();
     }
 
+    this.wildlife.tick(this.tileMap);
+
     // Update FPS
     this.frameCount++;
     this.fpsTime += deltaTime;
@@ -2318,6 +2332,7 @@ export class Game {
       inventory: this.inventory,
       population: this.population,
       camera: this.renderSystem.getCamera(),
+      wildlife: this.wildlife.serialize(),
       timestamp: Date.now()
     };
   }
@@ -2346,6 +2361,8 @@ export class Game {
     this.surveys.reset();
     this.pendingBuildingPickups.clear();
 
+    this.wildlife.reset();
+
     this.initializeWorld();
     this.rebuildMinimapFromLoadedMap();
   }
@@ -2371,6 +2388,13 @@ export class Game {
       this.workers.resetState();
       this.surveys.reset();
       this.pendingBuildingPickups.clear();
+
+      if (saveData.wildlife) {
+        this.wildlife.deserialize(saveData.wildlife);
+      } else {
+        this.wildlife.reset();
+        this.wildlife.onLoadedLegacySave();
+      }
 
       if (saveData.population && typeof saveData.population.current === 'number') {
         this.population.current = saveData.population.current;

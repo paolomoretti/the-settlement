@@ -23,6 +23,7 @@ import { transportManager } from '@/economics/TransportManager';
 import { createWorker } from '@/entities/EntityFactory';
 import { applyProductionCycleOutputs } from '@/systems/ProductionSystem';
 import type { ResourceType, BuildingDefinition, AnimationConfig } from '@/types/GameData';
+import type { WildlifeCoordinator } from '@/wildlife/WildlifeCoordinator';
 
 /** Same facing convention as `RenderSystem.renderWorkerSprite` for movement vectors. */
 function gridFacingTowardWater(dx: number, dy: number): number {
@@ -46,6 +47,9 @@ type GatherAnimState = {
   waterGather: boolean;
   /** Underground mines: dig in front of entrance, no terrain harvest. */
   mineGather: boolean;
+  /** Hunter: walk to a reserved wild rabbit, brief site action, return with ham. */
+  wildHunt?: boolean;
+  rabbitId?: number;
   digUntilMs?: number;
   /** Fisher: attempts to pick a non-empty water tile (handles races / depletion). */
   waterFishPickAttempts?: number;
@@ -84,6 +88,8 @@ export interface WorkerWorldAccess {
   getBaseCampConnectedRoads(): Set<string>;
   /** Peasant slots not yet assigned to road segments or any worker tracked by this registry. */
   getAvailablePeasantSlotCount(): number;
+  /** Wild rabbits for hunter gather + render hooks. */
+  getWildlife(): WildlifeCoordinator;
 }
 
 export class GameWorkerRegistry {
@@ -112,7 +118,7 @@ export class GameWorkerRegistry {
       return null;
     }
     /** Outdoor / field jobs: keep no map worker until a bespoke `gather` (or similar) exists. */
-    const deferInteriorUntilCustomAnimation = new Set<string>(['hunter', 'farm', 'pig_farm']);
+    const deferInteriorUntilCustomAnimation = new Set<string>(['farm', 'pig_farm']);
     if (deferInteriorUntilCustomAnimation.has(buildingDef.id)) {
       return null;
     }
@@ -770,6 +776,48 @@ export class GameWorkerRegistry {
             continue;
           }
 
+          if (gather.wildHunt) {
+            const bldgH = buildingEntity.getComponent(Building);
+            const bDefH = bldgH ? dataManager.getBuilding(bldgH.buildingType) : null;
+            const animH = bDefH?.animation;
+            if (!gather.terrainModified) {
+              const nowMsH = Date.now();
+              if (gather.digUntilMs === undefined) {
+                const digSec = animH?.type === 'gather' ? animH.digAtSiteSec ?? 2.5 : 2.5;
+                gather.digUntilMs = nowMsH + digSec * 1000;
+                workerComp.visualActivity = 'production_gather';
+                workerComp.setState('working');
+                break;
+              }
+              if (nowMsH < gather.digUntilMs) break;
+              if (gather.rabbitId != null) {
+                this.world.getWildlife().removeRabbitAfterSuccessfulHunt(gather.rabbitId);
+              }
+              gather.terrainModified = true;
+              const carriedH =
+                animH?.type === 'gather' && animH.carriedResource ? animH.carriedResource : 'ham';
+              workerComp.pickUpResource(carriedH, 'overhead');
+              delete workerComp.fisherTowardWater;
+              workerComp.setState('carrying');
+              workerComp.visualActivity = 'general';
+              const spdH = animH?.type === 'gather' ? animH.workerSpeed : 1.1;
+              const returnPathH = pathFinder.findOffRoadPath(
+                new Position(Math.floor(workerPos.x), Math.floor(workerPos.y)),
+                new Position(gather.entranceTile.x, gather.entranceTile.y),
+                tileMap
+              );
+              if (returnPathH.length > 0) {
+                movable.speed = spdH;
+                movable.setPath(returnPathH);
+                gather.phase = 'returning';
+              } else {
+                this.world.removeEntity(workerEntity);
+                this.cleanupAnimationWorker(workerId, gather);
+              }
+            }
+            break;
+          }
+
           const bldg = buildingEntity.getComponent(Building);
           const bDef = bldg ? dataManager.getBuilding(bldg.buildingType) : null;
           const anim = bDef?.animation;
@@ -982,7 +1030,7 @@ export class GameWorkerRegistry {
           if (buildingEntity) {
             const building = buildingEntity.getComponent(Building);
             if (building) building.animationWorkerId = null;
-            if (gather.rockGather || gather.waterGather || gather.mineGather) {
+            if (gather.rockGather || gather.waterGather || gather.mineGather || gather.wildHunt) {
               const prod = buildingEntity.getComponent(Production);
               applyProductionCycleOutputs(buildingEntity);
               if (prod && prod.continuous) {
@@ -990,7 +1038,9 @@ export class GameWorkerRegistry {
               }
             }
           }
-          this.reservedTreeTiles.delete(`${gather.targetTile.x},${gather.targetTile.y}`);
+          if (!gather.wildHunt) {
+            this.reservedTreeTiles.delete(`${gather.targetTile.x},${gather.targetTile.y}`);
+          }
           this.animationWorkers.delete(workerId);
           continue;
         }
@@ -1132,7 +1182,11 @@ export class GameWorkerRegistry {
       const animState = this.animationWorkers.get(building.animationWorkerId);
       if (animState) {
         if (animState.kind === 'gather') {
-          this.reservedTreeTiles.delete(`${animState.targetTile.x},${animState.targetTile.y}`);
+          if (animState.wildHunt && animState.rabbitId != null) {
+            this.world.getWildlife().releaseHuntReservation(animState.rabbitId);
+          } else {
+            this.reservedTreeTiles.delete(`${animState.targetTile.x},${animState.targetTile.y}`);
+          }
         } else if (animState.kind === 'plant_tree') {
           this.reservedTreeTiles.delete(`${animState.plantTile.x},${animState.plantTile.y}`);
         }
@@ -1765,7 +1819,8 @@ export class GameWorkerRegistry {
     const rockGather = anim.gatherMode === 'rock_depletion';
     const waterGather = anim.gatherMode === 'water_depletion';
     const mineSiteGather = anim.gatherMode === 'mine_site';
-    if (rockGather || waterGather || mineSiteGather) {
+    const wildHunt = anim.gatherMode === 'wild_hunt';
+    if (rockGather || waterGather || mineSiteGather || wildHunt) {
       if (!production) return;
       const departBuffer = (anim.walkLeadSec ?? 0) + (anim.digAtSiteSec ?? 0) + 5;
       if (departBuffer > 0 && production.timer < production.productionTime - departBuffer) return;
@@ -1787,7 +1842,7 @@ export class GameWorkerRegistry {
       anim.searchRadius;
 
     const gatherExclude = new Set(this.reservedTreeTiles);
-    if (rockGather || waterGather || mineSiteGather) {
+    if (rockGather || waterGather || mineSiteGather || wildHunt) {
       for (let dy = 0; dy < building.height; dy++) {
         for (let dx = 0; dx < building.width; dx++) {
           gatherExclude.add(`${pos.x + dx},${pos.y + dy}`);
@@ -1798,6 +1853,7 @@ export class GameWorkerRegistry {
     let sourceTile: { x: number; y: number } | null = null;
     let path: Position[] = [];
     let fisherWaterTile: { x: number; y: number } | undefined;
+    let huntRabbitId: number | undefined;
 
     if (mineSiteGather) {
       const maxMineWalk =
@@ -1862,6 +1918,28 @@ export class GameWorkerRegistry {
         path = pick.path;
         fisherWaterTile = { x: pick.waterX, y: pick.waterY };
       }
+    } else if (wildHunt) {
+      const wildlife = this.world.getWildlife();
+      const foot = new Set<string>();
+      for (let dy = 0; dy < building.height; dy++) {
+        for (let dx = 0; dx < building.width; dx++) {
+          foot.add(`${pos.x + dx},${pos.y + dy}`);
+        }
+      }
+      const huntPick = wildlife.pickAndReserveReachableRabbit(
+        tileMap,
+        pathFinder,
+        entranceX,
+        entranceY,
+        gatherRadius,
+        maxWalkCells,
+        foot
+      );
+      if (huntPick) {
+        sourceTile = { x: huntPick.rabbit.x, y: huntPick.rabbit.y };
+        path = huntPick.path;
+        huntRabbitId = huntPick.rabbit.id;
+      }
     } else {
       const candidates = tileMap.listNearbyTerrainSorted(
         entranceX,
@@ -1890,7 +1968,9 @@ export class GameWorkerRegistry {
     }
     building.outOfMapResources = false;
 
-    this.reservedTreeTiles.add(`${sourceTile.x},${sourceTile.y}`);
+    if (!wildHunt) {
+      this.reservedTreeTiles.add(`${sourceTile.x},${sourceTile.y}`);
+    }
 
     const worker = createWorker(entranceX, entranceY);
     this.world.addEntity(worker);
@@ -1899,7 +1979,7 @@ export class GameWorkerRegistry {
     if (workerComp) {
       workerComp.pickUpResource(
         (buildingDef.requiredTool as string) ||
-          (rockGather ? 'pickaxe' : waterGather ? 'fishing_rod' : 'axe')
+          (rockGather ? 'pickaxe' : waterGather ? 'fishing_rod' : wildHunt ? 'bow' : 'axe')
       );
       workerComp.visualActivity = 'production_gather';
     }
@@ -1923,6 +2003,8 @@ export class GameWorkerRegistry {
       rockGather,
       waterGather,
       mineGather: mineSiteGather,
+      wildHunt,
+      rabbitId: huntRabbitId,
     });
   }
 
@@ -2099,7 +2181,11 @@ export class GameWorkerRegistry {
 
   private cleanupAnimationWorker(workerId: number, state: AnimationWorkerState): void {
     if (state.kind === 'gather') {
-      this.reservedTreeTiles.delete(`${state.targetTile.x},${state.targetTile.y}`);
+      if (state.wildHunt && state.rabbitId != null) {
+        this.world.getWildlife().releaseHuntReservation(state.rabbitId);
+      } else {
+        this.reservedTreeTiles.delete(`${state.targetTile.x},${state.targetTile.y}`);
+      }
     }
     if (state.kind === 'plant_tree') {
       this.reservedTreeTiles.delete(`${state.plantTile.x},${state.plantTile.y}`);

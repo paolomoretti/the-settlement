@@ -27,6 +27,7 @@ import {
   paintWorkerSpriteBody as paintWorkerBodyToCanvas,
   paintWorkerFloorNap,
 } from '@/rendering/WorkerSpritePainter';
+import { RABBIT_JUMP_DURATION_MS, type WildRabbit } from '@/wildlife/WildlifeCoordinator';
 
 /** World-space half-plane clip for long straight iso shores (same screen row / column of tile centers). */
 type FlatShoreCut =
@@ -86,6 +87,9 @@ export class RenderSystem extends System {
   private surveyPendingTile: { x: number; y: number } | null = null;
   /** Surveyor workers drawn again after survey overlays so they stay on top. */
   private surveyWorkerDrawOnTopIds = new Set<number>();
+
+  /** When set, rabbits are drawn in the depth-sorted pass (see `Game.wildlife`). */
+  private getWildRabbits: (() => readonly WildRabbit[]) | null = null;
 
   // Minimap
   private minimapCanvas: HTMLCanvasElement;
@@ -233,6 +237,11 @@ export class RenderSystem extends System {
   private resizeCanvas(): void {
     this.canvas.width = window.innerWidth;
     this.canvas.height = window.innerHeight;
+  }
+
+  /** Hook from `Game` so rabbits sort with terrain without being ECS entities. */
+  setWildRabbitSupplier(supplier: (() => readonly WildRabbit[]) | null): void {
+    this.getWildRabbits = supplier;
   }
 
   private centerCamera(): void {
@@ -1322,6 +1331,215 @@ export class RenderSystem extends System {
     return 0;
   }
 
+  /** Logical/render grid position during a jump arc (matches `renderWildRabbit`). */
+  private getWildRabbitGridPosition(rabbit: WildRabbit): { gx: number; gy: number } {
+    const j = rabbit.jumping;
+    let gx = rabbit.x;
+    let gy = rabbit.y;
+    if (j) {
+      const nowMs = Date.now();
+      const rawT = (nowMs - j.startMs) / RABBIT_JUMP_DURATION_MS;
+      const t = Math.max(0, Math.min(1, rawT));
+      const u = 1 - (1 - t) * (1 - t);
+      gx = j.fromX + (j.toX - j.fromX) * u;
+      gy = j.fromY + (j.toY - j.fromY) * u;
+    }
+    return { gx, gy };
+  }
+
+  /**
+   * Same rule as walkers in `getEntityDrawDepthForSort` so rabbits interleave with trees/entities by iso depth.
+   */
+  private getWildRabbitDrawDepthForSort(rabbit: WildRabbit): number {
+    const { gx, gy } = this.getWildRabbitGridPosition(rabbit);
+    const base = gx + gy;
+    const southCellSum = Math.floor(gx) + Math.floor(gy) + 1;
+    return Math.max(base, southCellSum);
+  }
+
+  private compareEntityOrRabbitDrawOrder(
+    a: { kind: 'entity'; entity: Entity } | { kind: 'rabbit'; rabbit: WildRabbit },
+    b: { kind: 'entity'; entity: Entity } | { kind: 'rabbit'; rabbit: WildRabbit }
+  ): number {
+    const da = a.kind === 'entity' ? this.getEntityDrawDepthForSort(a.entity) : this.getWildRabbitDrawDepthForSort(a.rabbit);
+    const db = b.kind === 'entity' ? this.getEntityDrawDepthForSort(b.entity) : this.getWildRabbitDrawDepthForSort(b.rabbit);
+    if (da < db) return -1;
+    if (da > db) return 1;
+    if (a.kind !== b.kind) {
+      // Tie: draw rabbits before entities so workers/buildings stay visually in front when co-depth.
+      if (a.kind === 'rabbit' && b.kind === 'entity') return -1;
+      return 1;
+    }
+    if (a.kind === 'entity' && b.kind === 'entity') {
+      return this.compareEntityDrawOrder(a.entity, b.entity);
+    }
+    if (a.kind === 'rabbit' && b.kind === 'rabbit') {
+      return a.rabbit.x - b.rabbit.x || a.rabbit.y - b.rabbit.y || a.rabbit.id - b.rabbit.id;
+    }
+    return 0;
+  }
+
+  /**
+   * Procedural rabbit: elliptical body, two axis-aligned hind-foot rectangles, head/eyes/nose tilted ~45°;
+   * nose below eyes and offset sideways (3/4 turn); ears tight; tail fluff; jump unchanged.
+   */
+  private renderWildRabbit(rabbit: WildRabbit): void {
+    const ctx = this.ctx;
+    const nowMs = Date.now();
+    const j = rabbit.jumping;
+    const { gx, gy } = this.getWildRabbitGridPosition(rabbit);
+    let jumpArcPx = 0;
+    if (j) {
+      const rawT = (nowMs - j.startMs) / RABBIT_JUMP_DURATION_MS;
+      const t = Math.max(0, Math.min(1, rawT));
+      jumpArcPx = -Math.sin(Math.PI * t) * 34;
+    }
+
+    const base = this.iso.gridToScreen(gx, gy);
+    const cx = base.x;
+    const cy = base.y + jumpArcPx - this.iso.tileHeight * 0.12;
+
+    const bodyFill =
+      rabbit.variant === 'white'
+        ? '#ebe4dc'
+        : rabbit.variant === 'beige'
+          ? '#c9b89a'
+          : '#7a5e3d';
+    const footFill =
+      rabbit.variant === 'white' ? '#cfc7be' : rabbit.variant === 'beige' ? '#a8987a' : '#5c472e';
+
+    let leftLift = 0;
+    let rightLift = 0;
+    if (j) {
+      const rawT = (nowMs - j.startMs) / RABBIT_JUMP_DURATION_MS;
+      const t = Math.max(0, Math.min(1, rawT));
+      const kick = Math.sin(Math.PI * t) * 3.5;
+      leftLift = kick;
+      rightLift = -kick;
+    }
+
+    const mirrorHead = Math.floor(nowMs / 680 + rabbit.animSeed * 0.37) % 2 === 0;
+    const RABBIT_VISUAL_SCALE = 0.7;
+    const tailOnRight = (Math.floor(rabbit.animSeed * 7.13) & 1) === 0;
+    /** Nose sits on this side of the muzzle (suggests head turned); flips with mirror. */
+    const noseSide = tailOnRight ? 1 : -1;
+
+    /** Tilt head / face plane (~45°) for a three-quarter read. */
+    const HEAD_TILT = -Math.PI / 4;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(RABBIT_VISUAL_SCALE, RABBIT_VISUAL_SCALE);
+
+    /** Ellipse matches prior triangle footprint (~22 wide × ~9 tall). */
+    const bodyCx = 2;
+    const bodyCy = -9;
+    const bodyRx = 7;
+    const bodyRy = 8;
+    const bodyBaseY = bodyCy + bodyRy;
+
+    const tailCx = tailOnRight ? bodyRx + 2.5 : -bodyRx - 2.5;
+    const tailCy = bodyCy + bodyRy * 0.35;
+    const fluff: Array<[number, number, number, string]> = [
+      [0, 0, 4.2, 'rgba(255,248,245,0.92)'],
+      [-2.2, 1.1, 3.2, 'rgba(255,230,235,0.75)'],
+      [2.4, 0.8, 3.4, 'rgba(248,236,255,0.7)'],
+      [-1.2, -2.0, 2.6, 'rgba(255,255,255,0.55)'],
+      [1.8, -1.4, 2.8, 'rgba(255,220,230,0.65)'],
+    ];
+    for (const [ox, oy, rad, col] of fluff) {
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(tailCx + ox, tailCy + oy, rad, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.fillStyle = bodyFill;
+    ctx.beginPath();
+    ctx.ellipse(bodyCx, bodyCy, bodyRx, bodyRy, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = footFill;
+    const footW = 8;
+    const footH = 3;
+    const footGap = 0;
+    const footTop = bodyBaseY - 0.35;
+    const footTiltRad = ((35 * (tailOnRight ? -1 : 1)) * Math.PI) / 180;
+    const drawFoot = (x0: number, y0: number): void => {
+      ctx.save();
+      ctx.translate(x0 + footW / 2 + 5, y0);
+      ctx.rotate(footTiltRad);
+      ctx.fillRect(-footW / 2, 0, footW, footH);
+      ctx.restore();
+    };
+    drawFoot(-bodyRx + footGap, footTop + leftLift);
+    drawFoot(bodyRx - footGap - footW, footTop + rightLift);
+
+    const neckY = bodyCy - bodyRy + 0.45;
+    ctx.save();
+    ctx.translate(0, neckY);
+    ctx.rotate(HEAD_TILT);
+    ctx.scale(mirrorHead ? 1 : -1, 1);
+
+    ctx.fillStyle = bodyFill;
+    ctx.fillRect(-2.4, -11.2, 2.1, 7.8);
+    ctx.fillRect(0.35, -11.2, 2.1, 7.8);
+
+    ctx.beginPath();
+    ctx.arc(0, -2.2, 5.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#2a2218';
+    ctx.beginPath();
+    ctx.arc(-1.55, -0.2, 0.95, 0, Math.PI * 2);
+    ctx.arc(1.55, -0.2, 0.95, 0, Math.PI * 2);
+    ctx.fill();
+
+    const nx = noseSide * 2.85;
+    const ny = 2.1;
+    ctx.fillStyle = '#f4a8c8';
+    ctx.beginPath();
+    ctx.moveTo(nx, ny);
+    ctx.lineTo(nx - 1.35, ny + 2.35);
+    ctx.lineTo(nx + 1.35, ny + 2.35);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+
+    ctx.restore();
+  }
+
+  private collectVisibleWildRabbits(viewportBounds: {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  }): WildRabbit[] {
+    if (!this.getWildRabbits) return [];
+    const list: WildRabbit[] = [];
+    for (const rabbit of this.getWildRabbits()) {
+      const j = rabbit.jumping;
+      const inVp =
+        rabbit.x >= viewportBounds.minX &&
+        rabbit.x <= viewportBounds.maxX &&
+        rabbit.y >= viewportBounds.minY &&
+        rabbit.y <= viewportBounds.maxY;
+      const inVpJumpTo =
+        !!j &&
+        j.toX >= viewportBounds.minX &&
+        j.toX <= viewportBounds.maxX &&
+        j.toY >= viewportBounds.minY &&
+        j.toY <= viewportBounds.maxY;
+      if (!inVp && !inVpJumpTo) continue;
+      const rt = this.tileMap.getTile(rabbit.x, rabbit.y);
+      if (!rt?.isExplored()) continue;
+      list.push(rabbit);
+    }
+    list.sort((a, b) => a.x + a.y - (b.x + b.y) || a.x - b.x);
+    return list;
+  }
+
   private renderDepthSorted(
     sortedEntities: Entity[],
     viewportBounds: { minX: number; maxX: number; minY: number; maxY: number }
@@ -1354,6 +1572,17 @@ export class RenderSystem extends System {
 
     for (const list of entitiesByDepth.values()) {
       list.sort((a, b) => this.compareEntityDrawOrder(a, b));
+    }
+
+    const rabbitsByDepth = new Map<number, WildRabbit[]>();
+    for (const rabbit of this.collectVisibleWildRabbits(viewportBounds)) {
+      const d = Math.floor(this.getWildRabbitDrawDepthForSort(rabbit));
+      const list = rabbitsByDepth.get(d);
+      if (list) list.push(rabbit);
+      else rabbitsByDepth.set(d, [rabbit]);
+    }
+    for (const list of rabbitsByDepth.values()) {
+      list.sort((a, b) => a.x + a.y - (b.x + b.y) || a.x - b.x || a.id - b.id);
     }
 
     for (let d = minDepth; d <= maxDepth; d++) {
@@ -1397,12 +1626,28 @@ export class RenderSystem extends System {
         if (flatGrass) this.ctx.restore();
       }
 
-      // Entities at this depth
+      // Entities and wild rabbits at this depth (same float-depth rules as walkers vs trees)
       const entities = entitiesByDepth.get(d);
+      const rabbitsHere = rabbitsByDepth.get(d);
+      const merged: Array<
+        { kind: 'entity'; entity: Entity } | { kind: 'rabbit'; rabbit: WildRabbit }
+      > = [];
       if (entities) {
         for (const entity of entities) {
           if (this.surveyWorkerDrawOnTopIds.has(entity.id)) continue;
-          this.renderEntity(entity);
+          merged.push({ kind: 'entity', entity });
+        }
+      }
+      if (rabbitsHere) {
+        for (const rabbit of rabbitsHere) {
+          merged.push({ kind: 'rabbit', rabbit });
+        }
+      }
+      if (merged.length > 0) {
+        merged.sort((a, b) => this.compareEntityOrRabbitDrawOrder(a, b));
+        for (const item of merged) {
+          if (item.kind === 'entity') this.renderEntity(item.entity);
+          else this.renderWildRabbit(item.rabbit);
         }
       }
     }

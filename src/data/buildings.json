@@ -219,7 +219,7 @@
   "hunter": {
     "id": "hunter",
     "name": "Hunter's Hut",
-    "description": "Hunts wild animals for ham.",
+    "description": "Hunts wild rabbits and returns with ham.",
     "size": { "width": 2, "height": 2 },
     "visual": { "buildingHeight": 50, "color": "#6b4423" },
     "buildCost": { "wood_plank": 2 },
@@ -228,9 +228,22 @@
     "requiredTool": "bow",
     "production": {
       "outputs": { "ham": 1 },
-      "productionTime": 30,
+      "productionTime": 180,
       "continuous": true,
-      "maxOutputBuffer": 6
+      "maxOutputBuffer": 6,
+      "maxGatherRadius": 16,
+      "maxGatherWalkCells": 36
+    },
+    "animation": {
+      "type": "gather",
+      "gatherMode": "wild_hunt",
+      "targetTerrain": [],
+      "searchRadius": 16,
+      "terrainTransition": {},
+      "workerSpeed": 1.1,
+      "walkLeadSec": 82,
+      "digAtSiteSec": 3,
+      "carriedResource": "ham"
     },
     "population": { "requires": 1 },
     "category": "production",

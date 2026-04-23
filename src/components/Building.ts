@@ -34,6 +34,8 @@ export class Building extends Component {
   public outOfMapResources: boolean = false;
   /** Throttle reachability scans for the fisher’s water tiles (realtime ms). */
   public lastWaterFishProbeAt: number = 0;
+  /** Throttle reachability scans for wild rabbits near the hunter (realtime ms). */
+  public lastHuntRabbitProbeAt: number = 0;
 
   constructor(
     public buildingType: BuildingType,

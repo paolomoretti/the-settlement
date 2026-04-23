@@ -379,7 +379,7 @@
     "name": "Brewery",
     "description": "Brews beer from grain and water for soldiers.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 60, "color": "#8b6508" },
+    "visual": { "buildingHeight": 60, "color": "#8b6508", "spriteScale": 1.4, "offsetX": -3, "offsetY": 2 },
     "buildCost": { "wood_plank": 2, "stone": 2 },
     "buildTime": 30,
     "requiresRoad": true,

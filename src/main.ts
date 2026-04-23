@@ -499,18 +499,18 @@ function showInventoryPanel(game: Game): void {
 
   const categories = ['raw', 'refined', 'food', 'tool', 'weapon'] as const;
   categories.forEach(category => {
-    const resources = dataManager.getResourcesByCategory(category);
+    const resources = dataManager
+      .getResourcesByCategory(category)
+      .filter(r => !r.virtualOutput);
     resources.forEach(resource => {
       const count = game.inventory[resource.id] || 0;
-      if (count > 0) {
-        const item = document.createElement('div');
-        item.className = 'inventory-item';
-        item.innerHTML = `
+      const item = document.createElement('div');
+      item.className = 'inventory-item' + (count === 0 ? ' inventory-item--zero' : '');
+      item.innerHTML = `
           <span class="inventory-item-name"><img src="/assets/resources/${resource.id}.png" class="resource-icon" onerror="this.style.display='none'">${resource.name}</span>
           <span class="inventory-item-count">${count}</span>
         `;
-        inventoryList.appendChild(item);
-      }
+      inventoryList.appendChild(item);
     });
   });
 

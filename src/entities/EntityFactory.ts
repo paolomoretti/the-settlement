@@ -12,6 +12,7 @@ import { Production } from '@/components/Production';
 import { Storage } from '@/components/Storage';
 import { dataManager } from '@/data/DataManager';
 import { ResourceType } from '@/types/GameData';
+import { BUILDING_FINAL_SPRITES } from '@/catalog/buildingSprites';
 
 export function createWorker(x: number, y: number, role: WorkerRole = 'peasant'): Entity {
   const entity = new Entity();
@@ -70,28 +71,7 @@ export function createBuilding(
   // Use data from building definition
   const { size, visual } = buildingDef;
 
-  const SPRITE_PATHS: Record<string, string> = {
-    base_camp: '/assets/buildings/base_camp.png',
-    storehouse: '/assets/buildings/warehouse.png',
-    lumberjack: '/assets/buildings/lumberjack.png',
-    sawmill: '/assets/buildings/sawmill.png',
-    mill: '/assets/buildings/mill.png',
-    forester: '/assets/buildings/forester.png',
-    quarry: '/assets/buildings/quarry.png',
-    hut: '/assets/buildings/hut.png',
-    house: '/assets/buildings/house.png',
-    fisher: '/assets/buildings/fisher.png',
-    well: '/assets/buildings/well.png',
-    farm: '/assets/buildings/farm.png',
-    pig_farm: '/assets/buildings/pig_farm.png',
-    slaughterhouse: '/assets/buildings/slaughterhouse.png',
-    bakery: '/assets/buildings/bakery.png',
-    coal_mine: '/assets/buildings/coal_mine.png',
-    iron_mine: '/assets/buildings/iron_mine.png',
-    gold_mine: '/assets/buildings/gold_mine.png',
-    granite_mine: '/assets/buildings/granite_mine.png',
-  };
-  const spritePath = SPRITE_PATHS[buildingType];
+  const spritePath = BUILDING_FINAL_SPRITES[buildingType];
 
   entity.addComponent(new Renderable(
     spritePath ? 'sprite' : 'rectangle',

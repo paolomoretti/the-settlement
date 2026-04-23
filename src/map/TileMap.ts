@@ -623,6 +623,7 @@ export class TileMap {
     const rockHarvests: { x: number; y: number; r: number }[] = [];
     const waterFish: { x: number; y: number; f: number }[] = [];
     const cellMinerals: { x: number; y: number; c: number; i: number; g: number; r: number }[] = [];
+    const wellWater: { x: number; y: number; w: number }[] = [];
 
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
@@ -652,6 +653,10 @@ export class TileMap {
           const m = tile.cellMinerals;
           cellMinerals.push({ x, y, c: m.coal, i: m.iron_ore, g: m.gold_ore, r: m.granite });
         }
+
+        if (tile.cellWellWaterRemaining !== undefined) {
+          wellWater.push({ x, y, w: tile.cellWellWaterRemaining });
+        }
       }
     }
 
@@ -666,6 +671,7 @@ export class TileMap {
       rockHarvests,
       waterFish,
       cellMinerals,
+      wellWater,
     };
   }
 
@@ -744,6 +750,15 @@ export class TileMap {
             gold_ore: entry.g,
             granite: entry.r,
           };
+        }
+      }
+    }
+
+    if (data.wellWater && Array.isArray(data.wellWater)) {
+      for (const entry of data.wellWater as { x: number; y: number; w: number }[]) {
+        const tile = map.getTile(entry.x, entry.y);
+        if (tile) {
+          tile.cellWellWaterRemaining = entry.w;
         }
       }
     }

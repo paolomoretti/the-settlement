@@ -31,6 +31,7 @@ import { isInsightAltHeld } from '@/input/InsightAltKey';
 import { isInsightRockTile } from '@/ui/hoverInsight/buildHoverLines';
 import { axisAlignedGridLine } from '@/utils/gridLine';
 import { SurveyCoordinator } from '@/survey/SurveyCoordinator';
+import { ensureWellAquiferInitialized } from '@/map/wellAquifer';
 
 export class Game {
   private entities: Entity[] = [];
@@ -92,7 +93,7 @@ export class Game {
     // Initialize systems
     this.renderSystem = new RenderSystem(canvas, this.tileMap);
     this.movementSystem = new MovementSystem();
-    this.productionSystem = new ProductionSystem();
+    this.productionSystem = new ProductionSystem(() => this.tileMap);
     this.inputSystem = new InputSystem(canvas, this.renderSystem);
     this.pathFinder = new PathFinder();
 
@@ -181,6 +182,16 @@ export class Game {
         );
         this.renderSystem.showToast(data.reason, screenPos.x, screenPos.y);
       }
+    });
+
+    eventBus.on('well:aquifer_depleted', (data: { entityId: number }) => {
+      window.setTimeout(() => {
+        const ent = this.entities.find(e => e.id === data.entityId && e.active);
+        if (!ent) return;
+        const b = ent.getComponent(Building);
+        if (b?.buildingType !== 'well') return;
+        this.destroyBuildingEntity(ent);
+      }, 2000);
     });
 
     // Input mode changes
@@ -835,6 +846,7 @@ export class Game {
 
     if (building.isComplete()) {
       this.recomputePopulationMaxCapacity();
+      this.tryFinalizeWellAquifer(entity);
     }
 
     audioManager.playSound('build_placed');
@@ -1942,8 +1954,23 @@ export class Game {
 
           this.recheckProductionInputDeliveries(true);
           this.recomputePopulationMaxCapacity();
+          this.tryFinalizeWellAquifer(entity);
         }
       }
+    }
+  }
+
+  /** Roll lazy underground water when a well finishes construction; dry cells (depleted) never reroll. */
+  private tryFinalizeWellAquifer(entity: Entity): void {
+    const building = entity.getComponent(Building);
+    const pos = entity.getComponent(Position);
+    if (!building || !pos || building.buildingType !== 'well' || !building.isComplete()) return;
+    const tile = this.tileMap.getTile(Math.floor(pos.x), Math.floor(pos.y));
+    if (!tile) return;
+    ensureWellAquiferInitialized(tile);
+    if ((tile.cellWellWaterRemaining ?? 0) <= 0) {
+      building.outOfMapResources = true;
+      eventBus.emit('well:aquifer_depleted', { entityId: entity.id });
     }
   }
 
@@ -2010,6 +2037,15 @@ export class Game {
   clearSurveyPending(): void {
     this.pendingSurveyGrid = null;
     this.renderSystem.setSurveyPendingTile(null);
+  }
+
+  /** Clear selected building and grass survey-pending cell (Escape / V when not dragging a building). */
+  clearMapSelection(): void {
+    if (!this.isDraggingEntity) {
+      this.selectedEntity = null;
+      this.updateSelectionUI();
+    }
+    this.clearSurveyPending();
   }
 
   private isClickOnSurveyOptionIcon(
@@ -2385,6 +2421,9 @@ export class Game {
 
           this.addEntity(entity);
           this.occupyBuildingTiles(entity.id, buildingData.x, buildingData.y, building.width, building.height, building);
+          if (building.state === 'complete' && building.buildingType === 'well') {
+            this.tryFinalizeWellAquifer(entity);
+          }
         }
       }
 

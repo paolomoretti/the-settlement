@@ -104,15 +104,18 @@ export class BuildingPopover {
 
     const def = dataManager.getBuilding(building.buildingType);
     const mapGather = def?.animation?.type === 'gather';
-    if (!mapGather || !building.outOfMapResources || production.status !== 'producing') {
+    const wellExhausted =
+      building.buildingType === 'well' && building.outOfMapResources && production.status === 'producing';
+    if ((!mapGather && !wellExhausted) || !building.outOfMapResources || production.status !== 'producing') {
       this.gatherWarningEl.style.display = 'none';
       return;
     }
 
     const gatherAnim = def?.animation?.type === 'gather' ? def.animation : null;
     this.gatherWarningEl.style.display = '';
-    this.gatherWarningEl.textContent =
-      gatherAnim?.gatherMode === 'mine_site'
+    this.gatherWarningEl.textContent = wellExhausted
+      ? 'Underground water exhausted — this well will be abandoned.'
+      : gatherAnim?.gatherMode === 'mine_site'
         ? 'No dig site next to the mine entrance — clear a walkable tile beside the door.'
         : 'Nothing to gather within reach of this building.';
   }

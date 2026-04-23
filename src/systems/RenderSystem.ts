@@ -18,6 +18,15 @@ import { BuildingType, ResourceType } from '@/types/GameData';
 import { TerrainTextures } from '@/rendering/TerrainTextures';
 import { transportManager } from '@/economics/TransportManager';
 import type { SurveyOverlayForRender } from '@/survey/SurveyCoordinator';
+import {
+  BUILDING_CONSTRUCTION_SPRITES,
+  BUILDING_PRODUCTION_SPRITES,
+  collectAllCataloguedBuildingSpritePaths,
+} from '@/catalog/buildingSprites';
+import {
+  paintWorkerSpriteBody as paintWorkerBodyToCanvas,
+  paintWorkerFloorNap,
+} from '@/rendering/WorkerSpritePainter';
 
 /** World-space half-plane clip for long straight iso shores (same screen row / column of tile centers). */
 type FlatShoreCut =
@@ -25,98 +34,6 @@ type FlatShoreCut =
   | { axis: 'vertical'; worldX: number; grassHalf: 'left' | 'right' };
 
 const FLAT_SHORE_CLIP_EXTENT = 1_000_000;
-
-// Construction phase sprites per building type (excluding the completed sprite).
-// During build, total frames = stages.length + 1 (the completed sprite is the last frame).
-const CONSTRUCTION_SPRITES: Record<string, string[]> = {
-  storehouse: [
-    '/assets/buildings/warehouse_build_0.png',
-    '/assets/buildings/warehouse_build_1.png',
-  ],
-  lumberjack: [
-    '/assets/buildings/lumberjack_build_0.png',
-    '/assets/buildings/lumberjack_build_1.png',
-    '/assets/buildings/lumberjack_build_2.png',
-  ],
-  sawmill: [
-    '/assets/buildings/sawmill_build_0.png',
-    '/assets/buildings/sawmill_build_1.png',
-    '/assets/buildings/sawmill_build_2.png',
-  ],
-  mill: [
-    '/assets/buildings/mill_build_0.png',
-    '/assets/buildings/mill_build_1.png',
-    '/assets/buildings/mill_build_2.png',
-  ],
-  forester: [
-    '/assets/buildings/forester_build_0.png',
-    '/assets/buildings/forester_build_1.png',
-    '/assets/buildings/forester_build_2.png',
-  ],
-  quarry: [
-    '/assets/buildings/quarry_build_0.png',
-    '/assets/buildings/quarry_build_1.png',
-    '/assets/buildings/quarry_build_2.png',
-  ],
-  hut: [
-    '/assets/buildings/hut_build_0.png',
-    '/assets/buildings/hut_build_1.png',
-    '/assets/buildings/hut_build_2.png',
-  ],
-  fisher: [
-    '/assets/buildings/fisher_build_0.png',
-    '/assets/buildings/fisher_build_1.png',
-    '/assets/buildings/fisher_build_2.png',
-  ],
-  well: [
-    '/assets/buildings/well_build_0.png',
-  ],
-  // Stage 1 = site, 2 = frame, 3 = partial walls/roof; completed sprite is house.png (stage 4).
-  house: [
-    '/assets/buildings/house_build_0.png',
-    '/assets/buildings/house_build_1.png',
-    '/assets/buildings/house_build_2.png',
-  ],
-  // Farm one → site; farm two/three → progress; farm four = farm.png when complete.
-  farm: [
-    '/assets/buildings/farm_build_0.png',
-    '/assets/buildings/farm_build_1.png',
-    '/assets/buildings/farm_build_2.png',
-  ],
-  pig_farm: [
-    '/assets/buildings/pig_farm_build_0.png',
-    '/assets/buildings/pig_farm_build_1.png',
-    '/assets/buildings/pig_farm_build_2.png',
-  ],
-  slaughterhouse: [
-    '/assets/buildings/slaughterhouse_build_0.png',
-    '/assets/buildings/slaughterhouse_build_1.png',
-    '/assets/buildings/slaughterhouse_build_2.png',
-  ],
-  bakery: [
-    '/assets/buildings/bakery_build_0.png',
-    '/assets/buildings/bakery_build_1.png',
-    '/assets/buildings/bakery_build_2.png',
-    '/assets/buildings/bakery_build_3.png',
-  ],
-  coal_mine: ['/assets/buildings/coal_mine_build_0.png', '/assets/buildings/coal_mine_build_1.png'],
-  iron_mine: ['/assets/buildings/iron_mine_build_0.png', '/assets/buildings/iron_mine_build_1.png'],
-  gold_mine: ['/assets/buildings/gold_mine_build_0.png', '/assets/buildings/gold_mine_build_1.png'],
-  granite_mine: ['/assets/buildings/granite_mine_build_0.png', '/assets/buildings/granite_mine_build_1.png'],
-};
-
-// Production phase sprites per building type (shown only while actively producing).
-// Naming: `/assets/buildings/<type>_prod_<index>.png`.
-// Timing: split cycle into `stages.length + 2` slices, map slices to stages, and
-// keep the last stage visible for extra slices before the cycle completes.
-const PRODUCTION_SPRITES: Record<string, string[]> = {
-  farm: [
-    '/assets/buildings/farm_prod_0.png',
-    '/assets/buildings/farm_prod_1.png',
-    '/assets/buildings/farm_prod_2.png',
-    '/assets/buildings/farm_prod_3.png',
-  ],
-};
 
 /** Uniform draw scale for `/assets/resources/*.png` on the main canvas (workers, junctions, map bubbles). */
 const RESOURCE_ICON_DRAW_SCALE = 1.25;
@@ -199,31 +116,7 @@ export class RenderSystem extends System {
     // Center camera on map
     this.centerCamera();
 
-    // Preload all known building sprites (completed + construction phases)
-    const allSprites = [
-      '/assets/buildings/base_camp.png',
-      '/assets/buildings/warehouse.png', // used for storehouse
-      '/assets/buildings/lumberjack.png',
-      '/assets/buildings/sawmill.png',
-      '/assets/buildings/mill.png',
-      '/assets/buildings/quarry.png',
-      '/assets/buildings/farm.png',
-      '/assets/buildings/pig_farm.png',
-      '/assets/buildings/slaughterhouse.png',
-      '/assets/buildings/bakery.png',
-      '/assets/buildings/house.png',
-      '/assets/buildings/coal_mine.png',
-      '/assets/buildings/iron_mine.png',
-      '/assets/buildings/gold_mine.png',
-      '/assets/buildings/granite_mine.png',
-    ];
-    for (const stages of Object.values(CONSTRUCTION_SPRITES)) {
-      allSprites.push(...stages);
-    }
-    for (const stages of Object.values(PRODUCTION_SPRITES)) {
-      allSprites.push(...stages);
-    }
-    this.preloadSprites(allSprites);
+    this.preloadSprites(collectAllCataloguedBuildingSpritePaths());
 
     // Preload all known resource sprites (for production bubbles)
     this.preloadSprites([
@@ -2200,7 +2093,7 @@ export class RenderSystem extends System {
     }
 
     // Apply opacity fade for under-construction buildings without construction sprites
-    if (isUnderConstruction && !CONSTRUCTION_SPRITES[building!.buildingType]) {
+    if (isUnderConstruction && !BUILDING_CONSTRUCTION_SPRITES[building!.buildingType]) {
       this.ctx.globalAlpha = 0.4 + 0.6 * building!.constructionProgress;
     }
 
@@ -2304,7 +2197,7 @@ export class RenderSystem extends System {
       }
       if (building.isActive && building.outOfMapResources) {
         const bd = dataManager.getBuilding(building.buildingType);
-        if (bd?.animation?.type === 'gather') {
+        if (bd?.animation?.type === 'gather' || building.buildingType === 'well') {
           this.renderMapResourcesExhaustedMarker(building);
         }
       }
@@ -2313,7 +2206,7 @@ export class RenderSystem extends System {
     this.ctx.restore();
   }
 
-  /** Orange X above roof when lumberjack / quarry / fisher cannot reach any map source. */
+  /** Orange X above roof when lumberjack / quarry / fisher cannot reach any map source, or a well’s aquifer is dry. */
   private renderMapResourcesExhaustedMarker(building: Building): void {
     const tileW = this.iso.tileWidth;
     const tileH = this.iso.tileHeight;
@@ -2339,7 +2232,7 @@ export class RenderSystem extends System {
 
   private getConstructionSpritePath(building: Building, renderable: Renderable): string | undefined {
     if ((building.state !== 'under_construction' && building.state !== 'awaiting_materials') || !renderable.spritePath) return renderable.spritePath;
-    const stages = CONSTRUCTION_SPRITES[building.buildingType];
+    const stages = BUILDING_CONSTRUCTION_SPRITES[building.buildingType];
     if (!stages || stages.length === 0) return renderable.spritePath;
     const totalFrames = stages.length + 1;
     const frameIndex = Math.min(Math.floor(building.constructionProgress * totalFrames), stages.length);
@@ -2357,7 +2250,7 @@ export class RenderSystem extends System {
     if (production.status !== 'producing') return renderable.spritePath;
     if (production.productionTime <= 0) return renderable.spritePath;
 
-    const stages = PRODUCTION_SPRITES[building.buildingType];
+    const stages = BUILDING_PRODUCTION_SPRITES[building.buildingType];
     if (!stages || stages.length === 0) return renderable.spritePath;
 
     const progress = Math.max(0, Math.min(0.999999, production.getProgress()));
@@ -2850,6 +2743,35 @@ export class RenderSystem extends System {
     return `rgb(${r}, ${g}, ${b})`;
   }
 
+  private syncWorkerIdleNapClock(worker: Worker, _movable: Movable | null, isMoving: boolean): void {
+    if (worker.concealedInBuildingId != null) {
+      worker.idleContinuousSinceMs = null;
+      worker.floorSleepUntilMs = null;
+      worker.floorSleepStartedAtMs = null;
+      worker.nextFloorSleepProbeMs = null;
+      return;
+    }
+    if (isMoving || worker.state !== 'idle' || worker.carryingResource) {
+      worker.idleContinuousSinceMs = null;
+      worker.floorSleepUntilMs = null;
+      worker.floorSleepStartedAtMs = null;
+      worker.nextFloorSleepProbeMs = null;
+      return;
+    }
+    const now = Date.now();
+    if (worker.idleContinuousSinceMs == null) {
+      worker.idleContinuousSinceMs = now;
+    }
+  }
+
+  /** Standing still long enough before floor-nap rolls (ms). */
+  private static readonly FLOOR_NAP_MIN_IDLE_MS = 95_000;
+  /** Floor nap length range (ms). */
+  private static readonly FLOOR_NAP_MS_MIN = 52_000;
+  private static readonly FLOOR_NAP_MS_MAX = 118_000;
+  /** Per probe, chance to start a nap once idle threshold is met. */
+  private static readonly FLOOR_NAP_ROLL = 0.052;
+
   private updateIdleAnimation(worker: Worker): void {
     const now = Date.now();
     if (
@@ -2878,6 +2800,44 @@ export class RenderSystem extends System {
     if (worker.heldItemStyle === 'side' && worker.carryingResource) {
       return;
     }
+
+    if (worker.floorSleepUntilMs != null) {
+      if (now >= worker.floorSleepUntilMs) {
+        worker.floorSleepUntilMs = null;
+        worker.floorSleepStartedAtMs = null;
+        worker.idleContinuousSinceMs = now;
+        worker.nextIdleCheck = now + 2000 + Math.random() * 5000;
+        worker.nextFloorSleepProbeMs = now + 18_000 + Math.random() * 42_000;
+      } else {
+        return;
+      }
+    }
+
+    if (
+      worker.state === 'idle' &&
+      !worker.carryingResource &&
+      worker.idleContinuousSinceMs != null &&
+      now - worker.idleContinuousSinceMs >= RenderSystem.FLOOR_NAP_MIN_IDLE_MS
+    ) {
+      if (worker.nextFloorSleepProbeMs == null) {
+        worker.nextFloorSleepProbeMs = now + 7000 + Math.random() * 11_000;
+      }
+      if (now >= worker.nextFloorSleepProbeMs) {
+        worker.nextFloorSleepProbeMs = now + 11_000 + Math.random() * 19_000;
+        if (Math.random() < RenderSystem.FLOOR_NAP_ROLL) {
+          worker.floorSleepStartedAtMs = now;
+          worker.floorSleepUntilMs =
+            now +
+            RenderSystem.FLOOR_NAP_MS_MIN +
+            Math.random() * (RenderSystem.FLOOR_NAP_MS_MAX - RenderSystem.FLOOR_NAP_MS_MIN);
+          worker.idleAnim = 'none';
+          return;
+        }
+      }
+    } else {
+      worker.nextFloorSleepProbeMs = null;
+    }
+
     if (worker.idleAnim !== 'none') {
       if (now > worker.idleAnimStart + worker.idleAnimDuration) {
         worker.idleAnim = 'none';
@@ -2910,6 +2870,28 @@ export class RenderSystem extends System {
     }
   }
 
+  private paintWorkerSpriteBody(p: {
+    worker: Worker;
+    s: number;
+    facing: number;
+    isMoving: boolean;
+    frame: number;
+    now: number;
+    anim: IdleAnim;
+    animT: number;
+    isCarrying: boolean;
+    isHammerConstruct: boolean;
+    isPlantDigging: boolean;
+    isStoneGathering: boolean;
+    isSideCarryTool: boolean;
+    isOverheadCarry: boolean;
+    armAnim: IdleAnim;
+    drawRoundFootShadow: boolean;
+    napPillowArms: boolean;
+  }): void {
+    paintWorkerBodyToCanvas(this.ctx, (path) => this.loadSprite(path), p);
+  }
+
   private renderWorkerSprite(movable: Movable | null, worker: Worker): void {
     let dirX = 0;
     let dirY = 1;
@@ -2923,6 +2905,8 @@ export class RenderSystem extends System {
         isMoving = true;
       }
     }
+
+    this.syncWorkerIdleNapClock(worker, movable, isMoving);
 
     let facing: number;
     if (isMoving) {
@@ -2940,7 +2924,6 @@ export class RenderSystem extends System {
     const now = Date.now();
     const frame = isMoving ? Math.floor(now / 200) % 4 : 0;
     const s = 2;
-    const a = worker.appearance;
     const anim = worker.idleAnim;
     const animT = anim !== 'none' ? (now - worker.idleAnimStart) / worker.idleAnimDuration : 0;
 
@@ -2980,271 +2963,39 @@ export class RenderSystem extends System {
     const armAnim: IdleAnim =
       isSideCarryTool && anim !== 'look_around' && anim !== 'none' ? 'none' : anim;
 
-    this.ctx.save();
-
-    const px = (x: number, y: number, w: number, h: number, color: string) => {
-      this.ctx.fillStyle = color;
-      this.ctx.fillRect(x * s, y * s, w * s, h * s);
+    const bodyArgs = {
+      worker,
+      s,
+      facing,
+      isMoving,
+      frame,
+      now,
+      anim,
+      animT,
+      isCarrying,
+      isHammerConstruct,
+      isPlantDigging,
+      isStoneGathering,
+      isSideCarryTool,
+      isOverheadCarry,
+      armAnim,
     };
 
-    const mirror = facing === 1 || facing === 2;
-    const showBack = facing === 2 || facing === 3;
-    if (mirror) this.ctx.scale(-1, 1);
-
-    const isWellDrawing =
-      worker.visualActivity === 'production_well' &&
-      worker.state === 'working' &&
+    if (
       !isMoving &&
-      worker.carryingResource === 'water';
-    const isMillDrawing =
-      worker.visualActivity === 'production_mill' &&
-      worker.state === 'working' &&
-      !isMoving &&
-      !!worker.carryingResource;
-    if (isWellDrawing || isMillDrawing) {
-      const bob = Math.sin(now / 420) * 1.8;
-      const sway = Math.sin(now / 510) * 0.5;
-      this.ctx.translate(sway * s, bob * s);
-    }
-
-    if (isPlantDigging) {
-      const bob = Math.sin(now / 380) * 2.2;
-      const lean = Math.sin(now / 520) * 0.6;
-      this.ctx.translate(lean * s, bob * s);
-    }
-
-    const legOffsets = [[0, 0], [-1, 1], [0, 0], [1, -1]];
-    const [leftLeg, rightLeg] = legOffsets[frame];
-    const walkArmSwing = isMoving ? (frame === 1 ? 1 : frame === 3 ? -1 : 0) : 0;
-
-    // Shadow
-    this.ctx.globalAlpha = 0.2;
-    this.ctx.fillStyle = '#000';
-    this.ctx.beginPath();
-    this.ctx.ellipse(0, 0, 4 * s, 1.5 * s, 0, 0, Math.PI * 2);
-    this.ctx.fill();
-    this.ctx.globalAlpha = 1;
-
-    const isDress = a.variant === 'dress';
-
-    if (isDress) {
-      px(-1 + leftLeg, -1, 1, 1, a.boots);
-      px(1 + rightLeg, -1, 1, 1, a.boots);
-      px(-3, -9, 7, 8, a.tunic);
-      px(-3, -2, 7, 1, this.darkenColor(a.tunic, 0.8));
-      if (!showBack) {
-        px(-1, -7, 4, 5, '#d8cbb8');
-      }
-    } else {
-      px(-2 + leftLeg, -2, 2, 2, a.boots);
-      px(1 + rightLeg, -2, 2, 2, a.boots);
-      px(-2 + leftLeg, -4, 2, 2, a.pants);
-      px(1 + rightLeg, -4, 2, 2, a.pants);
-      px(-2, -9, 5, 5, a.tunic);
-      px(-2, -5, 5, 1, '#2a1f14');
-    }
-
-    let leftArmY = -8 + walkArmSwing;
-    let rightArmY = -8 - walkArmSwing;
-    let leftHandY = -5 + walkArmSwing;
-    let rightHandY = -5 - walkArmSwing;
-    let leftArmX = -4;
-    let rightArmX = 3;
-    let extraDraw: (() => void) | null = null;
-
-    let hammerSwingT = 0;
-
-    if (isHammerConstruct) {
-      hammerSwingT = (Math.sin(now / 130) + 1) / 2;
-      const strike = Math.floor(hammerSwingT * 8);
-      leftArmX = -4;
-      rightArmX = 4;
-      leftArmY = -8;
-      rightArmY = -7 - strike;
-      leftHandY = -5;
-      rightHandY = rightArmY + 3;
-    } else if (isStoneGathering) {
-      const phase = now / 105;
-      const swing = Math.sin(phase) * 3.4;
-      leftArmX = -4;
-      rightArmX = 4;
-      leftArmY = -8 + swing * 0.28;
-      rightArmY = -8 + swing * 1.05;
-      leftHandY = -5 + swing * 0.28;
-      rightHandY = rightArmY + 3;
-    } else if (isSideCarryTool) {
-      const wobble = isMoving ? walkArmSwing * 0.5 : 0;
-      leftArmX = -4;
-      rightArmX = 4;
-      leftArmY = -8 + wobble;
-      rightArmY = -8 - wobble;
-      leftHandY = -4 + wobble;
-      rightHandY = -4 - wobble;
-    } else if (
-      isOverheadCarry &&
-      ((worker.visualActivity === 'production_well' && worker.carryingResource === 'water') ||
-        (worker.visualActivity === 'production_mill' && worker.carryingResource))
+      worker.state === 'idle' &&
+      worker.floorSleepUntilMs != null &&
+      now < worker.floorSleepUntilMs
     ) {
-      const pull = Math.sin(now / 200);
-      const a1 = pull * 2.5;
-      const a2 = -pull * 2.5;
-      leftArmY = -12 + a1;
-      rightArmY = -12 + a2;
-      leftHandY = -14 + a1;
-      rightHandY = -14 + a2;
-      leftArmX = -3;
-      rightArmX = 2;
-    } else if (isOverheadCarry) {
-      leftArmY = -13;
-      rightArmY = -13;
-      leftHandY = -15;
-      rightHandY = -15;
-      leftArmX = -3;
-      rightArmX = 2;
-    } else if (!isMoving) {
-      if (armAnim === 'scratch_head') {
-        rightArmY = -13;
-        rightHandY = -14;
-        rightArmX = 2;
-        const wiggle = Math.sin(animT * Math.PI * 6) > 0 ? 1 : 0;
-        rightHandY += wiggle;
-      } else if (armAnim === 'hands_on_hips') {
-        leftArmX = -3;
-        rightArmX = 2;
-        leftArmY = -7;
-        rightArmY = -7;
-        leftHandY = -5;
-        rightHandY = -5;
-      } else if (armAnim === 'stretch') {
-        const lift = Math.sin(animT * Math.PI);
-        leftArmY = -8 - Math.floor(lift * 5);
-        rightArmY = -8 - Math.floor(lift * 5);
-        leftHandY = leftArmY - 1;
-        rightHandY = rightArmY - 1;
-      } else if (armAnim === 'read') {
-        leftArmX = -2;
-        rightArmX = 1;
-        leftArmY = -7;
-        rightArmY = -7;
-        leftHandY = -5;
-        rightHandY = -5;
-        if (!showBack) {
-          extraDraw = () => {
-            px(-1, -8, 4, 3, '#e8dcc8');
-            px(-1, -8, 4, 1, '#c8b898');
-          };
-        }
-      }
+      paintWorkerFloorNap(this.ctx, (path) => this.loadSprite(path), worker, now, s, facing);
+      return;
     }
 
-    px(leftArmX, leftArmY, 2, 3, a.tunic);
-    px(rightArmX, rightArmY, 2, 3, a.tunic);
-    px(leftArmX, leftHandY, 2, 1, a.skin);
-    px(rightArmX, rightHandY, 2, 1, a.skin);
-
-    if (extraDraw) extraDraw();
-
-    let headShift = 0;
-    if (anim === 'look_around') {
-      headShift = Math.round(Math.sin(animT * Math.PI * 2) * 1.5);
-    }
-
-    if (showBack) {
-      if (a.variant === 'hat') {
-        px(-2 + headShift, -14, 5, 5, a.hair);
-        px(-4 + headShift, -14, 9, 1, '#c8a868');
-        px(-3 + headShift, -15, 7, 1, '#c8a868');
-        px(-1 + headShift, -16, 3, 1, '#b89858');
-      } else if (isDress) {
-        px(-2 + headShift, -14, 5, 5, a.hair);
-        px(-1 + headShift, -9, 3, 2, a.hair);
-      } else {
-        px(-2 + headShift, -14, 5, 5, a.hair);
-        px(0 + headShift, -15, 1, 1, a.hair);
-      }
-    } else {
-      px(-2 + headShift, -13, 5, 4, a.skin);
-
-      if (a.variant === 'hat') {
-        px(-4 + headShift, -14, 9, 1, '#c8a868');
-        px(-3 + headShift, -15, 7, 1, '#c8a868');
-        px(-1 + headShift, -16, 3, 1, '#b89858');
-        px(-3 + headShift, -14, 7, 1, '#7a5a30');
-      } else if (isDress) {
-        px(-2 + headShift, -15, 5, 3, a.hair);
-        px(-3 + headShift, -13, 1, 3, a.hair);
-        px(3 + headShift, -13, 1, 3, a.hair);
-      } else {
-        px(-2 + headShift, -15, 5, 3, a.hair);
-        px(-2 + headShift, -13, 5, 1, '#3a2a1a');
-      }
-      px(1 + headShift, -12, 1, 1, '#1a1008');
-    }
-
-    if (isCarrying && worker.carryingResource) {
-      const resSprite = this.loadSprite(`/assets/resources/${worker.carryingResource}.png`);
-      const drawFallback = () => {
-        px(-2, -19, 5, 4, '#d4a03c');
-        px(-1, -20, 3, 1, '#f0c060');
-      };
-
-      const toolDrawPx = 10 * RESOURCE_ICON_DRAW_SCALE;
-      const carryW = 8 * RESOURCE_ICON_DRAW_SCALE;
-
-      if (isHammerConstruct) {
-        const strike = Math.floor(hammerSwingT * 8);
-        const ty = -11 - strike;
-        const tx = 0.5;
-        if (resSprite) {
-          this.ctx.drawImage(resSprite, tx * s, ty * s, toolDrawPx * s, toolDrawPx * s);
-        } else {
-          px(tx - 1, ty, 5, 5, '#8a7a68');
-        }
-      } else if (isPlantDigging) {
-        const dip = Math.sin(now / 290) * 0.8 * s;
-        if (resSprite) {
-          this.ctx.drawImage(resSprite, -1 * s, -6 * s + dip, toolDrawPx * s, toolDrawPx * s);
-        } else {
-          px(-2, -8, 6, 5, '#d4a03c');
-          px(-1, -9, 4, 1, '#f0c060');
-        }
-      } else if (isStoneGathering) {
-        const swing = Math.sin(now / 105) * 3.4;
-        const ty = -10 + swing * 1.08;
-        const tx = 0.5;
-        if (resSprite) {
-          this.ctx.drawImage(resSprite, tx * s, ty * s, toolDrawPx * s, toolDrawPx * s);
-        } else {
-          px(tx - 1, ty, 5, 5, '#8a7a68');
-        }
-      } else if (isSideCarryTool) {
-        if (resSprite) {
-          this.ctx.drawImage(resSprite, -0.5 * s, -11 * s, toolDrawPx * s, toolDrawPx * s);
-        } else {
-          px(-2, -20, 6, 5, '#d4a03c');
-          px(-1, -21, 4, 1, '#f0c060');
-        }
-      } else if (
-        isOverheadCarry &&
-        ((worker.visualActivity === 'production_well' && worker.carryingResource === 'water') ||
-          (worker.visualActivity === 'production_mill' && worker.carryingResource))
-      ) {
-        const wob = Math.sin(now / 200) * 1.2 * s;
-        if (resSprite) {
-          this.ctx.drawImage(resSprite, -4 * s, -22 * s + wob, carryW * s, carryW * s);
-        } else {
-          drawFallback();
-        }
-      } else if (isOverheadCarry) {
-        if (resSprite) {
-          this.ctx.drawImage(resSprite, -4 * s, -22 * s, carryW * s, carryW * s);
-        } else {
-          drawFallback();
-        }
-      }
-    }
-
-    this.ctx.restore();
+    this.paintWorkerSpriteBody({
+      ...bodyArgs,
+      drawRoundFootShadow: true,
+      napPillowArms: false,
+    });
   }
 
   private renderCircle(renderable: Renderable): void {

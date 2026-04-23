@@ -107,6 +107,14 @@ export class Worker extends Component {
   public nextIdleCheck = 0;
   public idleFacing = 0;
 
+  /** Monotonic idle on tile (no walk / no job state); cleared when moving or non-idle. Used for rare floor naps. */
+  public idleContinuousSinceMs: number | null = null;
+  /** When set and `Date.now() <` this, worker is drawn napping on the ground. */
+  public floorSleepUntilMs: number | null = null;
+  public floorSleepStartedAtMs: number | null = null;
+  /** Next wall-clock time to roll for starting a floor nap (throttles probability). */
+  public nextFloorSleepProbeMs: number | null = null;
+
   constructor(public name: string = 'Peasant', role: WorkerRole = 'peasant') {
     super();
     this.role = role;

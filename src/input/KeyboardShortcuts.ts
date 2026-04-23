@@ -169,6 +169,7 @@ export function setupKeyboardShortcuts(game: Game): void {
     e.preventDefault();
     if (tryCloseTopOverlay()) return;
     inputSystem.setMode('view');
+    game.clearMapSelection();
   });
 
   // Escape — Close dialogs / return to view mode
@@ -176,6 +177,7 @@ export function setupKeyboardShortcuts(game: Game): void {
     e.preventDefault();
     if (tryCloseTopOverlay()) return;
     inputSystem.setMode('view');
+    game.clearMapSelection();
   });
 
   // Space (hold) — Pan mode

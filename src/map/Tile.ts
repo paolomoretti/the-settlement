@@ -19,6 +19,11 @@ export class Tile {
   public waterFishRemaining?: number;
   /** Lazy-assigned underground ores (10 units total across coal / iron_ore / gold_ore / granite). */
   public cellMinerals?: CellMinerals;
+  /**
+   * Lazy underground water for a well on this cell: set when a well completes construction;
+   * reduced by each water production cycle. `0` means this cell cannot supply a well again.
+   */
+  public cellWellWaterRemaining?: number;
 
   constructor(
     public x: number,

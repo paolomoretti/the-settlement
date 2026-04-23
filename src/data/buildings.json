@@ -552,7 +552,7 @@
     "name": "Iron Smelter",
     "description": "Smelts iron ore and coal into iron bars.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 70, "color": "#d2691e" },
+    "visual": { "buildingHeight": 70, "color": "#d2691e", "spriteScale": 1.4, "offsetX": -1 },
     "buildCost": { "wood_plank": 2, "stone": 2 },
     "buildTime": 35,
     "requiresRoad": true,

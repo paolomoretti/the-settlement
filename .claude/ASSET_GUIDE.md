@@ -410,6 +410,8 @@ Reference style: The Settlers II carrier/worker units
 
 When the user provides a building sprite image (via prompt attachment, file path, etc.), follow these steps to integrate it. No other code changes are needed beyond what's described here.
 
+**Debug catalogue:** After any new or changed building art (final, construction, or production sprites), update **`src/catalog/buildingSprites.ts`** and spot-check **`/debug.html`**. See [.claude/DEBUG_CATALOGUE.md](DEBUG_CATALOGUE.md) for the full checklist (agents should treat this as part of the same change).
+
 ### Step 1: Save the image to `assets/buildings/`
 
 The filename **must** match the building's `BuildingType` id (from `src/types/GameData.ts`).
@@ -429,14 +431,14 @@ Valid building type ids (see `src/types/GameData.ts` for the full list):
 | `quarry`         | `assets/buildings/quarry.png`        | 2x2       |
 | `farm`           | `assets/buildings/farm.png`          | 3x2       |
 
-### Step 2: Set `spritePath` in `EntityFactory.ts`
+### Step 2: Register the completed sprite in `buildingSprites.ts`
 
-In `src/entities/EntityFactory.ts`, find the `SPRITE_PATHS` map and add the building type:
+In **`src/catalog/buildingSprites.ts`**, add the building type to **`BUILDING_FINAL_SPRITES`** (this map is the single source of truth; `EntityFactory` imports it):
 
 ```typescript
-const SPRITE_PATHS: Record<string, string> = {
+export const BUILDING_FINAL_SPRITES: Record<string, string> = {
   base_camp: '/assets/buildings/base_camp.png',
-  warehouse: '/assets/buildings/warehouse.png',
+  storehouse: '/assets/buildings/warehouse.png',
   lumberjack: '/assets/buildings/lumberjack.png',  // <-- add new entries here
 };
 ```
@@ -453,11 +455,11 @@ assets/buildings/<type>_build_1.png   ← mid-construction (framing, walls)
 assets/buildings/<type>.png           ← completed building (already exists)
 ```
 
-Then register them in `src/systems/RenderSystem.ts` in the `CONSTRUCTION_SPRITES` map:
+Then register them in **`src/catalog/buildingSprites.ts`** in **`BUILDING_CONSTRUCTION_SPRITES`**:
 
 ```typescript
-const CONSTRUCTION_SPRITES: Record<string, string[]> = {
-  warehouse: [
+export const BUILDING_CONSTRUCTION_SPRITES: Record<string, string[]> = {
+  storehouse: [
     '/assets/buildings/warehouse_build_0.png',
     '/assets/buildings/warehouse_build_1.png',
   ],
@@ -477,10 +479,10 @@ assets/buildings/<type>_prod_2.png
 ...
 ```
 
-Then register the building in `src/systems/RenderSystem.ts` in `PRODUCTION_SPRITES`:
+Then register the building in **`src/catalog/buildingSprites.ts`** in **`BUILDING_PRODUCTION_SPRITES`**:
 
 ```typescript
-const PRODUCTION_SPRITES: Record<string, string[]> = {
+export const BUILDING_PRODUCTION_SPRITES: Record<string, string[]> = {
   farm: [
     '/assets/buildings/farm_prod_0.png',
     '/assets/buildings/farm_prod_1.png',
@@ -571,7 +573,9 @@ When generating a building sprite with AI, include this in the prompt:
 ### Quick checklist
 
 - [ ] Image saved to `assets/buildings/<buildingType>.png`
-- [ ] `spritePath` added to the correct `case` in `EntityFactory.ts`
+- [ ] **`BUILDING_FINAL_SPRITES`** updated in `src/catalog/buildingSprites.ts` (not a hand-edited map in `EntityFactory.ts`)
+- [ ] If construction / production frames exist, **`BUILDING_CONSTRUCTION_SPRITES`** / **`BUILDING_PRODUCTION_SPRITES`** updated in the same file
+- [ ] [**Debug catalogue**](DEBUG_CATALOGUE.md) verified on **`/debug.html`** for the new or changed building
 - [ ] Base diamond spans full image width (left/right corners touch edges)
 - [ ] Front corner at bottom-center of image
 - [ ] Diamond height is half the image width (2:1 ratio)
@@ -671,6 +675,8 @@ That's it. The icon will automatically appear in:
 - **Building popover** — the detailed buffer breakdown when clicking a building
 
 All three locations use the same path pattern `/assets/resources/{resourceId}.png` and gracefully hide the icon if the file doesn't exist.
+
+**Workers / debug catalogue:** If settlers can **hold** this resource in-world and you want it to appear reliably on **`/debug.html`**, add the same path string to **`WORKER_BODY_RESOURCE_SPRITE_PATHS`** in `src/rendering/WorkerSpritePainter.ts` (preload list for the catalogue and shared painter). See [.claude/DEBUG_CATALOGUE.md](DEBUG_CATALOGUE.md).
 
 ### Resource id reference
 

@@ -3,16 +3,22 @@ import { Entity } from '@/core/Entity';
 import { eventBus } from '@/core/EventBus';
 import { Building } from '@/components/Building';
 import { Production } from '@/components/Production';
+import { Position } from '@/components/Position';
 import { Storage } from '@/components/Storage';
 import { resourceManager } from '@/economics/ResourceManager';
 import { dataManager } from '@/data/DataManager';
+import { rollWellAquiferCapacity } from '@/map/wellAquifer';
+import type { TileMap } from '@/map/TileMap';
 import { ResourceType } from '@/types/GameData';
 
 /**
  * One full production tick: consume inputs, buffer outputs, emit events, re-check buffer full.
  * Does not change `production.timer` (caller adjusts after a timer-based tick).
  */
-export function applyProductionCycleOutputs(entity: Entity): void {
+export function applyProductionCycleOutputs(
+  entity: Entity,
+  opts?: { getTileMap?: () => TileMap }
+): void {
   const building = entity.getComponent(Building);
   const production = entity.getComponent(Production);
   const storage = entity.getComponent(Storage);
@@ -76,6 +82,28 @@ export function applyProductionCycleOutputs(entity: Entity): void {
     outputs: { ...production.outputs },
   });
 
+  if (building.buildingType === 'well' && opts?.getTileMap) {
+    const pos = entity.getComponent(Position);
+    const tile = pos ? opts.getTileMap().getTile(Math.floor(pos.x), Math.floor(pos.y)) : null;
+    if (tile) {
+      let waterOut = 0;
+      for (const [res, amount] of Object.entries(production.outputs)) {
+        if (res === 'water' && amount > 0) waterOut += amount;
+      }
+      if (waterOut > 0) {
+        if (tile.cellWellWaterRemaining === undefined) {
+          tile.cellWellWaterRemaining = rollWellAquiferCapacity();
+        }
+        const prev = tile.cellWellWaterRemaining;
+        tile.cellWellWaterRemaining = Math.max(0, prev - waterOut);
+        if (prev > 0 && tile.cellWellWaterRemaining <= 0) {
+          building.outOfMapResources = true;
+          eventBus.emit('well:aquifer_depleted', { entityId: entity.id });
+        }
+      }
+    }
+  }
+
   if (!production.continuous) {
     production.status = 'idle';
     production.timer = 0;
@@ -101,6 +129,10 @@ export function applyProductionCycleOutputs(entity: Entity): void {
 }
 
 export class ProductionSystem extends System {
+  constructor(private readonly getTileMap: () => TileMap) {
+    super();
+  }
+
   shouldProcessEntity(entity: Entity): boolean {
     return entity.hasComponent(Production) && entity.hasComponent(Building);
   }
@@ -217,11 +249,26 @@ export class ProductionSystem extends System {
         continue;
       }
 
+      const pos = entity.getComponent(Position);
+      const wellTile =
+        building.buildingType === 'well' && pos
+          ? this.getTileMap().getTile(Math.floor(pos.x), Math.floor(pos.y))
+          : null;
+      const wellAquiferDry =
+        building.buildingType === 'well' &&
+        wellTile != null &&
+        wellTile.cellWellWaterRemaining !== undefined &&
+        wellTile.cellWellWaterRemaining <= 0;
+
       if (production.status !== 'producing') {
-        building.outOfMapResources = false;
+        if (!(building.buildingType === 'well' && wellAquiferDry)) {
+          building.outOfMapResources = false;
+        }
         production.status = 'producing';
         eventBus.emit('production:resumed', { entityId: entity.id });
       }
+
+      const wellAquiferBlocked = wellAquiferDry;
 
       // Forester / quarry & fisher depletion / underground mine: hold the production clock while the field worker is out
       const foresterPlanting =
@@ -231,7 +278,12 @@ export class ProductionSystem extends System {
         (resourceDepletionGather || mineSiteGather);
       const mapGatherSourceBlocked =
         mapLinkedGather && building.outOfMapResources;
-      if (!foresterPlanting && !fieldGatherPausing && !mapGatherSourceBlocked) {
+      if (
+        !foresterPlanting &&
+        !fieldGatherPausing &&
+        !mapGatherSourceBlocked &&
+        !wellAquiferBlocked
+      ) {
         production.timer += deltaTime;
       }
 
@@ -241,7 +293,7 @@ export class ProductionSystem extends System {
         production.timer >= production.productionTime
       ) {
         production.timer -= production.productionTime;
-        applyProductionCycleOutputs(entity);
+        applyProductionCycleOutputs(entity, { getTileMap: this.getTileMap });
       }
     }
   }

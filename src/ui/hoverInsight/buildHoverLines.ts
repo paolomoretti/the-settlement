@@ -68,6 +68,13 @@ export function buildBuildingHoverLines(entity: Entity): { title: string; lines:
     ) {
       lines.push('Nothing to gather within reach of this building.');
     }
+    if (
+      building.buildingType === 'well' &&
+      building.outOfMapResources &&
+      production?.status === 'producing'
+    ) {
+      lines.push('Underground water here is exhausted — this well will be abandoned.');
+    }
   };
 
   if (building.state === 'awaiting_materials' && building.constructionMaterials) {

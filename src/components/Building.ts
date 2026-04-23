@@ -22,6 +22,9 @@ export class Building extends Component {
   public requiresRoad: boolean;
   public isActive: boolean = true;
 
+  /** Free road tile cardinally touching the entrance that owns the visual + transport hook; sticky until removed. */
+  public entranceRoadConnector: { x: number; y: number } | null = null;
+
   // Construction material delivery tracking
   public constructionMaterials: Record<string, number> | null = null;
   public materialsSent: Record<string, number> = {};

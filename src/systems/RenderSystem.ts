@@ -1720,16 +1720,78 @@ export class RenderSystem extends System {
     return this.cachedViewportBounds;
   }
 
+  private static isCardinallyAdjacent(ax: number, ay: number, bx: number, by: number): boolean {
+    return Math.abs(ax - bx) + Math.abs(ay - by) === 1;
+  }
+
+  /** Fallback when no sticky connector is stored (e.g. legacy saves). */
+  private lexMinAdjacentFreeRoadTouchingEntrance(ex: number, ey: number): { x: number; y: number } | null {
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]] as const;
+    let best: { x: number; y: number } | null = null;
+    for (const [dx, dy] of dirs) {
+      const tx = ex + dx;
+      const ty = ey + dy;
+      const t = this.tileMap.getTile(tx, ty);
+      if (t && t.hasRoad && !t.isOccupied()) {
+        if (!best || tx < best.x || (tx === best.x && ty < best.y)) {
+          best = { x: tx, y: ty };
+        }
+      }
+    }
+    return best;
+  }
+
+  /** Free road cell that owns the autotile link for this entrance — matches `Game` / `RoadSegmentManager` sticky connector. */
+  private getEntranceConnectorFreeRoadCell(ex: number, ey: number): { x: number; y: number } | null {
+    const entranceTile = this.tileMap.getTile(ex, ey);
+    const bid = entranceTile?.occupiedBy;
+    if (bid === undefined) {
+      return this.lexMinAdjacentFreeRoadTouchingEntrance(ex, ey);
+    }
+    const entity = this.entities.find(e => e.id === bid);
+    const building = entity?.getComponent(Building);
+    const c = building?.entranceRoadConnector;
+    if (c) {
+      const t = this.tileMap.getTile(c.x, c.y);
+      if (
+        t?.hasRoad &&
+        !t.isOccupied() &&
+        RenderSystem.isCardinallyAdjacent(c.x, c.y, ex, ey)
+      ) {
+        return c;
+      }
+    }
+    return this.lexMinAdjacentFreeRoadTouchingEntrance(ex, ey);
+  }
+
   private getRoadConfig(x: number, y: number): number {
     let config = 0;
-    const nw = this.tileMap.getTile(x - 1, y);
-    if (nw?.hasRoad) config |= 1;
-    const ne = this.tileMap.getTile(x, y - 1);
-    if (ne?.hasRoad) config |= 2;
-    const se = this.tileMap.getTile(x + 1, y);
-    if (se?.hasRoad) config |= 4;
-    const sw = this.tileMap.getTile(x, y + 1);
-    if (sw?.hasRoad) config |= 8;
+    const here = this.tileMap.getTile(x, y);
+    const currentIsEntrance = !!(here?.isOccupied() && here.hasRoad);
+
+    const addBit = (mask: number, nx: number, ny: number) => {
+      const t = this.tileMap.getTile(nx, ny);
+      if (!t?.hasRoad) return;
+
+      const neighborIsFree = !t.isOccupied();
+      if (neighborIsFree) {
+        if (currentIsEntrance) {
+          const canon = this.getEntranceConnectorFreeRoadCell(x, y);
+          if (!canon || canon.x !== nx || canon.y !== ny) return;
+        }
+      } else {
+        // Occupied + hasRoad: building entrance (or HQ). Only the designated free road
+        // may link in the bitmask so a second road arm does not visually merge into it.
+        const canon = this.getEntranceConnectorFreeRoadCell(nx, ny);
+        if (!canon || canon.x !== x || canon.y !== y) return;
+      }
+      config |= mask;
+    };
+
+    addBit(1, x - 1, y);
+    addBit(2, x, y - 1);
+    addBit(4, x + 1, y);
+    addBit(8, x, y + 1);
     return config;
   }
 

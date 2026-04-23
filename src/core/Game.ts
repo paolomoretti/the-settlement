@@ -247,7 +247,7 @@ export class Game {
     if (this.segmentRecalcTimer) return;
     this.segmentRecalcTimer = setTimeout(() => {
       this.segmentRecalcTimer = null;
-      roadSegmentManager.recalculate(this.tileMap);
+      this.recalculateRoadSegments();
       this.recomputeTransportRoutes();
     }, 200);
   }
@@ -463,6 +463,7 @@ export class Game {
       if (this.tileMap.buildRoad(x, y)) {
         audioManager.playSound('road_build');
         roadSegmentManager.addRoad(x, y);
+        this.tryClaimEntranceConnectorForNewRoad(x, y);
         this.scheduleSegmentRecalc();
         this.updateBuildingRoadConnections();
       }
@@ -570,7 +571,7 @@ export class Game {
     this.recomputePopulationMaxCapacity();
     this.syncInventory();
     this.updateSelectionUI();
-    roadSegmentManager.recalculate(this.tileMap);
+    this.recalculateRoadSegments();
     this.recomputeTransportRoutes();
     this.updateBuildingRoadConnections();
   }
@@ -652,7 +653,126 @@ export class Game {
     return false;
   }
 
+  private static isCardinallyAdjacent(ax: number, ay: number, bx: number, by: number): boolean {
+    return Math.abs(ax - bx) + Math.abs(ay - by) === 1;
+  }
+
+  /** World cell of the road-surface entrance (occupied + hasRoad), or null if none. */
+  private getBuildingEntranceWorldCell(pos: Position, building: Building): { x: number; y: number } | null {
+    const off = building.getEntranceOffset();
+    if (off) {
+      return { x: pos.x + off.dx, y: pos.y + off.dy };
+    }
+    if (building.width === 1 && building.height === 1 && !building.passable) {
+      return { x: pos.x, y: pos.y };
+    }
+    return null;
+  }
+
+  private collectAdjacentFreeRoadCells(ex: number, ey: number): { x: number; y: number }[] {
+    const out: { x: number; y: number }[] = [];
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]] as const;
+    for (const [dx, dy] of dirs) {
+      const tx = ex + dx;
+      const ty = ey + dy;
+      const t = this.tileMap.getTile(tx, ty);
+      if (t && t.hasRoad && !t.isOccupied()) {
+        out.push({ x: tx, y: ty });
+      }
+    }
+    return out;
+  }
+
+  private lexMinRoadCell(cells: { x: number; y: number }[]): { x: number; y: number } {
+    let best = cells[0];
+    for (let i = 1; i < cells.length; i++) {
+      const c = cells[i];
+      if (c.x < best.x || (c.x === best.x && c.y < best.y)) best = c;
+    }
+    return best;
+  }
+
+  /** Keeps `Building.entranceRoadConnector` valid; re-picks only when the sticky tile is gone or illegal. */
+  private syncEntranceRoadConnectors(): void {
+    for (const entity of this.entities) {
+      if (!entity.active) continue;
+      const building = entity.getComponent(Building);
+      const pos = entity.getComponent(Position);
+      if (!building || !pos) continue;
+
+      const entrance = this.getBuildingEntranceWorldCell(pos, building);
+      if (!entrance) {
+        building.entranceRoadConnector = null;
+        continue;
+      }
+
+      const adjacent = this.collectAdjacentFreeRoadCells(entrance.x, entrance.y);
+      if (adjacent.length === 0) {
+        building.entranceRoadConnector = null;
+        continue;
+      }
+
+      const cur = building.entranceRoadConnector;
+      if (cur) {
+        const t = this.tileMap.getTile(cur.x, cur.y);
+        const still =
+          t &&
+          t.hasRoad &&
+          !t.isOccupied() &&
+          adjacent.some(c => c.x === cur.x && c.y === cur.y);
+        if (still) continue;
+      }
+
+      building.entranceRoadConnector = this.lexMinRoadCell(adjacent);
+    }
+  }
+
+  /** First road placed next to an entrance claims the connector while it is still unset. */
+  private tryClaimEntranceConnectorForNewRoad(roadX: number, roadY: number): void {
+    const tile = this.tileMap.getTile(roadX, roadY);
+    if (!tile?.hasRoad || tile.isOccupied()) return;
+
+    for (const entity of this.entities) {
+      if (!entity.active) continue;
+      const building = entity.getComponent(Building);
+      const pos = entity.getComponent(Position);
+      if (!building || !pos || building.entranceRoadConnector != null) continue;
+
+      const entrance = this.getBuildingEntranceWorldCell(pos, building);
+      if (!entrance) continue;
+      if (!Game.isCardinallyAdjacent(roadX, roadY, entrance.x, entrance.y)) continue;
+
+      building.entranceRoadConnector = { x: roadX, y: roadY };
+    }
+  }
+
+  private buildEntranceConnectorMap(): Map<number, { x: number; y: number }> {
+    const m = new Map<number, { x: number; y: number }>();
+    for (const entity of this.entities) {
+      if (!entity.active) continue;
+      const building = entity.getComponent(Building);
+      const pos = entity.getComponent(Position);
+      if (!building || !pos) continue;
+      const c = building.entranceRoadConnector;
+      if (!c) continue;
+      const t = this.tileMap.getTile(c.x, c.y);
+      if (!t?.hasRoad || t.isOccupied()) continue;
+      const entrance = this.getBuildingEntranceWorldCell(pos, building);
+      if (!entrance) continue;
+      if (!Game.isCardinallyAdjacent(c.x, c.y, entrance.x, entrance.y)) continue;
+      m.set(entity.id, c);
+    }
+    return m;
+  }
+
+  private recalculateRoadSegments(): void {
+    this.syncEntranceRoadConnectors();
+    roadSegmentManager.recalculate(this.tileMap, this.buildEntranceConnectorMap());
+  }
+
   public updateBuildingRoadConnections(): void {
+    this.syncEntranceRoadConnectors();
+
     const connectedRoads = this.getBaseCampConnectedRoads();
 
     for (const entity of this.entities) {
@@ -718,7 +838,7 @@ export class Game {
     }
 
     if (roadsRemoved || entrance || oneByOneTaggedForTransport) {
-      roadSegmentManager.recalculate(this.tileMap);
+      this.recalculateRoadSegments();
       this.recomputeTransportRoutes();
     }
   }
@@ -1909,6 +2029,14 @@ export class Game {
       }
     }
 
+    // Heal stale toward-base / toward-consumer maps when goods sit in output buffers
+    if (now - this.lastOutputTransportKickTime > 6000) {
+      this.lastOutputTransportKickTime = now;
+      if (this.hasAnyUnroutedProductionOutput()) {
+        this.kickTransportRoutesForNewOutput();
+      }
+    }
+
     // Keep inventory in sync with storage components
     this.syncInventory();
 
@@ -2264,6 +2392,10 @@ export class Game {
           data.storage = storage.serialize();
         }
 
+        if (building?.entranceRoadConnector) {
+          data.entranceRoadConnector = { ...building.entranceRoadConnector };
+        }
+
         return data;
       }),
       transportQueue: resourceManager.serialize(),
@@ -2366,6 +2498,15 @@ export class Game {
             building.hasOperator = false;
           }
 
+          if (buildingData.entranceRoadConnector &&
+              typeof buildingData.entranceRoadConnector.x === 'number' &&
+              typeof buildingData.entranceRoadConnector.y === 'number') {
+            building.entranceRoadConnector = {
+              x: buildingData.entranceRoadConnector.x,
+              y: buildingData.entranceRoadConnector.y,
+            };
+          }
+
           // Restore production state
           const production = entity.getComponent(Production);
           if (production && buildingData.production) {
@@ -2419,7 +2560,7 @@ export class Game {
         }
       } else {
         // Old save without segments — recalculate from roads
-        roadSegmentManager.recalculate(this.tileMap);
+        this.recalculateRoadSegments();
       }
 
       this.updateBuildingRoadConnections();

@@ -101,8 +101,16 @@ export class RoadSegmentManager {
     return this.nearestSegmentTileToPoint(segment, r.x, r.y);
   }
 
-  recalculate(tileMap: TileMap): void {
-    const newSegments = this.computeSegments(tileMap);
+  /**
+   * @param stickyEntranceByBuilding — from `Game`: one connector tile per building entity id.
+   *   If omitted or empty, falls back to lexicographic min among adjacent roads (legacy / tests).
+   */
+  recalculate(tileMap: TileMap, stickyEntranceByBuilding?: Map<number, { x: number; y: number }>): void {
+    const canonical =
+      stickyEntranceByBuilding && stickyEntranceByBuilding.size > 0
+        ? stickyEntranceByBuilding
+        : this.computeCanonicalEntranceConnectors(tileMap);
+    const newSegments = this.computeSegments(tileMap, canonical);
     this.reconcile(this.segments, newSegments);
     this.segments = newSegments;
   }
@@ -130,12 +138,54 @@ export class RoadSegmentManager {
     return neighbors;
   }
 
-  private isAdjacentToBuilding(x: number, y: number, tileMap: TileMap): number | undefined {
+  /** Building IDs whose entrance cell (occupied + hasRoad) is cardinally adjacent to this road tile. */
+  private entranceBuildingNeighbors(x: number, y: number, tileMap: TileMap): number[] {
+    const ids: number[] = [];
+    const seen = new Set<number>();
     const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
     for (const [dx, dy] of dirs) {
       const tile = tileMap.getTile(x + dx, y + dy);
-      if (tile && tile.isOccupied() && tile.hasRoad) {
-        return tile.occupiedBy;
+      if (tile && tile.isOccupied() && tile.hasRoad && tile.occupiedBy !== undefined) {
+        const bid = tile.occupiedBy;
+        if (!seen.has(bid)) {
+          seen.add(bid);
+          ids.push(bid);
+        }
+      }
+    }
+    return ids;
+  }
+
+  /**
+   * At most one road tile per building may act as the entrance "connector" (segment node with entityId).
+   * Otherwise every new road brushed near the same entrance becomes another building endpoint.
+   * Canonical tile: lexicographically smallest (x, then y) among road tiles touching that entrance.
+   */
+  private computeCanonicalEntranceConnectors(tileMap: TileMap): Map<number, { x: number; y: number }> {
+    const canonical = new Map<number, { x: number; y: number }>();
+    for (const key of this.roadTiles) {
+      const [x, y] = key.split(',').map(Number);
+      for (const bid of this.entranceBuildingNeighbors(x, y, tileMap)) {
+        const cur = canonical.get(bid);
+        if (!cur || x < cur.x || (x === cur.x && y < cur.y)) {
+          canonical.set(bid, { x, y });
+        }
+      }
+    }
+    return canonical;
+  }
+
+  /** Building hook for transport: only the canonical connector tile gets entityId (same scan order as before). */
+  private buildingEntranceEntityIdForTile(
+    x: number,
+    y: number,
+    tileMap: TileMap,
+    canonicalEntrance: Map<number, { x: number; y: number }>
+  ): number | undefined {
+    for (const bid of this.entranceBuildingNeighbors(x, y, tileMap)) {
+      const c = canonicalEntrance.get(bid);
+      if (c && c.x === x && c.y === y) {
+        return bid;
       }
     }
     return undefined;
@@ -144,10 +194,11 @@ export class RoadSegmentManager {
   private classifyTile(
     x: number,
     y: number,
-    tileMap: TileMap
+    tileMap: TileMap,
+    canonicalEntrance: Map<number, { x: number; y: number }>
   ): RoadNode | null {
     const neighbors = this.getRoadNeighbors(x, y);
-    const adjacentBuildingId = this.isAdjacentToBuilding(x, y, tileMap);
+    const adjacentBuildingId = this.buildingEntranceEntityIdForTile(x, y, tileMap, canonicalEntrance);
 
     if (neighbors.length === 0) {
       return { x, y, type: adjacentBuildingId !== undefined ? 'building' : 'dead_end', entityId: adjacentBuildingId };
@@ -169,7 +220,7 @@ export class RoadSegmentManager {
     return null; // corridor tile, not a node
   }
 
-  private computeSegments(tileMap: TileMap): RoadSegment[] {
+  private computeSegments(tileMap: TileMap, canonicalEntrance: Map<number, { x: number; y: number }>): RoadSegment[] {
     if (this.roadTiles.size === 0) return [];
 
     const segments: RoadSegment[] = [];
@@ -178,7 +229,7 @@ export class RoadSegmentManager {
     const nodes = new Map<string, RoadNode>();
     for (const key of this.roadTiles) {
       const [x, y] = key.split(',').map(Number);
-      const node = this.classifyTile(x, y, tileMap);
+      const node = this.classifyTile(x, y, tileMap, canonicalEntrance);
       if (node) {
         nodes.set(key, node);
       }

@@ -331,11 +331,11 @@
     "tier": 1,
     "plotType": "medium",
     "animation": {
-      "type": "mill_operator",
+      "type": "interior_operator",
+      "operatorRole": "mill",
       "workerSpeed": 1.2,
       "drawingPhaseSec": 7,
-      "walkLeadSec": 4,
-      "carriedResource": "flour"
+      "walkLeadSec": 4
     }
   },
 
@@ -344,7 +344,7 @@
     "name": "Bakery",
     "description": "Bakes bread from flour and water to feed miners.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 60, "color": "#cd853f" },
+    "visual": { "buildingHeight": 60, "color": "#cd853f", "spriteScale": 1.4, "offsetX": -3, "offsetY": 2 },
     "buildCost": { "wood_plank": 2, "stone": 2 },
     "buildTime": 30,
     "requiresRoad": true,
@@ -410,21 +410,33 @@
   "coal_mine": {
     "id": "coal_mine",
     "name": "Coal Mine",
-    "description": "Extracts coal from underground deposits. Miners need food.",
+    "description": "Extracts coal from underground deposits. Miners need bread, ham, or fish.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 60, "color": "#404040" },
+    "visual": { "buildingHeight": 60, "color": "#404040", "spriteScale": 1.5, "offsetX": -6, "offsetY": 4},
     "buildCost": { "wood_plank": 4 },
     "buildTime": 40,
     "requiresRoad": true,
     "requiredTool": "pickaxe",
     "production": {
       "outputs": { "coal": 1 },
-      "inputs": { "bread": 1 },
+      "inputs": {},
+      "inputsAny": [{ "resourceTypes": ["bread", "ham", "fish"], "amount": 1 }],
       "productionTime": 30,
       "continuous": true
     },
     "storage": { "capacity": 10 },
     "population": { "requires": 1 },
+    "animation": {
+      "type": "gather",
+      "gatherMode": "mine_site",
+      "targetTerrain": ["grass"],
+      "searchRadius": 8,
+      "terrainTransition": {},
+      "workerSpeed": 1.12,
+      "walkLeadSec": 3,
+      "digAtSiteSec": 24,
+      "carriedResource": "coal"
+    },
     "category": "production",
     "tier": 2,
     "plotType": "mine"
@@ -433,21 +445,33 @@
   "iron_mine": {
     "id": "iron_mine",
     "name": "Iron Mine",
-    "description": "Extracts iron ore from underground deposits. Miners need food.",
+    "description": "Extracts iron ore from underground deposits. Miners need bread, ham, or fish.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 60, "color": "#8c5a3c" },
+    "visual": { "buildingHeight": 60, "color": "#8c5a3c", "spriteScale": 1.5, "offsetX": -6, "offsetY": 4},
     "buildCost": { "wood_plank": 4 },
     "buildTime": 40,
     "requiresRoad": true,
     "requiredTool": "pickaxe",
     "production": {
       "outputs": { "iron_ore": 1 },
-      "inputs": { "bread": 1 },
+      "inputs": {},
+      "inputsAny": [{ "resourceTypes": ["bread", "ham", "fish"], "amount": 1 }],
       "productionTime": 35,
       "continuous": true
     },
     "storage": { "capacity": 10 },
     "population": { "requires": 1 },
+    "animation": {
+      "type": "gather",
+      "gatherMode": "mine_site",
+      "targetTerrain": ["grass"],
+      "searchRadius": 8,
+      "terrainTransition": {},
+      "workerSpeed": 1.12,
+      "walkLeadSec": 3,
+      "digAtSiteSec": 28,
+      "carriedResource": "iron_ore"
+    },
     "category": "production",
     "tier": 2,
     "plotType": "mine"
@@ -456,21 +480,33 @@
   "gold_mine": {
     "id": "gold_mine",
     "name": "Gold Mine",
-    "description": "Extracts gold ore from underground deposits. Miners need food.",
+    "description": "Extracts gold ore from underground deposits. Miners need bread, ham, or fish.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 60, "color": "#daa520" },
+    "visual": { "buildingHeight": 60, "color": "#daa520", "spriteScale": 1.5, "offsetX": -6, "offsetY": 4},
     "buildCost": { "wood_plank": 4 },
     "buildTime": 40,
     "requiresRoad": true,
     "requiredTool": "pickaxe",
     "production": {
       "outputs": { "gold_ore": 1 },
-      "inputs": { "bread": 1 },
+      "inputs": {},
+      "inputsAny": [{ "resourceTypes": ["bread", "ham", "fish"], "amount": 1 }],
       "productionTime": 40,
       "continuous": true
     },
     "storage": { "capacity": 10 },
     "population": { "requires": 1 },
+    "animation": {
+      "type": "gather",
+      "gatherMode": "mine_site",
+      "targetTerrain": ["grass"],
+      "searchRadius": 8,
+      "terrainTransition": {},
+      "workerSpeed": 1.12,
+      "walkLeadSec": 3,
+      "digAtSiteSec": 32,
+      "carriedResource": "gold_ore"
+    },
     "category": "production",
     "tier": 3,
     "plotType": "mine"
@@ -479,21 +515,33 @@
   "granite_mine": {
     "id": "granite_mine",
     "name": "Granite Mine",
-    "description": "Extracts stone from underground granite deposits. Miners need food.",
+    "description": "Extracts stone from underground granite deposits. Miners need bread, ham, or fish.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 60, "color": "#696969" },
+    "visual": { "buildingHeight": 60, "color": "#696969", "spriteScale": 1.5, "offsetX": -6, "offsetY": 4},
     "buildCost": { "wood_plank": 4 },
     "buildTime": 40,
     "requiresRoad": true,
     "requiredTool": "pickaxe",
     "production": {
       "outputs": { "stone": 1 },
-      "inputs": { "bread": 1 },
+      "inputs": {},
+      "inputsAny": [{ "resourceTypes": ["bread", "ham", "fish"], "amount": 1 }],
       "productionTime": 35,
       "continuous": true
     },
     "storage": { "capacity": 10 },
     "population": { "requires": 1 },
+    "animation": {
+      "type": "gather",
+      "gatherMode": "mine_site",
+      "targetTerrain": ["grass"],
+      "searchRadius": 8,
+      "terrainTransition": {},
+      "workerSpeed": 1.12,
+      "walkLeadSec": 3,
+      "digAtSiteSec": 28,
+      "carriedResource": "stone"
+    },
     "category": "production",
     "tier": 2,
     "plotType": "mine"

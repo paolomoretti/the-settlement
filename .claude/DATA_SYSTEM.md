@@ -58,6 +58,8 @@ All resources are defined in `src/data/resources.json`.
 
 All buildings are defined in `src/data/buildings.json`.
 
+**Staffed buildings and map workers** (interior vs custom site animation, `operatorRole`, inferred defaults): see `.claude/BUILDING_WORKERS.md`.
+
 ### Building Categories
 
 1. **Core**: `headquarters`, `warehouse`, `storehouse`
@@ -106,11 +108,13 @@ All buildings are defined in `src/data/buildings.json`.
     "continuous": true    // Keeps producing
   },
   
-  // Storage (optional - for warehouses)
+  // Storage (optional - for warehouses, or ingredient bin on processors)
   "storage": {
     "capacity": 200,
     "accepts": ["wood_log", "wood_plank"]  // Optional filter
   },
+  // If the building has both production.inputs and storage, capacity counts ingredients only;
+  // finished goods always stage in production.outputBuffer (see BUILDING_DEPENDENCIES.md).
   
   // Population
   "population": {

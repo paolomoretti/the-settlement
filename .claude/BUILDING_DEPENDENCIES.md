@@ -10,9 +10,10 @@ How production buildings with inputs receive materials and produce outputs. This
 
 Some buildings require **input materials** to produce outputs (e.g., sawmill needs wood_log to produce wood_plank). These buildings have:
 
-1. **Local Storage** — a `Storage` component with `isProductionStorage = true`, holding both inputs and outputs in a shared capacity pool
-2. **Local consumption** — inputs are consumed from the building's own Storage, not the global inventory
-3. **Demand routing** — when a source building produces a resource that a consumer building needs, the transport system routes it directly to the consumer instead of to the base camp
+1. **Local Storage** — a `Storage` component with `isProductionStorage = true`, holding **recipe inputs only** (ingredients waiting to be consumed), up to `storage.capacity`
+2. **Output staging** — finished goods always go to `Production.outputBuffer` (same as gatherer buildings), i.e. **outside / awaiting road pickup**, capped by `production.maxOutputBuffer` (default 10). Inputs filling the ingredient store **must never** block the first unit of output: output space is separate from ingredient capacity
+3. **Local consumption** — inputs are consumed from the building's own Storage, not the global inventory
+4. **Demand routing** — when a source building produces a resource that a consumer building needs, the transport system routes it directly to the consumer instead of to the base camp
 
 ---
 
@@ -20,20 +21,28 @@ Some buildings require **input materials** to produce outputs (e.g., sawmill nee
 
 ### How It Works
 
-Production buildings with inputs get both `Production` and `Storage` components. The Storage acts as the building's local inventory, shared between input materials (waiting to be consumed) and output materials (waiting to be picked up).
+Production buildings with inputs get both `Production` and `Storage` components. **Storage** is only the on-site ingredient bin. **Outputs** are staged in `Production.outputBuffer` until a segment worker collects them (same transport rules as lumberjack / quarry).
 
-Example: A sawmill has Storage capacity 10. It might contain 3 wood_log (inputs) + 4 wood_plank (outputs) = 7/10 items.
+Example: A sawmill has ingredient Storage capacity 10 (only logs count toward that cap) and a default output buffer of 10 planks **outside** the ingredient tally. Ten logs filling the bin does not prevent producing the first plank.
+
+### Convention for new buildings
+
+Whenever you add a building with `production.inputs` + `storage` in `buildings.json`:
+
+- Treat `storage.capacity` as **inputs only** (multi-input headroom rules in this doc still apply).
+- Set `production.maxOutputBuffer` if the default (10) is wrong for the chain.
+- Do **not** expect outputs to live in `Storage`; code paths assume outputs are only in `outputBuffer`.
 
 ### Storage vs. Output Buffer
 
-| Building Type | Has Inputs? | Uses | Example |
-|---------------|-------------|------|---------|
-| Lumberjack | No | `Production.outputBuffer` | Produces wood_log into buffer |
-| Sawmill | Yes (wood_log) | `Storage` component | Inputs + outputs share Storage |
-| Quarry | No | `Production.outputBuffer` | Produces stone into buffer |
-| Bakery | Yes (flour) | `Storage` component | Inputs + outputs share Storage |
+| Building Type | Has Inputs? | Ingredients | Finished goods (awaiting pickup) |
+|---------------|-------------|-------------|-----------------------------------|
+| Lumberjack | No | — | `Production.outputBuffer` |
+| Sawmill | Yes (wood_log) | `Storage` (`isProductionStorage`) | `Production.outputBuffer` |
+| Quarry | No | — | `Production.outputBuffer` |
+| Bakery | Yes | `Storage` (`isProductionStorage`) | `Production.outputBuffer` |
 
-Buildings **without** inputs use the existing `outputBuffer` on the Production component. Buildings **with** inputs use a `Storage` component marked `isProductionStorage = true`.
+Buildings **without** inputs use only `Production.outputBuffer`. Buildings **with** inputs use **`Storage` for inputs** and **`Production.outputBuffer` for outputs** — both are always created when the building has production; `isProductionStorage` is set when the definition has both `production.inputs` and `storage`.
 
 ### Configuration
 
@@ -57,18 +66,18 @@ In `buildings.json`, a building with inputs needs both `production` and `storage
 
 ### Global Inventory Exclusion
 
-Items in production storage are **not** counted in the global inventory (`resourceManager.getGlobalInventory()`). Only items in base camp, warehouse, and storehouse Storage components count. This prevents raw materials sitting in a sawmill from being "available" for other uses.
+Items in production **ingredient** storage are **not** counted in the global inventory (`resourceManager.getGlobalInventory()`). Only items in base camp, warehouse, and storehouse Storage components count. This prevents raw materials sitting in a sawmill from being "available" for other uses. Items in `outputBuffer` are also excluded until picked up and delivered to HQ storage.
 
 ---
 
 ## Production System (Local Storage Mode)
 
-When a building has `isProductionStorage`, the `ProductionSystem` switches to local storage mode:
+When a building has `isProductionStorage`, the `ProductionSystem` switches to local storage mode for **inputs only**:
 
-1. **Check space**: `storage.getFreeSpace() >= outputTotal` (not `production.hasBufferSpace()`)
+1. **Check output staging space**: `production.hasBufferSpace()` (next batch must fit in `outputBuffer`, same as gatherer buildings)
 2. **Check inputs**: each input type must exist in local Storage in sufficient quantity
 3. **Consume inputs**: `storage.removeItem(inputResource, amount)` (not global inventory)
-4. **Produce outputs**: `storage.addItem(outputResource, amount)` (not outputBuffer)
+4. **Produce outputs**: `production.addToBuffer` + `resourceManager.requestPickup` (not `Storage`)
 
 ### Multi-input recipes (all types before production)
 
@@ -89,7 +98,8 @@ A full shared store must still leave **physical slots** for every other ingredie
 
 | Condition | Status |
 |-----------|--------|
-| Storage full (inputs + outputs >= capacity) | `stopped_full` |
+| Output buffer full (`outputBuffer` total ≥ `maxOutputBuffer` for the next batch) | `stopped_full` |
+| Ingredient store full (inputs only) — does **not** stop production by itself | *(n/a — outputs use buffer)* |
 | Required input not in local Storage | `stopped_no_inputs` |
 | No road connection | `stopped_no_road` |
 | Actively producing | `producing` |
@@ -188,6 +198,8 @@ The system is general — any building with `production.inputs` and `storage` au
 |-------|--------|----------|----------------|
 | Wood processing | Lumberjack | Sawmill | wood_log → wood_plank |
 
+**Audit (2026-04-22):** Every building in `buildings.json` that defines both `production.inputs` and `storage` uses `storage.capacity: 10` for ingredients and relies on the default `production.maxOutputBuffer` (10) for the outside pickup queue — same pattern: `sawmill`, `pig_farm`, `mill`, `bakery`, `brewery`, `slaughterhouse`, `coal_mine`, `iron_mine`, `gold_mine`, `granite_mine`, `iron_smelter`, `mint`, `metalworks`, `armory`. None share a single pool for inputs and outputs anymore, so a full ingredient bin cannot block the first output unit.
+
 ### Future Chains (defined in buildings.json but not yet active)
 
 | Chain | Source | Consumer | Input → Output |
@@ -225,13 +237,13 @@ Multi-input buildings (iron smelter, metalworks) demand each input independently
 |------|---------|
 | `src/data/buildings.json` | Building definitions with `production.inputs` and `storage` |
 | `src/components/Storage.ts` | Storage component with `isProductionStorage` flag |
-| `src/components/Production.ts` | Production component (outputBuffer for non-storage buildings) |
+| `src/components/Production.ts` | Production component (`outputBuffer` for all finished goods awaiting pickup) |
 | `src/entities/EntityFactory.ts` | Sets `isProductionStorage` when building has inputs + storage |
-| `src/systems/ProductionSystem.ts` | Local storage mode: consume inputs from Storage, produce into Storage |
+| `src/systems/ProductionSystem.ts` | Local ingredient mode: consume inputs from Storage, add outputs to `outputBuffer` |
 | `src/economics/ResourceManager.ts` | Excludes production storage from global inventory |
 | `src/economics/TransportManager.ts` | Per-building BFS routing, direction-aware junction items |
-| `src/core/Game.ts` | Demand routing in `tryStartTransport`, delivery in `advanceTransport` |
-| `src/ui/BuildingPopover.ts` | Shows production storage contents in building info panel |
+| `src/core/Game.ts` | Demand routing in `tryStartTransport`, pickup in `advanceTransport`, legacy output migration on load |
+| `src/ui/BuildingPopover.ts` | Ingredients vs outside pickup for `isProductionStorage` buildings |
 
 ---
 

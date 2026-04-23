@@ -127,7 +127,7 @@ export function buildBuildingHoverLines(entity: Entity): { title: string; lines:
         } else if (production.status === 'idle') {
           lines.push('Idle — starting the next production cycle.');
         } else if (production.status === 'stopped_full') {
-          lines.push('Production paused — output storage is full.');
+          lines.push('Production paused — outside pickup queue is full.');
         } else if (production.status === 'stopped_no_inputs') {
           lines.push('Production paused — missing required inputs.');
         } else if (production.status === 'stopped_no_road') {
@@ -147,7 +147,20 @@ export function buildBuildingHoverLines(entity: Entity): { title: string; lines:
             return `${n} ${name}`;
           });
         const detail = parts.length ? ` (${parts.join(', ')})` : '';
-        lines.push(`On-site storage: ${total}/${cap} (${pct}% full)${detail}.`);
+        lines.push(`On-site ingredients: ${total}/${cap} (${pct}% full)${detail}.`);
+        const buf = production.getTotalBuffered();
+        if (buf > 0 && production.maxOutputBuffer > 0) {
+          const bufCap = production.maxOutputBuffer;
+          const bufPct = bufCap > 0 ? Math.round((buf / bufCap) * 100) : 0;
+          const bufParts = Object.entries(production.outputBuffer)
+            .filter(([, n]) => n > 0)
+            .map(([id, n]) => {
+              const name = dataManager.getResource(id as ResourceType)?.name ?? id;
+              return `${n} ${name}`;
+            });
+          const bufDetail = bufParts.length ? ` (${bufParts.join(', ')})` : '';
+          lines.push(`Awaiting pickup: ${buf}/${bufCap} (${bufPct}% full)${bufDetail}.`);
+        }
       } else if (production.maxOutputBuffer > 0) {
         const buf = production.getTotalBuffered();
         const cap = production.maxOutputBuffer;

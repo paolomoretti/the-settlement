@@ -3,6 +3,7 @@
  */
 
 import { Tile, TerrainType } from './Tile';
+import { cellMineralTotal } from './CellMinerals';
 import { NoiseGenerator } from '@/utils/NoiseGenerator';
 
 const TERRAIN_CODES: Record<TerrainType, string> = {
@@ -621,6 +622,7 @@ export class TileMap {
 
     const rockHarvests: { x: number; y: number; r: number }[] = [];
     const waterFish: { x: number; y: number; f: number }[] = [];
+    const cellMinerals: { x: number; y: number; c: number; i: number; g: number; r: number }[] = [];
 
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
@@ -645,6 +647,11 @@ export class TileMap {
         if (tile.waterFishRemaining !== undefined) {
           waterFish.push({ x, y, f: tile.waterFishRemaining });
         }
+
+        if (tile.cellMinerals && cellMineralTotal(tile.cellMinerals) > 0) {
+          const m = tile.cellMinerals;
+          cellMinerals.push({ x, y, c: m.coal, i: m.iron_ore, g: m.gold_ore, r: m.granite });
+        }
       }
     }
 
@@ -658,6 +665,7 @@ export class TileMap {
       occupied,
       rockHarvests,
       waterFish,
+      cellMinerals,
     };
   }
 
@@ -722,6 +730,20 @@ export class TileMap {
         const tile = map.getTile(entry.x, entry.y);
         if (tile) {
           tile.waterFishRemaining = entry.f;
+        }
+      }
+    }
+
+    if (data.cellMinerals && Array.isArray(data.cellMinerals)) {
+      for (const entry of data.cellMinerals as { x: number; y: number; c: number; i: number; g: number; r: number }[]) {
+        const tile = map.getTile(entry.x, entry.y);
+        if (tile) {
+          tile.cellMinerals = {
+            coal: entry.c,
+            iron_ore: entry.i,
+            gold_ore: entry.g,
+            granite: entry.r,
+          };
         }
       }
     }

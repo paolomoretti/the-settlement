@@ -102,18 +102,19 @@ export class BuildingPopover {
     const production = this.currentEntity.getComponent(Production);
     if (!building || !production) return;
 
-    const mapGather =
-      building.buildingType === 'lumberjack' ||
-      building.buildingType === 'quarry' ||
-      building.buildingType === 'fisher';
+    const def = dataManager.getBuilding(building.buildingType);
+    const mapGather = def?.animation?.type === 'gather';
     if (!mapGather || !building.outOfMapResources || production.status !== 'producing') {
       this.gatherWarningEl.style.display = 'none';
       return;
     }
 
+    const gatherAnim = def?.animation?.type === 'gather' ? def.animation : null;
     this.gatherWarningEl.style.display = '';
     this.gatherWarningEl.textContent =
-      'Nothing to gather within reach of this building.';
+      gatherAnim?.gatherMode === 'mine_site'
+        ? 'No dig site next to the mine entrance — clear a walkable tile beside the door.'
+        : 'Nothing to gather within reach of this building.';
   }
 
   private updateProgressBar(): void {
@@ -162,24 +163,53 @@ export class BuildingPopover {
     const storage = this.currentEntity.getComponent(Storage);
     if (storage && storage.isProductionStorage) {
       const totalStored = storage.getTotalStored();
-      if (totalStored === 0) {
+      const totalBuffered = production.getTotalBuffered();
+      if (totalStored === 0 && totalBuffered === 0) {
         this.bufferContainer.style.display = 'none';
         return;
       }
       this.bufferContainer.style.display = '';
-      const isFull = storage.isFull();
-      const items = Object.entries(storage.items)
-        .filter(([, amt]) => amt > 0)
-        .map(([id, amt]) => {
-          const res = dataManager.getResource(id as any);
-          return `<img src="/assets/resources/${id}.png" class="resource-icon" onerror="this.style.display='none'">${amt} ${res?.name || id}`;
-        })
-        .join(', ');
-      this.bufferContainer.innerHTML =
-        `<span class="popover-label">Storage:</span> ` +
-        `<span style="color:${isFull ? '#f44336' : '#4caf50'}">${totalStored}/${storage.capacity}</span>` +
-        `<span style="color:#aaa;margin-left:4px">(${items})</span>` +
-        (isFull ? `<span style="color:#f44336;margin-left:4px">⚠ Full</span>` : '');
+      const ingredientLine =
+        totalStored > 0
+          ? (() => {
+              const isFull = storage.isFull();
+              const items = Object.entries(storage.items)
+                .filter(([, amt]) => amt > 0)
+                .map(([id, amt]) => {
+                  const res = dataManager.getResource(id as any);
+                  return `<img src="/assets/resources/${id}.png" class="resource-icon" onerror="this.style.display='none'">${amt} ${res?.name || id}`;
+                })
+                .join(', ');
+              return (
+                `<div><span class="popover-label">Ingredients:</span> ` +
+                `<span style="color:${isFull ? '#f44336' : '#4caf50'}">${totalStored}/${storage.capacity}</span>` +
+                `<span style="color:#aaa;margin-left:4px">(${items})</span>` +
+                (isFull ? `<span style="color:#f44336;margin-left:4px">⚠ Full</span>` : '') +
+                `</div>`
+              );
+            })()
+          : '';
+      const bufFull = production.status === 'stopped_full';
+      const pickupLine =
+        totalBuffered > 0
+          ? (() => {
+              const items = Object.entries(production.outputBuffer)
+                .filter(([, amt]) => amt > 0)
+                .map(([id, amt]) => {
+                  const res = dataManager.getResource(id as any);
+                  return `<img src="/assets/resources/${id}.png" class="resource-icon" onerror="this.style.display='none'">${amt} ${res?.name || id}`;
+                })
+                .join(', ');
+              return (
+                `<div><span class="popover-label">Outside (pickup):</span> ` +
+                `<span style="color:${bufFull ? '#f44336' : '#4caf50'}">${totalBuffered}/${production.maxOutputBuffer}</span>` +
+                `<span style="color:#aaa;margin-left:4px">(${items})</span>` +
+                (bufFull ? `<span style="color:#f44336;margin-left:4px">⚠ Full</span>` : '') +
+                `</div>`
+              );
+            })()
+          : '';
+      this.bufferContainer.innerHTML = ingredientLine + pickupLine;
       return;
     }
 
@@ -299,12 +329,22 @@ export class BuildingPopover {
 
       const outputs = Object.entries(def.production.outputs);
       const inputs = def.production.inputs ? Object.entries(def.production.inputs) : [];
+      const inputsAny = def.production.inputsAny ?? [];
 
-      if (inputs.length > 0) {
-        const inputStr = inputs.map(([id]) => {
-          const res = dataManager.getResource(id as any);
-          return res?.name || id;
-        }).join(', ');
+      if (inputs.length > 0 || inputsAny.length > 0) {
+        const fixedParts = inputs
+          .filter(([, n]) => (n ?? 0) > 0)
+          .map(([id]) => {
+            const res = dataManager.getResource(id as any);
+            return res?.name || id;
+          });
+        const anyParts = inputsAny.map(g => {
+          const names = g.resourceTypes
+            .map(id => dataManager.getResource(id)?.name ?? id)
+            .join(' / ');
+          return g.amount > 1 ? `${g.amount}× (${names})` : `(${names})`;
+        });
+        const inputStr = [...fixedParts, ...anyParts].join(' + ');
         const outputStr = outputs.map(([id, amt]) => {
           const res = dataManager.getResource(id as any);
           return `${amt} ${res?.name || id}`;

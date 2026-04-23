@@ -24,6 +24,8 @@ export class InputSystem {
   private lastErasePos: { x: number; y: number } | null = null;
   /** Last known Shift key (for straight road row while dragging). */
   private shiftKeyHeld = false;
+  /** View mode: true once this pointer gesture has panned the camera (suppress click on release). */
+  private viewDragDidPan = false;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -79,6 +81,7 @@ export class InputSystem {
     this.shiftKeyHeld = shiftKey;
     this.isDragging = true;
     this.lastPos = { x: clientX, y: clientY };
+    this.viewDragDidPan = false;
 
     // If spacebar is held, we're always in pan mode
     if (this.spacebarPressed) {
@@ -170,6 +173,7 @@ export class InputSystem {
         const dx = clientX - this.lastPos.x;
         const dy = clientY - this.lastPos.y;
         this.renderSystem.moveCamera(dx, dy);
+        this.viewDragDidPan = true;
         this.lastPos = { x: clientX, y: clientY };
       }
     }
@@ -182,6 +186,7 @@ export class InputSystem {
       this.canvas.style.cursor = 'grab';
       this.isDragging = false;
       this.dragStartGridPos = null;
+      this.viewDragDidPan = false;
       return;
     }
 
@@ -201,9 +206,9 @@ export class InputSystem {
                          this.dragStartGridPos.x === gridX &&
                          this.dragStartGridPos.y === gridY;
 
-        if (isSamePos) {
+        if (isSamePos && !this.viewDragDidPan) {
           // It's a click - handle selection
-          eventBus.emit('select:entity', { x: gridX, y: gridY });
+          eventBus.emit('select:entity', { x: gridX, y: gridY, clientX, clientY });
         }
       } else if (this.mode.startsWith('build_') && this.mode !== 'build_road') {
         // Handle building placement (road is handled on down/drag)
@@ -216,6 +221,7 @@ export class InputSystem {
     this.dragStartGridPos = null;
     this.lastRoadBuildPos = null;
     this.lastErasePos = null;
+    this.viewDragDidPan = false;
     eventBus.emit('road:drag_end');
   }
 

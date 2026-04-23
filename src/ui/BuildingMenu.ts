@@ -188,13 +188,23 @@ export class BuildingMenu {
 
       const outputs = Object.entries(building.production.outputs);
       const inputs = building.production.inputs ? Object.entries(building.production.inputs) : [];
+      const inputsAny = building.production.inputsAny ?? [];
 
-      if (inputs.length > 0) {
+      if (inputs.length > 0 || inputsAny.length > 0) {
         // Conversion
-        const inputStr = inputs.map(([id]) => {
-          const res = dataManager.getResource(id as any);
-          return `${res?.name || id}`;
-        }).join(', ');
+        const fixedParts = inputs
+          .filter(([, n]) => (n ?? 0) > 0)
+          .map(([id]) => {
+            const res = dataManager.getResource(id as any);
+            return `${res?.name || id}`;
+          });
+        const anyParts = inputsAny.map(g => {
+          const names = g.resourceTypes
+            .map(id => dataManager.getResource(id)?.name ?? id)
+            .join(' / ');
+          return g.amount > 1 ? `${g.amount}× (${names})` : `(${names})`;
+        });
+        const inputStr = [...fixedParts, ...anyParts].join(' + ');
 
         const outputStr = outputs.map(([id, amt]) => {
           const res = dataManager.getResource(id as any);

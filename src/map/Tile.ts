@@ -2,6 +2,8 @@
  * Individual tile in the game map
  */
 
+import type { CellMinerals } from './CellMinerals';
+
 export type TerrainType = 'grass' | 'water' | 'mountain' | 'forest' | 'desert' | 'hill' | 'tree';
 
 export class Tile {
@@ -15,6 +17,8 @@ export class Tile {
   public rockHarvestsRemaining?: number;
   /** Remaining fish catches this water tile can yield (fisher); undefined = full capacity; `0` = depleted. */
   public waterFishRemaining?: number;
+  /** Lazy-assigned underground ores (10 units total across coal / iron_ore / gold_ore / granite). */
+  public cellMinerals?: CellMinerals;
 
   constructor(
     public x: number,

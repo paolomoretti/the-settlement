@@ -155,11 +155,11 @@ Road worker **spawn / free / move** live in `GameWorkerRegistry`; the **relay ta
 |--------|---------|
 | `updateTransport()` | Each frame: rebuild `pendingBuildingPickups`, then for each segment worker idle and not returning, `tryStartTransport` or `advanceTransport` |
 | `tryStartTransport(...)` | Scans both segment endpoints for building output (`ep.entityId` + `checkBuildingForOutput`) and junction items; creates `TransportTask` |
-| `advanceTransport(...)` | `to_pickup` → `to_dropoff` → `to_center`; pulls from `Production.outputBuffer` / storage or junction |
+| `advanceTransport(...)` | `to_pickup` → `to_dropoff` → `to_center`; pulls from `Production.outputBuffer` (legacy: output-type stacks still in ingredient `Storage` on old saves) or junction |
 | `getSegmentPath(...)` | Ordered sub-path along `segment.tiles` between two positions (empty if same index) |
 | `recomputeTransportRoutes()` | `cancelInvalidTransportTasks`, `computeRoutes`, `computeRoutesToBuilding` for input buildings + construction sites, `rescueStrandedItems` |
 | `kickTransportRoutesForNewOutput()` | Wrapper: calls `recomputeTransportRoutes()` after production output or periodic heal |
-| `hasAnyUnroutedProductionOutput()` | True if any buffer / production storage still holds output (used for periodic route refresh) |
+| `hasAnyUnroutedProductionOutput()` | True if any `outputBuffer` is non-empty, or legacy output still in ingredient `Storage` (used for periodic route refresh) |
 | `checkBuildingForOutput(entityId)` | Returns a resource type to haul, or `null` |
 | `cancelInvalidTransportTasks()` | Clears tasks whose pickup/dropoff no longer match segment endpoints (after topology change) |
 
@@ -200,7 +200,7 @@ See [Building Dependencies](BUILDING_DEPENDENCIES.md) for full chain details.
 
 ### Production buffer pickup — `tryStartTransport` (critical)
 
-Implemented in `Game.ts` (`tryStartTransport`, `advanceTransport`, `updateTransport`). This is what drains `Production.outputBuffer` (and production `Storage` for input-buffered buildings).
+Implemented in `Game.ts` (`tryStartTransport`, `advanceTransport`, `updateTransport`). This is what drains `Production.outputBuffer` for every producer (including buildings with local **ingredient** storage); old saves may still have output-type goods in `Storage`, which the same path drains after migration.
 
 #### Endpoint types vs `entityId`
 
@@ -230,7 +230,7 @@ Pickups require a valid `TransportManager.getDirectionIndex(segment.id, destEnti
 #### Healing stale route maps
 
 - **`production:complete`** (from `ProductionSystem`) triggers **`kickTransportRoutesForNewOutput()`** so new goods get correct BFS directions right after a cycle completes.
-- **Every ~6s**, if any production building still has buffered output (or local production storage with output), **`recomputeTransportRoutes()`** runs again. This is a cheap safety net if graphs were wrong or a segment was missed after edits.
+- **Every ~6s**, if any production building still has staged output in `outputBuffer` (or legacy output in ingredient storage), **`recomputeTransportRoutes()`** runs again. This is a cheap safety net if graphs were wrong or a segment was missed after edits.
 
 ### Worker State Machine
 
@@ -238,7 +238,7 @@ Each segment worker cycles through transport phases:
 
 1. **Idle at center** → checks **both endpoints** for items to transport
 2. **to_pickup** → walks along segment tiles to pickup endpoint
-3. **Pickup** → takes 1 item from building's output (Storage or outputBuffer) or from junction items
+3. **Pickup** → takes 1 item from `outputBuffer` (or legacy output stacks in ingredient `Storage`) or from junction items
 4. **to_dropoff** → walks along segment tiles to dropoff endpoint (carrying the item visually)
 5. **Dropoff**:
    - If at destination building → delivers to building's `Storage` (base camp or production building)

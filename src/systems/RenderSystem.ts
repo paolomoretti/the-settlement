@@ -14,9 +14,10 @@ import { Isometric } from '@/utils/Isometric';
 import { Tile } from '@/map/Tile';
 import { Production } from '@/components/Production';
 import { dataManager } from '@/data/DataManager';
-import { BuildingType } from '@/types/GameData';
+import { BuildingType, ResourceType } from '@/types/GameData';
 import { TerrainTextures } from '@/rendering/TerrainTextures';
 import { transportManager } from '@/economics/TransportManager';
+import type { SurveyOverlayForRender } from '@/survey/SurveyCoordinator';
 
 /** World-space half-plane clip for long straight iso shores (same screen row / column of tile centers). */
 type FlatShoreCut =
@@ -92,6 +93,16 @@ const CONSTRUCTION_SPRITES: Record<string, string[]> = {
     '/assets/buildings/slaughterhouse_build_1.png',
     '/assets/buildings/slaughterhouse_build_2.png',
   ],
+  bakery: [
+    '/assets/buildings/bakery_build_0.png',
+    '/assets/buildings/bakery_build_1.png',
+    '/assets/buildings/bakery_build_2.png',
+    '/assets/buildings/bakery_build_3.png',
+  ],
+  coal_mine: ['/assets/buildings/coal_mine_build_0.png', '/assets/buildings/coal_mine_build_1.png'],
+  iron_mine: ['/assets/buildings/iron_mine_build_0.png', '/assets/buildings/iron_mine_build_1.png'],
+  gold_mine: ['/assets/buildings/gold_mine_build_0.png', '/assets/buildings/gold_mine_build_1.png'],
+  granite_mine: ['/assets/buildings/granite_mine_build_0.png', '/assets/buildings/granite_mine_build_1.png'],
 };
 
 // Production phase sprites per building type (shown only while actively producing).
@@ -142,6 +153,14 @@ export class RenderSystem extends System {
   private fishJumps: Array<{ x: number; y: number; startTime: number }> = [];
   private nextFishSpawn: number = 0;
   private eraseSmokePuffs: Array<{ gx: number; gy: number; start: number }> = [];
+  /** Survey flag + dominant-ore hint icons (world space; cleared when null). */
+  private surveyOverlay: SurveyOverlayForRender | null = null;
+  /** Tile outline while the grass “Send Surveyor” menu is open. */
+  private surveyMenuHighlight: { x: number; y: number } | null = null;
+  /** Grass tile selected for survey: outline until the player taps the center options icon. */
+  private surveyPendingTile: { x: number; y: number } | null = null;
+  /** Surveyor workers drawn again after survey overlays so they stay on top. */
+  private surveyWorkerDrawOnTopIds = new Set<number>();
 
   // Minimap
   private minimapCanvas: HTMLCanvasElement;
@@ -191,7 +210,12 @@ export class RenderSystem extends System {
       '/assets/buildings/farm.png',
       '/assets/buildings/pig_farm.png',
       '/assets/buildings/slaughterhouse.png',
+      '/assets/buildings/bakery.png',
       '/assets/buildings/house.png',
+      '/assets/buildings/coal_mine.png',
+      '/assets/buildings/iron_mine.png',
+      '/assets/buildings/gold_mine.png',
+      '/assets/buildings/granite_mine.png',
     ];
     for (const stages of Object.values(CONSTRUCTION_SPRITES)) {
       allSprites.push(...stages);
@@ -399,6 +423,9 @@ export class RenderSystem extends System {
     }
 
     this.renderEraseSmokeEffects();
+
+    this.renderSurveyOverlays();
+    this.renderSurveyorWorkersOnTop();
 
     this.ctx.restore();
 
@@ -651,6 +678,257 @@ export class RenderSystem extends System {
     }
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
+  }
+
+  setSurveyOverlay(overlay: SurveyOverlayForRender | null): void {
+    this.surveyOverlay = overlay;
+  }
+
+  setSurveyMenuHighlight(tile: { x: number; y: number } | null): void {
+    this.surveyMenuHighlight = tile;
+  }
+
+  setSurveyPendingTile(tile: { x: number; y: number } | null): void {
+    this.surveyPendingTile = tile;
+  }
+
+  setSurveyWorkerIdsOnTop(ids: number[]): void {
+    this.surveyWorkerDrawOnTopIds.clear();
+    for (const id of ids) {
+      this.surveyWorkerDrawOnTopIds.add(id);
+    }
+  }
+
+  private renderSurveyorWorkersOnTop(): void {
+    if (this.surveyWorkerDrawOnTopIds.size === 0) return;
+    const ids = [...this.surveyWorkerDrawOnTopIds];
+    ids.sort((a, b) => {
+      const ea = this.entities.find(e => e.id === a);
+      const eb = this.entities.find(e => e.id === b);
+      if (!ea) return 1;
+      if (!eb) return -1;
+      return this.compareEntityDrawOrder(ea, eb);
+    });
+    for (const id of ids) {
+      const ent = this.entities.find(e => e.id === id && e.active);
+      if (ent) this.renderEntity(ent);
+    }
+  }
+
+  private renderSurveyOverlays(): void {
+    const o = this.surveyOverlay;
+    const vb = this.getViewportBounds();
+    const pad = 3;
+    const th = this.iso.tileHeight;
+
+    const drawSurveyPendingOptionIcon = (): void => {
+      const pt = this.surveyPendingTile;
+      if (!pt) return;
+      const px = pt.x;
+      const py = pt.y;
+      if (px < vb.minX - pad || px > vb.maxX + pad || py < vb.minY - pad || py > vb.maxY + pad) return;
+      const t = this.tileMap.getTile(px, py);
+      if (!t?.isExplored()) return;
+
+      const c = this.iso.gridToScreen(px, py);
+      const r = th * 0.2;
+      this.ctx.save();
+      this.ctx.fillStyle = 'rgba(245, 236, 220, 0.96)';
+      this.ctx.strokeStyle = 'rgba(78, 52, 34, 0.95)';
+      this.ctx.lineWidth = 1.5;
+      this.ctx.beginPath();
+      this.ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.stroke();
+      this.ctx.fillStyle = 'rgba(62, 39, 24, 0.92)';
+      const dotR = r * 0.12;
+      const gap = r * 0.28;
+      for (let i = -1; i <= 1; i++) {
+        this.ctx.beginPath();
+        this.ctx.arc(c.x + i * gap, c.y, dotR, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
+      this.ctx.restore();
+    };
+
+    if (this.surveyPendingTile) {
+      const px = this.surveyPendingTile.x;
+      const py = this.surveyPendingTile.y;
+      if (px >= vb.minX - pad && px <= vb.maxX + pad && py >= vb.minY - pad && py <= vb.maxY + pad) {
+        const tile = this.tileMap.getTile(px, py);
+        if (tile?.isExplored()) {
+          const corners = this.iso.getTileCorners(px, py);
+          this.ctx.save();
+          this.ctx.beginPath();
+          this.ctx.moveTo(corners[0].x, corners[0].y);
+          for (let i = 1; i < corners.length; i++) {
+            this.ctx.lineTo(corners[i].x, corners[i].y);
+          }
+          this.ctx.closePath();
+          this.ctx.strokeStyle = 'rgba(139, 90, 43, 0.92)';
+          this.ctx.lineWidth = 2.5;
+          this.ctx.stroke();
+          this.ctx.fillStyle = 'rgba(101, 67, 33, 0.14)';
+          this.ctx.fill();
+          this.ctx.restore();
+        }
+      }
+    }
+
+    if (this.surveyMenuHighlight) {
+      const hx = this.surveyMenuHighlight.x;
+      const hy = this.surveyMenuHighlight.y;
+      if (hx >= vb.minX - pad && hx <= vb.maxX + pad && hy >= vb.minY - pad && hy <= vb.maxY + pad) {
+        const tile = this.tileMap.getTile(hx, hy);
+        if (tile?.isExplored()) {
+          const corners = this.iso.getTileCorners(hx, hy);
+          this.ctx.save();
+          this.ctx.beginPath();
+          this.ctx.moveTo(corners[0].x, corners[0].y);
+          for (let i = 1; i < corners.length; i++) {
+            this.ctx.lineTo(corners[i].x, corners[i].y);
+          }
+          this.ctx.closePath();
+          this.ctx.strokeStyle = 'rgba(255, 220, 120, 0.95)';
+          this.ctx.lineWidth = 3;
+          this.ctx.stroke();
+          this.ctx.fillStyle = 'rgba(255, 210, 90, 0.12)';
+          this.ctx.fill();
+          this.ctx.restore();
+        }
+      }
+    }
+
+    if (!o) {
+      drawSurveyPendingOptionIcon();
+      return;
+    }
+
+    for (const f of o.flags) {
+      if (f.x < vb.minX - pad || f.x > vb.maxX + pad || f.y < vb.minY - pad || f.y > vb.maxY + pad) {
+        continue;
+      }
+      const tile = this.tileMap.getTile(f.x, f.y);
+      if (!tile?.isExplored()) continue;
+
+      const c = this.iso.gridToScreen(f.x, f.y);
+      this.ctx.save();
+      this.ctx.strokeStyle = '#5c4030';
+      this.ctx.lineWidth = 2;
+      this.ctx.beginPath();
+      this.ctx.moveTo(c.x, c.y + th * 0.1);
+      this.ctx.lineTo(c.x, c.y - th * 0.55);
+      this.ctx.stroke();
+      this.ctx.fillStyle = '#c62828';
+      this.ctx.beginPath();
+      this.ctx.moveTo(c.x + 1, c.y - th * 0.85);
+      this.ctx.lineTo(c.x + th * 0.35, c.y - th * 0.55);
+      this.ctx.lineTo(c.x + 1, c.y - th * 0.38);
+      this.ctx.closePath();
+      this.ctx.fill();
+      this.ctx.strokeStyle = '#3e2723';
+      this.ctx.lineWidth = 1;
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
+
+    if (o.progress) {
+      const pr = o.progress;
+      const cx = pr.centerX;
+      const cy = pr.centerY;
+      if (cx >= vb.minX - pad && cx <= vb.maxX + pad && cy >= vb.minY - pad && cy <= vb.maxY + pad) {
+        const c = this.iso.gridToScreen(cx, cy);
+        const barW = 88;
+        const barH = 7;
+        const bx = c.x - barW / 2;
+        const by = c.y - th * 1.15;
+        this.ctx.save();
+        this.ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        this.ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        this.ctx.lineWidth = 1;
+        this.ctx.beginPath();
+        this.ctx.roundRect(bx, by, barW, barH, 3);
+        this.ctx.fill();
+        this.ctx.stroke();
+        this.ctx.fillStyle = 'rgba(120, 200, 255, 0.85)';
+        this.ctx.beginPath();
+        this.ctx.roundRect(bx + 1, by + 1, (barW - 2) * pr.progress01, barH - 2, 2);
+        this.ctx.fill();
+        this.ctx.restore();
+      }
+
+      if (pr.currentCell) {
+        const tx = pr.currentCell.x;
+        const ty = pr.currentCell.y;
+        if (tx >= vb.minX - pad && tx <= vb.maxX + pad && ty >= vb.minY - pad && ty <= vb.maxY + pad) {
+          const corners = this.iso.getTileCorners(tx, ty);
+          this.ctx.save();
+          this.ctx.beginPath();
+          this.ctx.moveTo(corners[0].x, corners[0].y);
+          for (let i = 1; i < corners.length; i++) {
+            this.ctx.lineTo(corners[i].x, corners[i].y);
+          }
+          this.ctx.closePath();
+          this.ctx.strokeStyle = 'rgba(100, 200, 255, 0.75)';
+          this.ctx.lineWidth = 2.5;
+          this.ctx.stroke();
+          this.ctx.restore();
+        }
+      }
+    }
+
+    const tagW = 18;
+    const tagH = 15;
+    const stickAbove = th * 0.52;
+
+    const labelsSorted = [...o.labels].sort((a, b) => a.x + a.y - (b.x + b.y));
+
+    for (const lab of labelsSorted) {
+      if (lab.x < vb.minX - pad || lab.x > vb.maxX + pad || lab.y < vb.minY - pad || lab.y > vb.maxY + pad) {
+        continue;
+      }
+      const tile = this.tileMap.getTile(lab.x, lab.y);
+      if (!tile?.isExplored()) continue;
+
+      const def = dataManager.getResource(lab.resource as ResourceType);
+      const resPath = `/assets/resources/${lab.resource}.png`;
+      const uiPath = def?.icon ?? `/assets/ui/icons/${lab.resource}.png`;
+      let img = this.loadSprite(resPath);
+      if (!img || img.naturalWidth === 0) {
+        img = this.loadSprite(uiPath);
+      }
+      const ground = this.iso.gridToScreen(lab.x, lab.y);
+      const tagCx = ground.x;
+      const tagCy = ground.y - stickAbove;
+      this.ctx.save();
+      this.ctx.strokeStyle = '#5d4037';
+      this.ctx.lineWidth = 1.75;
+      this.ctx.lineCap = 'round';
+      this.ctx.beginPath();
+      this.ctx.moveTo(tagCx, tagCy + tagH * 0.45);
+      this.ctx.lineTo(ground.x, ground.y - th * 0.04);
+      this.ctx.stroke();
+      const rx = tagCx - tagW / 2;
+      const ry = tagCy - tagH / 2;
+      this.ctx.fillStyle = '#f3ebe0';
+      this.ctx.strokeStyle = 'rgba(78, 52, 34, 0.88)';
+      this.ctx.lineWidth = 1;
+      this.ctx.beginPath();
+      this.ctx.roundRect(rx, ry, tagW, tagH, 2.5);
+      this.ctx.fill();
+      this.ctx.stroke();
+      if (img && img.naturalWidth > 0) {
+        const iw = tagW - 5;
+        const ih = tagH - 5;
+        this.ctx.drawImage(img, tagCx - iw / 2, tagCy - ih / 2, iw, ih);
+      } else {
+        this.ctx.fillStyle = '#b08d55';
+        this.ctx.fillRect(tagCx - 4, tagCy - 4, 8, 8);
+      }
+      this.ctx.restore();
+    }
+
+    drawSurveyPendingOptionIcon();
   }
 
   private renderEraseSmokeEffects(): void {
@@ -1220,6 +1498,7 @@ export class RenderSystem extends System {
       const entities = entitiesByDepth.get(d);
       if (entities) {
         for (const entity of entities) {
+          if (this.surveyWorkerDrawOnTopIds.has(entity.id)) continue;
           this.renderEntity(entity);
         }
       }
@@ -2023,14 +2302,11 @@ export class RenderSystem extends System {
           this.renderProductionBubble(building, production, false);
         }
       }
-      if (
-        building.isActive &&
-        building.outOfMapResources &&
-        (building.buildingType === 'lumberjack' ||
-          building.buildingType === 'quarry' ||
-          building.buildingType === 'fisher')
-      ) {
-        this.renderMapResourcesExhaustedMarker(building);
+      if (building.isActive && building.outOfMapResources) {
+        const bd = dataManager.getBuilding(building.buildingType);
+        if (bd?.animation?.type === 'gather') {
+          this.renderMapResourcesExhaustedMarker(building);
+        }
       }
     }
 
@@ -2680,7 +2956,7 @@ export class RenderSystem extends System {
     const isPlantDigging =
       isCarrying &&
       worker.carryingResource === 'shovel' &&
-      worker.visualActivity === 'production_plant' &&
+      (worker.visualActivity === 'production_plant' || worker.visualActivity === 'survey_dig') &&
       worker.state === 'working' &&
       !isMoving;
 
@@ -3122,6 +3398,10 @@ export class RenderSystem extends System {
   // Update tilemap reference (used when loading a saved game)
   updateTileMap(newTileMap: TileMap): void {
     this.tileMap = newTileMap;
+    this.surveyOverlay = null;
+    this.surveyMenuHighlight = null;
+    this.surveyPendingTile = null;
+    this.surveyWorkerDrawOnTopIds.clear();
     this.cachedViewportBounds = null;
     // Reset minimap offscreen canvas
     this.minimapOffscreenCtx.fillStyle = '#1a1a1a';

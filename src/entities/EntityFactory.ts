@@ -85,6 +85,11 @@ export function createBuilding(
     farm: '/assets/buildings/farm.png',
     pig_farm: '/assets/buildings/pig_farm.png',
     slaughterhouse: '/assets/buildings/slaughterhouse.png',
+    bakery: '/assets/buildings/bakery.png',
+    coal_mine: '/assets/buildings/coal_mine.png',
+    iron_mine: '/assets/buildings/iron_mine.png',
+    gold_mine: '/assets/buildings/gold_mine.png',
+    granite_mine: '/assets/buildings/granite_mine.png',
   };
   const spritePath = SPRITE_PATHS[buildingType];
 
@@ -116,13 +121,21 @@ export function createBuilding(
   entity.addComponent(buildingComp);
 
   if (buildingDef.production && Object.keys(buildingDef.production.outputs).length > 0) {
-    entity.addComponent(new Production(
-      buildingDef.production.productionTime,
-      buildingDef.production.outputs,
-      buildingDef.production.inputs || {},
-      buildingDef.production.maxOutputBuffer || 10,
-      buildingDef.production.continuous
-    ));
+    const prod = buildingDef.production;
+    const inputsAny = (prod.inputsAny ?? []).map(g => ({
+      resourceTypes: g.resourceTypes as ResourceType[],
+      amount: g.amount,
+    }));
+    entity.addComponent(
+      new Production(
+        prod.productionTime,
+        prod.outputs,
+        prod.inputs || {},
+        prod.maxOutputBuffer || 10,
+        prod.continuous,
+        inputsAny
+      )
+    );
   }
 
   if (buildingDef.storage) {
@@ -131,7 +144,11 @@ export function createBuilding(
       buildingDef.isHeadquarters || false,
       buildingDef.storage.accepts as ResourceType[] | undefined
     );
-    if (buildingDef.production && Object.keys(buildingDef.production.inputs || {}).length > 0) {
+    const prod = buildingDef.production;
+    const hasLocalRecipeInputs =
+      prod &&
+      (Object.keys(prod.inputs || {}).length > 0 || (prod.inputsAny?.length ?? 0) > 0);
+    if (hasLocalRecipeInputs) {
       storage.isProductionStorage = true;
     }
     entity.addComponent(storage);

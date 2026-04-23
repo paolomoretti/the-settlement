@@ -3,7 +3,8 @@
  * builders, tool delivery, returning legs, and building production animation actors.
  * Game keeps transport relay + economy orchestration; this module keeps worker maps consistent.
  *
- * Camp-first spawn rules (e.g. well operator): `.claude/WORKER_SPAWN.md`.
+ * Camp-first spawn rules: `.claude/WORKER_SPAWN.md`.
+ * Staffing modes (interior vs custom site animation, `operatorRole`): `.claude/BUILDING_WORKERS.md`.
  */
 
 import { Entity } from '@/core/Entity';
@@ -20,7 +21,7 @@ import { roadSegmentManager, RoadSegment } from '@/economics/RoadSegmentManager'
 import { transportManager } from '@/economics/TransportManager';
 import { createWorker } from '@/entities/EntityFactory';
 import { applyProductionCycleOutputs } from '@/systems/ProductionSystem';
-import type { ResourceType } from '@/types/GameData';
+import type { ResourceType, BuildingDefinition, AnimationConfig } from '@/types/GameData';
 
 type GatherAnimState = {
   kind: 'gather';
@@ -31,13 +32,15 @@ type GatherAnimState = {
   entranceTile: { x: number; y: number };
   rockGather: boolean;
   waterGather: boolean;
+  /** Underground mines: dig in front of entrance, no terrain harvest. */
+  mineGather: boolean;
   digUntilMs?: number;
 };
 
 type WellOperatorAnimState = {
   kind: 'well_operator';
   buildingEntityId: number;
-  phase: 'idle_left' | 'to_entrance' | 'waiting_at_well' | 'drawing' | 'to_idle' | 'mill_inside';
+  phase: 'idle_left' | 'to_entrance' | 'waiting_at_well' | 'drawing' | 'to_idle' | 'interior_inside';
   idleTile: { x: number; y: number };
   workTile: { x: number; y: number };
   lastProductionTimer: number;
@@ -76,8 +79,39 @@ export class GameWorkerRegistry {
   private readonly toolWorkers = new Map<number, number>();
   private readonly animationWorkers = new Map<number, AnimationWorkerState>();
   private readonly reservedTreeTiles = new Set<string>();
+  private readonly surveyorWorkers = new Set<number>();
 
   constructor(private readonly world: WorkerWorldAccess) {}
+
+  /**
+   * Effective map-worker animation for a building: explicit `animation` in JSON, or a synthesized
+   * `interior_operator` when the building is staffed (`population.requires`) and has timed `production`
+   * but no custom animation block (see `.claude/BUILDING_WORKERS.md`).
+   */
+  resolveStaffingAnimation(buildingDef: BuildingDefinition): AnimationConfig | null {
+    if (buildingDef.animation) {
+      return buildingDef.animation;
+    }
+    const req = buildingDef.population?.requires ?? 0;
+    const prodTime = buildingDef.production?.productionTime;
+    if (req < 1 || prodTime == null || prodTime <= 0) {
+      return null;
+    }
+    /** Outdoor / field jobs: keep no map worker until a bespoke `gather` (or similar) exists. */
+    const deferInteriorUntilCustomAnimation = new Set<string>(['hunter', 'farm', 'pig_farm']);
+    if (deferInteriorUntilCustomAnimation.has(buildingDef.id)) {
+      return null;
+    }
+    const drawingPhaseSec = Math.min(18, Math.max(5, Math.floor(prodTime * 0.22)));
+    const walkLeadSec = Math.min(8, Math.max(3, Math.floor(prodTime * 0.12)));
+    return {
+      type: 'interior_operator',
+      operatorRole: buildingDef.id,
+      workerSpeed: 1.2,
+      drawingPhaseSec,
+      walkLeadSec,
+    };
+  }
 
   getReservedPopulationCount(): number {
     return (
@@ -85,8 +119,17 @@ export class GameWorkerRegistry {
       this.builderWorkers.size +
       this.returningBuilders.size +
       this.toolWorkers.size +
-      this.animationWorkers.size
+      this.animationWorkers.size +
+      this.surveyorWorkers.size
     );
+  }
+
+  attachSurveyorWorker(workerEntityId: number): void {
+    this.surveyorWorkers.add(workerEntityId);
+  }
+
+  detachSurveyorWorker(workerEntityId: number): void {
+    this.surveyorWorkers.delete(workerEntityId);
   }
 
   isRoadWorkerReturning(workerEntityId: number): boolean {
@@ -407,13 +450,13 @@ export class GameWorkerRegistry {
         const building = buildingEntity?.getComponent(Building);
         const production = buildingEntity?.getComponent(Production);
         const buildingDef = building ? dataManager.getBuilding(building.buildingType) : null;
-        const animCfg = buildingDef?.animation;
+        const animCfg = buildingDef ? this.resolveStaffingAnimation(buildingDef) : null;
 
         if (
           !buildingEntity ||
           !building ||
           !production ||
-          (animCfg?.type !== 'well_operator' && animCfg?.type !== 'mill_operator')
+          (animCfg?.type !== 'well_operator' && animCfg?.type !== 'interior_operator')
         ) {
           workerComp.concealedInBuildingId = null;
           this.world.removeEntity(workerEntity);
@@ -424,9 +467,9 @@ export class GameWorkerRegistry {
         const speed = animCfg.workerSpeed;
         const drawingPhaseSec = animCfg.drawingPhaseSec;
         const walkLeadSec = animCfg.walkLeadSec ?? 5;
-        const isMill = animCfg.type === 'mill_operator';
-        const carriedResource: ResourceType = isMill ? (animCfg.carriedResource ?? 'flour') : 'water';
-        const workVisual = isMill ? ('production_mill' as const) : ('production_well' as const);
+        const isInterior = animCfg.type === 'interior_operator';
+        const carriedResource: ResourceType = 'water';
+        const workVisual = 'production_well' as const;
         const prodTime = production.productionTime;
         const timer = production.timer;
         const startWalk = Math.max(0, prodTime - drawingPhaseSec - walkLeadSec);
@@ -460,7 +503,7 @@ export class GameWorkerRegistry {
               state.phase = 'idle_left';
               workerComp.setState('idle');
             }
-          } else if (state.phase === 'mill_inside') {
+          } else if (state.phase === 'interior_inside') {
             this.revealMillWorkerAtDoor(workerComp, workerPos, movable, state.workTile);
             const ret = pathToIdle();
             if (ret.length > 0 && movable) {
@@ -496,11 +539,11 @@ export class GameWorkerRegistry {
             state.phase === 'drawing' ||
             state.phase === 'to_entrance' ||
             state.phase === 'waiting_at_well' ||
-            state.phase === 'mill_inside'
+            state.phase === 'interior_inside'
           ) {
             if (state.phase === 'drawing') {
               workerComp.dropResource();
-            } else if (state.phase === 'mill_inside') {
+            } else if (state.phase === 'interior_inside') {
               this.revealMillWorkerAtDoor(workerComp, workerPos, movable, state.workTile);
             }
             workerComp.visualActivity = 'general';
@@ -519,9 +562,9 @@ export class GameWorkerRegistry {
         }
 
         if (state.phase === 'to_entrance') {
-          if (isMill) {
+          if (isInterior) {
             if (timer >= startDraw) {
-              state.phase = 'mill_inside';
+              state.phase = 'interior_inside';
               this.enterMillInterior(buildingEntity, workerComp, workerPos, movable);
             } else {
               state.phase = 'waiting_at_well';
@@ -553,9 +596,9 @@ export class GameWorkerRegistry {
             }
             continue;
           }
-          if (isMill) {
+          if (isInterior) {
             if (timer >= startDraw) {
-              state.phase = 'mill_inside';
+              state.phase = 'interior_inside';
               this.enterMillInterior(buildingEntity, workerComp, workerPos, movable);
             }
           } else if (timer >= startDraw) {
@@ -567,7 +610,7 @@ export class GameWorkerRegistry {
           continue;
         }
 
-        if (state.phase === 'mill_inside') {
+        if (state.phase === 'interior_inside') {
           continue;
         }
 
@@ -695,7 +738,7 @@ export class GameWorkerRegistry {
         case 'to_target': {
           gather.phase = 'chopping';
           workerComp.setState('working');
-          if (gather.rockGather || gather.waterGather) {
+          if (gather.rockGather || gather.waterGather || gather.mineGather) {
             workerComp.visualActivity = 'production_gather';
           }
           break;
@@ -711,7 +754,7 @@ export class GameWorkerRegistry {
           const bDef = bldg ? dataManager.getBuilding(bldg.buildingType) : null;
           const anim = bDef?.animation;
 
-          if ((gather.rockGather || gather.waterGather) && anim?.type === 'gather') {
+          if ((gather.rockGather || gather.waterGather || gather.mineGather) && anim?.type === 'gather') {
             const nowMs = Date.now();
             if (gather.digUntilMs === undefined) {
               const digSec = anim.digAtSiteSec ?? 4;
@@ -726,7 +769,16 @@ export class GameWorkerRegistry {
               const productionRule = bDef?.production;
               const tile = tileMap.getTile(gather.targetTile.x, gather.targetTile.y);
 
-              if (gather.rockGather) {
+              if (gather.mineGather) {
+                const carried =
+                  anim.carriedResource ??
+                  (Object.keys(productionRule?.outputs ?? {}).find(
+                    k => !dataManager.getResource(k as ResourceType)?.virtualOutput
+                  ) as ResourceType | undefined) ??
+                  'coal';
+                gather.terrainModified = true;
+                workerComp.pickUpResource(carried, 'overhead');
+              } else if (gather.rockGather) {
                 const stonesPer = productionRule?.stonesPerRockTile ?? 10;
                 const carried =
                   anim.carriedResource ??
@@ -852,7 +904,7 @@ export class GameWorkerRegistry {
           if (buildingEntity) {
             const building = buildingEntity.getComponent(Building);
             if (building) building.animationWorkerId = null;
-            if (gather.rockGather || gather.waterGather) {
+            if (gather.rockGather || gather.waterGather || gather.mineGather) {
               const prod = buildingEntity.getComponent(Production);
               applyProductionCycleOutputs(buildingEntity);
               if (prod && prod.continuous) {
@@ -876,14 +928,16 @@ export class GameWorkerRegistry {
       if (building.animationWorkerId != null) continue;
 
       const buildingDef = dataManager.getBuilding(building.buildingType);
-      if (!buildingDef?.animation) continue;
+      if (!buildingDef) continue;
+      const staffingAnim = this.resolveStaffingAnimation(buildingDef);
+      if (!staffingAnim) continue;
 
-      if (buildingDef.animation.type === 'well_operator' || buildingDef.animation.type === 'mill_operator') {
+      if (staffingAnim.type === 'well_operator' || staffingAnim.type === 'interior_operator') {
         this.spawnSiteOperator(entity);
         continue;
       }
 
-      if (buildingDef.animation.type === 'plant_tree') {
+      if (staffingAnim.type === 'plant_tree') {
         if (production.status !== 'producing') continue;
         this.spawnPlantTreeWorker(entity);
         continue;
@@ -1034,6 +1088,7 @@ export class GameWorkerRegistry {
     this.toolWorkers.clear();
     this.animationWorkers.clear();
     this.reservedTreeTiles.clear();
+    this.surveyorWorkers.clear();
   }
 
   private spawnSegmentWorker(segment: RoadSegment): number | null {
@@ -1344,6 +1399,20 @@ export class GameWorkerRegistry {
     }
   }
 
+  /** Outfits tied to `interior_operator.operatorRole` (building-specific worker spec). */
+  private applyInteriorOperatorAppearance(workerComp: Worker, operatorRole: string): void {
+    const whiteApron = new Set(['mill', 'bakery']);
+    if (!whiteApron.has(operatorRole)) return;
+    workerComp.appearance = {
+      skin: '#e8d4c4',
+      hair: '#4a3020',
+      tunic: '#f4f4f0',
+      pants: '#e8e4dc',
+      boots: '#5a5048',
+      variant: 'hat',
+    };
+  }
+
   /** Idle + work tiles for well (1×1) or mill / other buildings with a road-connected footprint. */
   private computeSiteOperatorTiles(
     buildingEntity: Entity
@@ -1433,8 +1502,8 @@ export class GameWorkerRegistry {
     return { idle, work };
   }
 
-  /** Mill: idle off to the side, `work` = doorstep (orthogonal to entrance cell), not an arbitrary second perimeter tile. */
-  private computeMillOperatorTiles(
+  /** Indoor operator: idle off to the side, `work` = doorstep (orthogonal to entrance cell). */
+  private computeInteriorApproachTiles(
     buildingEntity: Entity
   ): { idle: { x: number; y: number }; work: { x: number; y: number } } | null {
     const pos = buildingEntity.getComponent(Position);
@@ -1548,12 +1617,13 @@ export class GameWorkerRegistry {
     if (this.world.getAvailablePeasantSlotCount() <= 0) return;
 
     const buildingDef = dataManager.getBuilding(building.buildingType);
-    const anim = buildingDef?.animation;
-    if (anim?.type !== 'well_operator' && anim?.type !== 'mill_operator') return;
+    if (!buildingDef) return;
+    const anim = this.resolveStaffingAnimation(buildingDef);
+    if (!anim || (anim.type !== 'well_operator' && anim.type !== 'interior_operator')) return;
 
     const tiles =
-      anim.type === 'mill_operator'
-        ? this.computeMillOperatorTiles(buildingEntity)
+      anim.type === 'interior_operator'
+        ? this.computeInteriorApproachTiles(buildingEntity)
         : this.computeSiteOperatorTiles(buildingEntity);
     if (!tiles) return;
 
@@ -1582,15 +1652,8 @@ export class GameWorkerRegistry {
     if (workerComp) {
       workerComp.visualActivity = 'general';
       workerComp.setState('walking');
-      if (anim.type === 'mill_operator') {
-        workerComp.appearance = {
-          skin: '#e8d4c4',
-          hair: '#4a3020',
-          tunic: '#f4f4f0',
-          pants: '#e8e4dc',
-          boots: '#5a5048',
-          variant: 'hat',
-        };
+      if (anim.type === 'interior_operator') {
+        this.applyInteriorOperatorAppearance(workerComp, anim.operatorRole);
       }
     }
     if (movable) {
@@ -1623,9 +1686,10 @@ export class GameWorkerRegistry {
 
     const rockGather = anim.gatherMode === 'rock_depletion';
     const waterGather = anim.gatherMode === 'water_depletion';
-    if (rockGather || waterGather) {
+    const mineSiteGather = anim.gatherMode === 'mine_site';
+    if (rockGather || waterGather || mineSiteGather) {
       if (!production) return;
-      const departBuffer = (anim.walkLeadSec ?? 0) + (anim.digAtSiteSec ?? 0);
+      const departBuffer = (anim.walkLeadSec ?? 0) + (anim.digAtSiteSec ?? 0) + 5;
       if (departBuffer > 0 && production.timer < production.productionTime - departBuffer) return;
     }
 
@@ -1646,7 +1710,7 @@ export class GameWorkerRegistry {
       anim.searchRadius;
 
     const gatherExclude = new Set(this.reservedTreeTiles);
-    if (rockGather || waterGather) {
+    if (rockGather || waterGather || mineSiteGather) {
       for (let dy = 0; dy < building.height; dy++) {
         for (let dx = 0; dx < building.width; dx++) {
           gatherExclude.add(`${pos.x + dx},${pos.y + dy}`);
@@ -1657,7 +1721,34 @@ export class GameWorkerRegistry {
     let sourceTile: { x: number; y: number } | null = null;
     let path: Position[] = [];
 
-    if (rockGather) {
+    if (mineSiteGather) {
+      const maxMineWalk =
+        buildingDef.production?.maxGatherWalkCells ??
+        buildingDef.production?.maxGatherRadius ??
+        anim.searchRadius ??
+        22;
+      sourceTile = this.findMineDigWorkTile(
+        entranceX,
+        entranceY,
+        pos,
+        building,
+        tileMap,
+        pathFinder,
+        gatherExclude,
+        maxMineWalk
+      );
+      if (sourceTile) {
+        path = pathFinder.findOffRoadPath(
+          new Position(entranceX, entranceY),
+          new Position(sourceTile.x, sourceTile.y),
+          tileMap
+        );
+        if (path.length === 0 || path.length > maxMineWalk) {
+          sourceTile = null;
+          path = [];
+        }
+      }
+    } else if (rockGather) {
       const candidates = tileMap.listHarvestableRocksSorted(
         entranceX,
         entranceY,
@@ -1757,7 +1848,56 @@ export class GameWorkerRegistry {
       entranceTile: { x: entranceX, y: entranceY },
       rockGather,
       waterGather,
+      mineGather: mineSiteGather,
     });
+  }
+
+  /** Off-road tile next to the mine entrance where the miner stands to swing the pickaxe. */
+  private findMineDigWorkTile(
+    entranceX: number,
+    entranceY: number,
+    pos: Position,
+    building: Building,
+    tileMap: TileMap,
+    pathFinder: PathFinder,
+    reserved: Set<string>,
+    maxWalkCells: number
+  ): { x: number; y: number } | null {
+    const foot = new Set<string>();
+    for (let dy = 0; dy < building.height; dy++) {
+      for (let dx = 0; dx < building.width; dx++) {
+        foot.add(`${pos.x + dx},${pos.y + dy}`);
+      }
+    }
+    const dirs = [
+      [-1, 0],
+      [1, 0],
+      [0, -1],
+      [0, 1],
+      [-1, -1],
+      [-1, 1],
+      [1, -1],
+      [1, 1],
+    ] as const;
+    const cand: { x: number; y: number; len: number }[] = [];
+    for (const [dx, dy] of dirs) {
+      const wx = entranceX + dx;
+      const wy = entranceY + dy;
+      const key = `${wx},${wy}`;
+      if (foot.has(key)) continue;
+      if (reserved.has(key)) continue;
+      const tile = tileMap.getTile(wx, wy);
+      if (!tile || !tile.walkable || tile.isOccupied()) continue;
+      const path = pathFinder.findOffRoadPath(
+        new Position(entranceX, entranceY),
+        new Position(wx, wy),
+        tileMap
+      );
+      if (path.length === 0 || path.length > maxWalkCells) continue;
+      cand.push({ x: wx, y: wy, len: path.length });
+    }
+    cand.sort((a, b) => a.len - b.len);
+    return cand.length ? { x: cand[0].x, y: cand[0].y } : null;
   }
 
   /**

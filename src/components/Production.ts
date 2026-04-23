@@ -1,6 +1,10 @@
 import { Component } from '@/core/Component';
+import type { ResourceType } from '@/types/GameData';
 
 export type ProductionStatus = 'idle' | 'producing' | 'stopped_full' | 'stopped_no_inputs' | 'stopped_no_road';
+
+/** Consume `amount` total per cycle from any of `resourceTypes` (e.g. miner food). */
+export type ProductionInputAnyGroup = { resourceTypes: ResourceType[]; amount: number };
 
 export class Production extends Component {
   public status: ProductionStatus = 'idle';
@@ -8,6 +12,8 @@ export class Production extends Component {
   public productionTime: number;
   public outputs: Record<string, number>;
   public inputs: Record<string, number>;
+  /** OR-groups: each needs `amount` units summed across its `resourceTypes` in local storage. */
+  public inputsAny: ProductionInputAnyGroup[];
   public outputBuffer: Record<string, number> = {};
   public maxOutputBuffer: number;
   public continuous: boolean;
@@ -17,12 +23,17 @@ export class Production extends Component {
     outputs: Record<string, number>,
     inputs: Record<string, number> = {},
     maxOutputBuffer: number = 10,
-    continuous: boolean = true
+    continuous: boolean = true,
+    inputsAny: ProductionInputAnyGroup[] = []
   ) {
     super();
     this.productionTime = productionTime;
     this.outputs = { ...outputs };
     this.inputs = { ...inputs };
+    this.inputsAny = inputsAny.map(g => ({
+      resourceTypes: [...g.resourceTypes],
+      amount: g.amount,
+    }));
     this.maxOutputBuffer = maxOutputBuffer;
     this.continuous = continuous;
   }
@@ -42,7 +53,32 @@ export class Production extends Component {
   }
 
   hasInputs(): boolean {
-    return Object.keys(this.inputs).length > 0;
+    return Object.keys(this.inputs).length > 0 || this.inputsAny.length > 0;
+  }
+
+  /** Resource types this building may pull as recipe / OR-group inputs (for HQ dispatch & transport). */
+  getAllInputResourceTypes(): ResourceType[] {
+    const s = new Set<ResourceType>();
+    for (const [k, n] of Object.entries(this.inputs)) {
+      if ((n ?? 0) > 0) s.add(k as ResourceType);
+    }
+    for (const g of this.inputsAny) {
+      for (const t of g.resourceTypes) s.add(t);
+    }
+    return [...s];
+  }
+
+  /** Sum stored + in-flight for one OR-group (in-flight counts per type). */
+  pipelineSumForInputsAnyGroup(
+    group: ProductionInputAnyGroup,
+    storage: { getAmount: (r: string) => number },
+    inFlightFor: (r: string) => number
+  ): number {
+    let sum = 0;
+    for (const t of group.resourceTypes) {
+      sum += storage.getAmount(t) + inFlightFor(t);
+    }
+    return sum;
   }
 
   addToBuffer(resource: string, amount: number): void {

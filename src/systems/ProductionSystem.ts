@@ -24,10 +24,22 @@ export function applyProductionCycleOutputs(entity: Entity): void {
     for (const [res, amount] of Object.entries(production.inputs)) {
       storage!.removeItem(res, amount);
     }
+    for (const group of production.inputsAny) {
+      let remaining = group.amount;
+      for (const t of group.resourceTypes) {
+        if (remaining <= 0) break;
+        const have = storage!.getAmount(t);
+        if (have <= 0) continue;
+        const take = Math.min(remaining, have);
+        storage!.removeItem(t, take);
+        remaining -= take;
+      }
+    }
     for (const [res, amount] of Object.entries(production.outputs)) {
       if (amount <= 0) continue;
       if (dataManager.getResource(res as ResourceType)?.virtualOutput) continue;
-      storage!.items[res] = (storage!.items[res] || 0) + amount;
+      production.addToBuffer(res, amount);
+      resourceManager.requestPickup(entity.id, res, amount);
     }
   } else {
     if (production.hasInputs()) {
@@ -70,8 +82,7 @@ export function applyProductionCycleOutputs(entity: Entity): void {
   }
 
   if (useLocalStorage) {
-    const nextOutputTotal = Object.values(production.outputs).reduce((s, n) => s + n, 0);
-    if (storage!.getFreeSpace() < nextOutputTotal) {
+    if (!production.hasBufferSpace()) {
       production.status = 'stopped_full';
       eventBus.emit('production:stopped', {
         entityId: entity.id,
@@ -119,11 +130,7 @@ export class ProductionSystem extends System {
       }
 
       const buildingDef = dataManager.getBuilding(building.buildingType);
-      const mapLinkedGather =
-        buildingDef?.animation?.type === 'gather' &&
-        (building.buildingType === 'lumberjack' ||
-          building.buildingType === 'quarry' ||
-          building.buildingType === 'fisher');
+      const mapLinkedGather = buildingDef?.animation?.type === 'gather';
       const storage = entity.getComponent(Storage);
       const useLocalStorage = storage?.isProductionStorage;
       const rockDepletionGather =
@@ -133,12 +140,14 @@ export class ProductionSystem extends System {
         buildingDef?.animation?.type === 'gather' &&
         buildingDef.animation.gatherMode === 'water_depletion';
       const resourceDepletionGather = rockDepletionGather || waterDepletionGather;
+      const mineSiteGather =
+        buildingDef?.animation?.type === 'gather' &&
+        buildingDef.animation.gatherMode === 'mine_site';
 
       // Check buffer/storage space for outputs (skip if cycle already in progress)
       if (production.timer === 0) {
         if (useLocalStorage) {
-          const outputTotal = Object.values(production.outputs).reduce((s, n) => s + n, 0);
-          if (storage!.getFreeSpace() < outputTotal) {
+          if (!production.hasBufferSpace()) {
             if (production.status !== 'stopped_full') {
               production.status = 'stopped_full';
               eventBus.emit('production:stopped', {
@@ -173,6 +182,15 @@ export class ProductionSystem extends System {
             break;
           }
         }
+        if (hasInputs) {
+          for (const group of production.inputsAny) {
+            const sum = group.resourceTypes.reduce((s, t) => s + storage!.getAmount(t), 0);
+            if (sum < group.amount) {
+              hasInputs = false;
+              break;
+            }
+          }
+        }
         if (!hasInputs) {
           if (production.status !== 'stopped_no_inputs') {
             production.status = 'stopped_no_inputs';
@@ -205,17 +223,23 @@ export class ProductionSystem extends System {
         eventBus.emit('production:resumed', { entityId: entity.id });
       }
 
-      // Forester / quarry rock: hold the production clock until the field animation worker finishes
+      // Forester / quarry & fisher depletion / underground mine: hold the production clock while the field worker is out
       const foresterPlanting =
         building.buildingType === 'forester' && building.animationWorkerId != null;
-      const depletionGatherPausing = resourceDepletionGather && building.animationWorkerId != null;
+      const fieldGatherPausing =
+        building.animationWorkerId != null &&
+        (resourceDepletionGather || mineSiteGather);
       const mapGatherSourceBlocked =
         mapLinkedGather && building.outOfMapResources;
-      if (!foresterPlanting && !depletionGatherPausing && !mapGatherSourceBlocked) {
+      if (!foresterPlanting && !fieldGatherPausing && !mapGatherSourceBlocked) {
         production.timer += deltaTime;
       }
 
-      if (!resourceDepletionGather && production.timer >= production.productionTime) {
+      if (
+        !resourceDepletionGather &&
+        !mineSiteGather &&
+        production.timer >= production.productionTime
+      ) {
         production.timer -= production.productionTime;
         applyProductionCycleOutputs(entity);
       }

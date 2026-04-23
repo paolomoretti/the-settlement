@@ -22,7 +22,7 @@ import { dataManager } from '@/data/DataManager';
 import { resourceManager } from '@/economics/ResourceManager';
 import { roadSegmentManager, RoadSegment } from '@/economics/RoadSegmentManager';
 import { transportManager } from '@/economics/TransportManager';
-import { Inventory, BuildingType } from '@/types/GameData';
+import { Inventory, BuildingType, ResourceType } from '@/types/GameData';
 
 // Entity factories
 import { createWorker, createBuilding, createBaseCamp } from '@/entities/EntityFactory';
@@ -30,6 +30,7 @@ import { GameWorkerRegistry } from '@/workers';
 import { isInsightAltHeld } from '@/input/InsightAltKey';
 import { isInsightRockTile } from '@/ui/hoverInsight/buildHoverLines';
 import { axisAlignedGridLine } from '@/utils/gridLine';
+import { SurveyCoordinator } from '@/survey/SurveyCoordinator';
 
 export class Game {
   private entities: Entity[] = [];
@@ -66,6 +67,12 @@ export class Game {
   };
 
   private workers!: GameWorkerRegistry;
+  /** Geological survey: flag, surveyor, dominant-ore labels, lazy `Tile.cellMinerals`. */
+  public surveys!: SurveyCoordinator;
+  /** True while the grass-tile Surveyor popover is open (drives close-then-click-again UX). */
+  public cellSurveyMenuOpen = false;
+  /** Grass tile awaiting tap on the center “options” icon before opening the Surveyor menu. */
+  public pendingSurveyGrid: { x: number; y: number } | null = null;
   private pendingBuildingPickups = new Set<number>(); // building entity IDs with workers en route
   private roadDragMode: 'create' | 'delete' | null = null;
   private lastMaterialCheckTime = 0;
@@ -108,6 +115,21 @@ export class Game {
         this.population.current - roadSegmentManager.getWorkerCount() - this.workers.getReservedPopulationCount(),
     });
 
+    this.surveys = new SurveyCoordinator({
+      getTileMap: () => this.tileMap,
+      getPathFinder: () => this.pathFinder,
+      getEntities: () => this.entities,
+      addEntity: e => this.addEntity(e),
+      removeEntity: e => this.removeEntity(e),
+      getHqRoadNetwork: () => this.getBaseCampConnectedRoads(),
+      getBuildingAt: (gx, gy) => this.findBuildingEntityAt(gx, gy),
+      getMapSeed: () => this.tileMap.getSeed(),
+      getAvailablePopulation: () => this.getAvailablePopulation(),
+      getBaseCampSpawnTile: () => this.workers.getBaseCampSpawnTile(),
+      attachSurveyorWorker: id => this.workers.attachSurveyorWorker(id),
+      detachSurveyorWorker: id => this.workers.detachSurveyorWorker(id),
+    });
+
     // Setup road segment callbacks
     roadSegmentManager.setCallbacks(this.workers.getRoadSegmentCallbacks());
 
@@ -143,7 +165,8 @@ export class Game {
     }
 
     // Selection events
-    eventBus.on('select:entity', (data) => this.selectEntityAt(data.x, data.y));
+    eventBus.on('select:entity', (data: { x: number; y: number; clientX?: number; clientY?: number }) =>
+      this.selectEntityAt(data.x, data.y, data.clientX, data.clientY));
     eventBus.on('delete:selected', () => this.deleteSelectedEntity());
     eventBus.on('check:drag_selected', (data) => this.checkDragSelected(data.x, data.y));
     eventBus.on('drag:move', (data) => this.dragEntityTo(data.x, data.y));
@@ -249,12 +272,11 @@ export class Game {
       const building = entity.getComponent(Building);
       const storage = entity.getComponent(Storage);
       if (!production || !building?.isComplete() || !building.isActive) continue;
+      if (production.getTotalBuffered() > 0) return true;
       if (storage?.isProductionStorage) {
         for (const res of Object.keys(production.outputs)) {
           if (storage.getAmount(res) > 0) return true;
         }
-      } else if (production.getTotalBuffered() > 0) {
-        return true;
       }
     }
     return false;
@@ -1031,6 +1053,42 @@ export class Game {
    *   `countInTransitToBuilding` (worker at drop-off). Do not subtract `amount` again from free
    *   space or we reject valid deliveries (e.g. last water unit while grain fills the rest).
    */
+  /**
+   * Older saves kept finished goods in the same Storage as recipe inputs. Outputs now use
+   * `Production.outputBuffer` only; move legacy output stacks into the buffer or eject overflow
+   * to the camp junction toward HQ.
+   */
+  private migrateLegacyProductionOutputsFromBuffer(entity: Entity): void {
+    const storage = entity.getComponent(Storage);
+    const production = entity.getComponent(Production);
+    if (!storage?.isProductionStorage || !production) return;
+
+    const spawnTile = this.baseCampEntity ? this.workers.getBaseCampSpawnTile() : null;
+    const campId = this.baseCampEntity?.id ?? null;
+
+    for (const res of Object.keys(production.outputs)) {
+      if (dataManager.getResource(res as ResourceType)?.virtualOutput) continue;
+
+      let n = storage.getAmount(res);
+      while (n > 0) {
+        const room = production.maxOutputBuffer - production.getTotalBuffered();
+        if (room > 0) {
+          const move = Math.min(n, room);
+          storage.removeItem(res, move);
+          production.addToBuffer(res, move);
+          resourceManager.requestPickup(entity.id, res, move);
+          n -= move;
+        } else if (spawnTile && campId != null) {
+          storage.removeItem(res, 1);
+          transportManager.addJunctionItem(spawnTile.x, spawnTile.y, res, campId);
+          n--;
+        } else {
+          break;
+        }
+      }
+    }
+  }
+
   private canAddProductionInputToLocalStorage(
     entity: Entity,
     storage: Storage,
@@ -1141,10 +1199,25 @@ export class Game {
     const spawnTile = this.workers.getBaseCampSpawnTile();
     if (!spawnTile) return;
 
-    const inputTypes = Object.entries(production.inputs)
-      .filter(([, need]) => need > 0)
-      .map(([res]) => res);
+    const inputTypes = production.getAllInputResourceTypes();
     if (inputTypes.length === 0) return;
+
+    const stillNeedsInput = (res: string): boolean => {
+      const needFixed = production.inputs[res] ?? 0;
+      if (needFixed > 0) {
+        const pipeline =
+          storage.getAmount(res) + this.countInTransitToBuildingForResource(entity.id, res);
+        return pipeline < needFixed;
+      }
+      for (const g of production.inputsAny) {
+        if (!g.resourceTypes.includes(res as ResourceType)) continue;
+        const p = production.pipelineSumForInputsAnyGroup(g, storage, r =>
+          this.countInTransitToBuildingForResource(entity.id, r)
+        );
+        if (p < g.amount) return true;
+      }
+      return false;
+    };
 
     let dispatchSlots = Math.max(
       0,
@@ -1155,6 +1228,7 @@ export class Game {
       let sent = false;
       for (const res of inputTypes) {
         if (dispatchSlots <= 0) break;
+        if (!stillNeedsInput(res)) continue;
         if (hqStorage.getAmount(res) <= 0) continue;
         if (!storage.canAccept(res)) continue;
         if (
@@ -1239,7 +1313,28 @@ export class Game {
       if (!production || !storage || !building) continue;
       if (!storage.isProductionStorage) continue;
       if (!building.isComplete() || !building.isActive) continue;
-      if (!production.inputs[resourceType]) continue;
+      if (!production.getAllInputResourceTypes().includes(resourceType as ResourceType)) continue;
+      const needFixed = production.inputs[resourceType] ?? 0;
+      if (needFixed > 0) {
+        const pipeline =
+          storage.getAmount(resourceType) +
+          this.countInTransitToBuildingForResource(entity.id, resourceType);
+        if (pipeline >= needFixed) continue;
+      } else {
+        let wantsThis = false;
+        for (const g of production.inputsAny) {
+          if (!g.resourceTypes.includes(resourceType as ResourceType)) continue;
+          wantsThis = true;
+          const p = production.pipelineSumForInputsAnyGroup(g, storage, r =>
+            this.countInTransitToBuildingForResource(entity.id, r)
+          );
+          if (p >= g.amount) {
+            wantsThis = false;
+            break;
+          }
+        }
+        if (!wantsThis) continue;
+      }
       if (storage.isFull()) continue;
       return entity;
     }
@@ -1253,6 +1348,11 @@ export class Game {
     if (!production) return null;
     const storage = bldgEntity.getComponent(Storage);
     if (storage && storage.isProductionStorage) {
+      for (const res of Object.keys(production.outputs)) {
+        if ((production.outputBuffer[res] ?? 0) > 0) {
+          return { resourceType: res };
+        }
+      }
       for (const res of Object.keys(production.outputs)) {
         if (storage.getAmount(res) > 0) {
           return { resourceType: res };
@@ -1430,12 +1530,10 @@ export class Game {
           if (bldgEntity) {
             const production = bldgEntity.getComponent(Production);
             const bldgStorage = bldgEntity.getComponent(Storage);
-            if (bldgStorage && bldgStorage.isProductionStorage && production) {
-              if (bldgStorage.removeItem(task.resourceType, 1) > 0) {
-                worker.pickUpResource(task.resourceType);
-                taken = true;
-              }
-            } else if (production && production.removeFromBuffer(task.resourceType, 1) > 0) {
+            if (production && production.removeFromBuffer(task.resourceType, 1) > 0) {
+              worker.pickUpResource(task.resourceType);
+              taken = true;
+            } else if (bldgStorage?.isProductionStorage && bldgStorage.removeItem(task.resourceType, 1) > 0) {
               worker.pickUpResource(task.resourceType);
               taken = true;
             }
@@ -1784,6 +1882,10 @@ export class Game {
     // Explore area around visible viewport
     this.exploreVisibleArea();
 
+    this.surveys.tick();
+    this.renderSystem.setSurveyWorkerIdsOnTop(this.surveys.getActiveSurveyorWorkerIds());
+    this.renderSystem.setSurveyOverlay(this.surveys.getOverlayForRender());
+
     // Update all systems
     this.systems.forEach(system => system.update(deltaTime));
 
@@ -1900,8 +2002,37 @@ export class Game {
     return this.findBuildingEntityAt(x, y);
   }
 
+  /** Highlight a grass tile while the “Send Surveyor” popover is open (canvas). */
+  setSurveyMenuHighlight(tile: { x: number; y: number } | null): void {
+    this.renderSystem.setSurveyMenuHighlight(tile);
+  }
+
+  clearSurveyPending(): void {
+    this.pendingSurveyGrid = null;
+    this.renderSystem.setSurveyPendingTile(null);
+  }
+
+  private isClickOnSurveyOptionIcon(
+    gx: number,
+    gy: number,
+    clientX?: number,
+    clientY?: number
+  ): boolean {
+    if (clientX === undefined || clientY === undefined) return false;
+    const c = this.renderSystem.gridToScreen(gx, gy);
+    const r = 24;
+    const dx = clientX - c.x;
+    const dy = clientY - c.y;
+    return dx * dx + dy * dy <= r * r;
+  }
+
   // Selection and editing functionality
-  selectEntityAt(x: number, y: number): void {
+  selectEntityAt(x: number, y: number, clientX?: number, clientY?: number): void {
+    const surveyMenuWasOpen = this.cellSurveyMenuOpen;
+    if (surveyMenuWasOpen) {
+      eventBus.emit('survey:cell_menu_close');
+    }
+
     // Find entity at this position (buildings and roads only, not workers)
     const foundEntity = this.entities.find(entity => {
       const pos = entity.getComponent(Position);
@@ -1915,6 +2046,8 @@ export class Game {
     });
 
     if (foundEntity) {
+      this.clearSurveyPending();
+
       // Check if it's the base camp
       if (foundEntity === this.baseCampEntity) {
         // Show inventory panel
@@ -1935,6 +2068,30 @@ export class Game {
         console.log(`Selected entity #${foundEntity.id}`);
       }
     } else {
+      const eligible =
+        this.isAreaExplored(x, y, 1, 1) &&
+        this.surveys.isTileEligibleForSurveyTarget(x, y);
+
+      const pending = this.pendingSurveyGrid;
+      const onPendingCell = pending !== null && pending.x === x && pending.y === y;
+      const iconHit =
+        onPendingCell &&
+        !surveyMenuWasOpen &&
+        this.isClickOnSurveyOptionIcon(x, y, clientX, clientY);
+
+      if (eligible && iconHit) {
+        eventBus.emit('cell:empty_menu', {
+          gridX: x,
+          gridY: y,
+          canSend: this.surveys.canSendSurveyorTo(x, y),
+        });
+      } else if (eligible) {
+        this.pendingSurveyGrid = { x, y };
+        this.renderSystem.setSurveyPendingTile({ x, y });
+      } else {
+        this.clearSurveyPending();
+      }
+
       // Clicked on empty space - deselect
       this.selectedEntity = null;
       this.updateSelectionUI();
@@ -2130,6 +2287,8 @@ export class Game {
     this.tileMap = new TileMap(1000, 1000);
     this.renderSystem.updateTileMap(this.tileMap);
 
+    this.cellSurveyMenuOpen = false;
+    this.clearSurveyPending();
     this.selectedEntity = null;
     this.baseCampEntity = null;
     this.isDraggingEntity = false;
@@ -2138,6 +2297,7 @@ export class Game {
     this.inventory = {};
     this.population = { current: 0, max: 0 };
     this.workers.resetState();
+    this.surveys.reset();
     this.pendingBuildingPickups.clear();
 
     this.initializeWorld();
@@ -2156,11 +2316,14 @@ export class Game {
       resourceManager.reset();
       roadSegmentManager.reset();
 
+      this.cellSurveyMenuOpen = false;
+      this.clearSurveyPending();
       this.selectedEntity = null;
       this.isDraggingEntity = false;
       this.dragPreviewPosition = null;
       this.lastExplorationPos = null;
       this.workers.resetState();
+      this.surveys.reset();
       this.pendingBuildingPickups.clear();
 
       if (saveData.population && typeof saveData.population.current === 'number') {
@@ -2223,6 +2386,10 @@ export class Game {
           this.addEntity(entity);
           this.occupyBuildingTiles(entity.id, buildingData.x, buildingData.y, building.width, building.height, building);
         }
+      }
+
+      for (const ent of this.entities) {
+        this.migrateLegacyProductionOutputsFromBuffer(ent);
       }
 
       // Restore transport queue

@@ -14,7 +14,7 @@ The economics system follows the Settlers II model:
 2. When the buffer has items, a **transport request** is created for pickup
 3. **Road workers** (not yet implemented) pick up items and carry them to the nearest warehouse or base camp
 4. The **global inventory** is the sum of all Storage components across all storage buildings
-5. Buildings that need **inputs** (e.g. sawmill needs wood_log) consume them from the global inventory
+5. Buildings that need **inputs** (e.g. sawmill needs wood_log) either consume from **local ingredient storage** (when the building has `storage` + `production.inputs`) or from the **global inventory** (legacy / buildings without local storage)
 
 ---
 
@@ -29,15 +29,15 @@ Each production building has a `Production` component (`src/components/Productio
 1. Skip if building is not complete (still under construction)
 2. Skip if building has no road connection → status = `stopped_no_road`
 3. Check space for outputs:
-   - **Local storage mode** (buildings with inputs): check `storage.getFreeSpace()` against output total
-   - **Output buffer mode** (buildings without inputs): check `production.hasBufferSpace()`
+   - **Local ingredient mode** (buildings with `isProductionStorage`): check `production.hasBufferSpace()` — outputs always stage in `outputBuffer`, not in `Storage`
+   - **Output buffer only** (buildings without local ingredient storage): check `production.hasBufferSpace()`
 4. Check inputs:
    - **Local storage mode**: each input type must meet its `production.inputs` amount in the building's own `Storage` (all types at once — no timer until the full recipe is on site)
    - **Output buffer mode**: `ResourceManager.hasAvailableInputsForProduction` — each input must have `getAvailableAmount(resource) >= amount` (global storages minus goods already reserved in the transport pickup queue), so a cycle does not start while the last ore is only en route to HQ
 5. If all checks pass, advance the production timer by `deltaTime`
 6. When timer reaches `productionTime`, one cycle completes:
-   - **Local storage mode**: inputs consumed from building's Storage, outputs added to building's Storage
-   - **Output buffer mode**: inputs consumed from global inventory, outputs added to outputBuffer, transport request created
+   - **Local ingredient mode**: inputs consumed from building's Storage, outputs added to `outputBuffer` + `requestPickup` (same as gatherers)
+   - **Global-input mode**: inputs consumed from global inventory, outputs added to outputBuffer, transport request created
    - Timer wraps (subtracts `productionTime`, keeping remainder for smooth cycling)
 
 See [Building Dependencies](BUILDING_DEPENDENCIES.md) for full details on local storage mode and demand routing.
@@ -50,7 +50,7 @@ Every production building is in one of these states:
 |--------|---------|-------------------|
 | `idle` | Not producing (one-time production finished) | Nothing |
 | `producing` | Actively producing | Progress indicator |
-| `stopped_full` | Output buffer is full, waiting for pickup | **Stop icon** — items need to be collected |
+| `stopped_full` | Outside output buffer is full, waiting for pickup | **Stop icon** — items need to be collected |
 | `stopped_no_inputs` | Missing required input resources | Warning — missing ingredients |
 | `stopped_no_road` | Not connected to road network | Road disconnected indicator |
 
@@ -68,11 +68,11 @@ Example: A lumberjack produces 1 wood_log every 20 seconds. After 200 seconds wi
 
 ### Input Consumption
 
-Buildings with inputs (sawmill, bakery, iron smelter, etc.) consume resources from the **global inventory** — the sum of all Storage components across warehouses and base camp. Inputs are consumed at the moment production completes, not when it starts.
+Buildings with **local ingredient storage** (`isProductionStorage`, e.g. sawmill, bakery, iron smelter) consume inputs from that building's `Storage` when a cycle completes. Buildings that have production inputs but **no** local storage (if any exist) would use the **global inventory** instead.
 
-**Multi-input buildings** (e.g. iron smelter, bakery, pig farm with local storage): production **starts** (timer advances) only when **every** required input is available under the rules above; see [Building Dependencies — Multi-input recipes](BUILDING_DEPENDENCIES.md#multi-input-recipes-all-types-before-production) for HQ dispatch pairing.
+**Multi-input buildings** (e.g. iron smelter, bakery, pig farm with local storage): production **starts** (timer advances) only when **every** required input is available on site (and under HQ pairing rules for dispatch); see [Building Dependencies — Multi-input recipes](BUILDING_DEPENDENCIES.md#multi-input-recipes-all-types-before-production) for HQ dispatch pairing.
 
-If inputs become unavailable mid-cycle, the cycle pauses at completion time and the building enters `stopped_no_inputs`. `applyProductionCycleOutputs` also re-checks `hasAvailableInputsForProduction` before deducting for output-buffer buildings.
+If inputs become unavailable mid-cycle, the cycle pauses at completion time and the building enters `stopped_no_inputs`. `applyProductionCycleOutputs` also re-checks `hasAvailableInputsForProduction` before deducting for buildings that consume from the **global** inventory.
 
 ---
 

@@ -158,6 +158,17 @@ export class DataManager {
             }
           });
         }
+        if (building.production.inputsAny) {
+          for (const g of building.production.inputsAny) {
+            for (const resourceId of g.resourceTypes) {
+              if (!this.resources.has(resourceId)) {
+                errors.push(
+                  `Building ${building.id} production inputsAny references unknown resource: ${resourceId}`
+                );
+              }
+            }
+          }
+        }
 
         Object.keys(building.production.outputs).forEach(resourceId => {
           if (!this.resources.has(resourceId as ResourceType)) {

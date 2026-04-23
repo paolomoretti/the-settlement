@@ -133,6 +133,11 @@ export interface ProductionRule {
   inputs?: {
     [resourceType: string]: number;
   };
+  /**
+   * Each entry: need `amount` units in total per cycle from **any** of the listed resources
+   * (e.g. miners fed by bread **or** ham **or** fish). Independent of `inputs` (AND across groups).
+   */
+  inputsAny?: Array<{ resourceTypes: ResourceType[]; amount: number }>;
   // Production time in seconds
   productionTime: number;
   // Can it produce continuously or one-time?
@@ -157,7 +162,8 @@ export type AnimationConfig =
       terrainTransition: Record<string, string>;
       workerSpeed: number;
       /** Lumberjack-style single chop vs quarry-style timed dig + partial tile depletion. */
-      gatherMode?: 'tree' | 'rock_depletion' | 'water_depletion';
+      /** `mine_site`: walk to a dig tile in front of the mine, pickaxe at ground, return with ore (no terrain change). */
+      gatherMode?: 'tree' | 'rock_depletion' | 'water_depletion' | 'mine_site';
       /** With `walkLeadSec` + `digAtSiteSec`: worker departs late in the cycle (like forester). */
       walkLeadSec?: number;
       digAtSiteSec?: number;
@@ -172,13 +178,17 @@ export type AnimationConfig =
       walkLeadSec?: number;
     }
   | {
-      /** Mill operator: same cycle timing as well_operator; HQ spawn, idle/work on footprint-adjacent tiles. */
-      type: 'mill_operator';
+      /**
+       * Indoor workshop operator: HQ delivery, idle near the building, door approach, then concealed
+       * inside the footprint for the active slice of each production cycle. Use for any staffed building
+       * that does not use a custom site animation (`gather`, `well_operator`, `plant_tree`).
+       */
+      type: 'interior_operator';
+      /** Worker spec id (usually same as building id): drives outfit and future upgrades; tied 1:1 to this building type. */
+      operatorRole: string;
       workerSpeed: number;
       drawingPhaseSec: number;
       walkLeadSec?: number;
-      /** Resource shown overhead during the work pose (default `flour`). */
-      carriedResource?: ResourceType;
     }
   | {
       /** Forester: walk to a reserved grass tile, dig, return; tree appears after digging. */
@@ -237,7 +247,12 @@ export interface BuildingDefinition {
   // Worker requirements
   requiredTool?: ResourceType; // Tool the worker needs to operate this building
 
-  // Production animation (worker leaves building during production cycle)
+  /**
+   * Map worker behaviour for staffed production buildings.
+   * Omit only when the building has no `population.requires` worker, or when no timed production exists yet.
+   * If `population.requires` and `production` exist but `animation` is omitted, the game synthesizes
+   * `interior_operator` at runtime (see `.claude/BUILDING_WORKERS.md`).
+   */
   animation?: AnimationConfig;
 
   // Special flags

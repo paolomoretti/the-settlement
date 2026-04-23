@@ -23,6 +23,7 @@ const AUTO_SAVE_EVENTS = [
   'erase:done',
   'delete:selected',
   'drag:end',
+  'survey:session_updated',
 ] as const;
 
 export interface GameSaveSessionDeps {

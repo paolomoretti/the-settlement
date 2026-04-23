@@ -18,7 +18,9 @@ Violations look like workers **teleporting** next to the well or hut; that must 
 |------|--------|--------|
 | Builder | `spawnBuilder` | Base camp road → road near site |
 | Tool delivery | `spawnToolWorker` | Base camp road → road near building |
-| Well / mill operator | `spawnSiteOperator` | Base camp road → road near building → off-road to idle/work tiles |
+| Well operator / `interior_operator` (workshop) | `spawnSiteOperator` | Base camp → road near building → idle tile → door → concealed inside for cycle slice (well: custom adjacent “draw” instead) |
+
+Details: `.claude/BUILDING_WORKERS.md`.
 
 ## Gather animation (woodcutter)
 

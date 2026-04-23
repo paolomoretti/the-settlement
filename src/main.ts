@@ -3,6 +3,7 @@ import { eventBus } from './core/EventBus';
 import { dataManager } from '@/data/DataManager';
 import { BuildingMenu } from '@/ui/BuildingMenu';
 import { BuildingPopover } from '@/ui/BuildingPopover';
+import { GamePopover } from '@/ui/GamePopover';
 import { CanvasHoverTooltip } from '@/ui/CanvasHoverTooltip';
 import { setupKeyboardShortcuts } from '@/input/KeyboardShortcuts';
 import { showToast, setupToastListener } from '@/ui/Toast';
@@ -14,6 +15,7 @@ import 'tippy.js/dist/tippy.css';
 let game: Game | null = null;
 let buildingMenu: BuildingMenu | null = null;
 let buildingPopover: BuildingPopover | null = null;
+let cellSurveyPopover: GamePopover | null = null;
 let canvasHoverTooltip: CanvasHoverTooltip | null = null;
 let unregisterHoverFrameHook: (() => void) | null = null;
 
@@ -278,6 +280,67 @@ function setupGameUI(game: Game): void {
   setupOptionsPanel(game);
 
   buildingPopover = new BuildingPopover(game);
+
+  cellSurveyPopover = new GamePopover(document.getElementById('ui-overlay')!);
+  cellSurveyPopover.onClose = () => {
+    if (game) game.cellSurveyMenuOpen = false;
+    game?.setSurveyMenuHighlight(null);
+    game?.clearSurveyPending();
+  };
+
+  eventBus.on('survey:cell_menu_close', () => {
+    if (game) game.cellSurveyMenuOpen = false;
+    game?.clearSurveyPending();
+    cellSurveyPopover?.hide();
+  });
+
+  eventBus.on('cell:empty_menu', (payload: { gridX: number; gridY: number; canSend: boolean }) => {
+    if (!game) return;
+    const gx = payload.gridX;
+    const gy = payload.gridY;
+
+    game.clearSurveyPending();
+    game.setSurveyMenuHighlight({ x: gx, y: gy });
+
+    const content = document.createElement('div');
+    content.style.display = 'flex';
+    content.style.flexDirection = 'column';
+    content.style.gap = '10px';
+    content.style.minWidth = '240px';
+
+    const hint = document.createElement('p');
+    hint.style.margin = '0';
+    hint.style.fontSize = '13px';
+    hint.style.lineHeight = '1.4';
+    hint.style.color = 'rgba(255,255,255,0.88)';
+    hint.textContent = payload.canSend
+      ? 'Sends a surveyor from your headquarters to read the soil for buried minerals. They plant small field signs that show the richest find on each spot for a while.'
+      : 'Another survey was done here recently, or no worker is free, or the camp needs a road link. Try again once the signs are gone and the land is free.';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'dialog-btn-primary';
+    btn.textContent = 'Send Surveyor';
+    btn.disabled = !payload.canSend;
+    btn.addEventListener('click', () => {
+      cellSurveyPopover?.hide();
+      game.setSurveyMenuHighlight(null);
+      game.clearSurveyPending();
+      if (game.surveys.tryDispatchSurveyor(gx, gy)) {
+        showToast('Surveyor dispatched');
+      }
+    });
+
+    content.appendChild(hint);
+    content.appendChild(btn);
+
+    cellSurveyPopover!.show('Surveyor', content, () => {
+      // Integer grid = diamond center in this iso map (+0.5,+0.5 is the bottom vertex, not the center).
+      const screen = game.renderSystem.gridToScreen(gx, gy);
+      return { x: screen.x, y: screen.y };
+    });
+    game.cellSurveyMenuOpen = true;
+  });
 
   if (unregisterHoverFrameHook) {
     unregisterHoverFrameHook();

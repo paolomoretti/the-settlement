@@ -515,7 +515,7 @@
   "granite_mine": {
     "id": "granite_mine",
     "name": "Granite Mine",
-    "description": "Extracts stone from underground granite deposits. Miners need bread, ham, or fish.",
+    "description": "Cuts finished building stone at the mine face (same stock as a stonemason), using the mine shaft instead of surface rock. Miners need bread, ham, or fish.",
     "size": { "width": 2, "height": 2 },
     "visual": { "buildingHeight": 60, "color": "#696969", "spriteScale": 1.5, "offsetX": -6, "offsetY": 4},
     "buildCost": { "wood_plank": 4 },
@@ -526,8 +526,11 @@
       "outputs": { "stone": 1 },
       "inputs": {},
       "inputsAny": [{ "resourceTypes": ["bread", "ham", "fish"], "amount": 1 }],
-      "productionTime": 35,
-      "continuous": true
+      "productionTime": 120,
+      "continuous": true,
+      "maxOutputBuffer": 6,
+      "maxGatherRadius": 15,
+      "maxGatherWalkCells": 22
     },
     "storage": { "capacity": 10 },
     "population": { "requires": 1 },
@@ -535,11 +538,11 @@
       "type": "gather",
       "gatherMode": "mine_site",
       "targetTerrain": ["grass"],
-      "searchRadius": 8,
+      "searchRadius": 15,
       "terrainTransition": {},
-      "workerSpeed": 1.12,
-      "walkLeadSec": 3,
-      "digAtSiteSec": 28,
+      "workerSpeed": 1.1,
+      "walkLeadSec": 25,
+      "digAtSiteSec": 7,
       "carriedResource": "stone"
     },
     "category": "production",

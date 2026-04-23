@@ -16,6 +16,7 @@ import {
   paintWorkerFloorNap,
   WORKER_BODY_RESOURCE_SPRITE_PATHS,
 } from '@/rendering/WorkerSpritePainter';
+import { economySection, scheduleEconomyMermaid } from '@/debug/economySection';
 
 const root = document.getElementById('catalog-root');
 if (!root) throw new Error('#catalog-root missing');
@@ -773,3 +774,5 @@ function workerSection(): HTMLElement {
 
 root.appendChild(buildingSection());
 root.appendChild(workerSection());
+root.appendChild(economySection());
+scheduleEconomyMermaid();

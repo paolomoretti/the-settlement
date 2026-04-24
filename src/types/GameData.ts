@@ -269,7 +269,9 @@ export interface BuildingDefinition {
 
   // Military (for military buildings)
   military?: {
-    soldierCapacity: number; // Max soldiers garrisoned
+    soldierCapacity?: number; // Max soldiers garrisoned
+    /** Chebyshev radius from footprint center; expands settlement disks when the building is complete. */
+    territoryVisionRadius?: number;
   };
 }
 

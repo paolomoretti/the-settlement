@@ -28,6 +28,7 @@ import {
   paintWorkerFloorNap,
 } from '@/rendering/WorkerSpritePainter';
 import { RABBIT_JUMP_DURATION_MS, type WildRabbit } from '@/wildlife/WildlifeCoordinator';
+import { CORDON_POLE_STRIDE_CELLS, territoryKey } from '@/map/TerritoryCoordinator';
 
 /** World-space half-plane clip for long straight iso shores (same screen row / column of tile centers). */
 type FlatShoreCut =
@@ -52,6 +53,18 @@ export class RenderSystem extends System {
   private canvas: HTMLCanvasElement;
   private iso: Isometric;
   private camera = { x: 0, y: 0, zoom: 1 };
+  /** Optional hooks from `Game` for fog + settlement placement previews. */
+  public placementPreviewHooks: {
+    canPlaceBuildingPreview?: (type: string, gx: number, gy: number, w: number, h: number) => boolean;
+    canPlaceRoadPreview?: (gx: number, gy: number) => boolean;
+  } = {};
+
+  /** Supplier for cordon overlay (frontier tiles + union), owned by `Game`. */
+  public getTerritoryCordonOverlay?: () => {
+    frontier: ReadonlySet<string>;
+    unionU: ReadonlySet<string>;
+  } | null;
+
   public buildPreview: {
     mode: string;
     gridX: number;
@@ -268,6 +281,8 @@ export class RenderSystem extends System {
     this.renderTiles();
     this.renderFishJumps();
 
+    const cordonPack = this.getTerritoryCordonOverlay?.() ?? null;
+
     // Get viewport bounds for entity culling
     const viewportBounds = this.getViewportBounds();
 
@@ -318,8 +333,8 @@ export class RenderSystem extends System {
     // Render junction items on road tiles
     this.renderJunctionItems(viewportBounds);
 
-    // Depth-sorted rendering: interleave trees, mountains, and entities
-    this.renderDepthSorted(sortedEntities, viewportBounds);
+    // Depth-sorted rendering: interleave trees, mountains, and entities (cordon ropes sort with depth)
+    this.renderDepthSorted(sortedEntities, viewportBounds, cordonPack);
 
     // Render selection outline for selected entity
     if (this.selectedEntityId !== null) {
@@ -974,17 +989,24 @@ export class RenderSystem extends System {
     return out;
   }
 
-  /** Same placement rules as `TileMap.buildRoad` + fog (preview only). */
+  /** Same placement rules as `TileMap.buildRoad` + fog + settlement interior (preview only). */
   private canPreviewAddRoadAt(x: number, y: number): boolean {
     const tile = this.tileMap.getTile(x, y);
-    return !!(
-      tile &&
-      tile.isExplored() &&
-      !tile.hasRoad &&
-      tile.terrain !== 'water' &&
-      tile.terrain !== 'mountain' &&
-      !tile.isOccupied()
-    );
+    if (
+      !(
+        tile &&
+        tile.isExplored() &&
+        !tile.hasRoad &&
+        tile.terrain !== 'water' &&
+        tile.terrain !== 'mountain' &&
+        !tile.isOccupied()
+      )
+    ) {
+      return false;
+    }
+    const hook = this.placementPreviewHooks.canPlaceRoadPreview;
+    if (hook && !hook(x, y)) return false;
+    return true;
   }
 
   private effectiveRoadForPreview(
@@ -1057,6 +1079,12 @@ export class RenderSystem extends System {
         const tile = this.tileMap.getTile(gridX + dx, gridY + dy);
         if (!tile || !tile.walkable || tile.isOccupied()) return false;
       }
+    }
+    const mode = this.buildPreview?.mode;
+    if (mode && mode.startsWith('build_')) {
+      const type = mode.slice('build_'.length);
+      const hook = this.placementPreviewHooks.canPlaceBuildingPreview;
+      if (hook && !hook(type, gridX, gridY, width, depth)) return false;
     }
     return true;
   }
@@ -1222,6 +1250,118 @@ export class RenderSystem extends System {
         }
       }
     }
+  }
+
+  private cordonStickFootAndTop(gx: number, gy: number): {
+    foot: { x: number; y: number };
+    top: { x: number; y: number };
+  } {
+    const h = this.iso.tileHeight * 0.56;
+    const foot = this.iso.gridToScreen(gx, gy);
+    return { foot, top: { x: foot.x, y: foot.y - h } };
+  }
+
+  private renderCordonStickAt(gx: number, gy: number): void {
+    const zoom = Math.max(0.35, this.camera.zoom);
+    const { foot, top } = this.cordonStickFootAndTop(gx, gy);
+    this.ctx.save();
+    this.ctx.lineCap = 'round';
+    this.ctx.strokeStyle = 'rgba(48, 30, 14, 0.96)';
+    this.ctx.lineWidth = 3.2 / zoom;
+    this.ctx.beginPath();
+    this.ctx.moveTo(foot.x, foot.y);
+    this.ctx.lineTo(top.x, top.y);
+    this.ctx.stroke();
+    this.ctx.strokeStyle = 'rgba(110, 72, 38, 0.75)';
+    this.ctx.lineWidth = 1.25 / zoom;
+    this.ctx.beginPath();
+    this.ctx.moveTo(foot.x, foot.y);
+    this.ctx.lineTo(top.x, top.y);
+    this.ctx.stroke();
+    this.ctx.restore();
+  }
+
+  /** One sagging arc between two cordon cell stick tops (single quadratic). */
+  private renderCordonRopeBetweenCellTops(
+    ax: number,
+    ay: number,
+    bx: number,
+    by: number
+  ): void {
+    const zoom = Math.max(0.35, this.camera.zoom);
+    const a = this.cordonStickFootAndTop(ax, ay).top;
+    const b = this.cordonStickFootAndTop(bx, by).top;
+    const midX = (a.x + b.x) * 0.5;
+    const midY = (a.y + b.y) * 0.5;
+    const dist = Math.hypot(b.x - a.x, b.y - a.y);
+    const sag = Math.min(16, 5 + dist * 0.2);
+    this.ctx.save();
+    this.ctx.lineCap = 'round';
+    this.ctx.lineJoin = 'round';
+    this.ctx.strokeStyle = 'rgba(101, 67, 33, 0.92)';
+    this.ctx.lineWidth = 2.35 / zoom;
+    this.ctx.beginPath();
+    this.ctx.moveTo(a.x, a.y);
+    this.ctx.quadraticCurveTo(midX, midY + sag, b.x, b.y);
+    this.ctx.stroke();
+    this.ctx.restore();
+  }
+
+  /**
+   * Pole cells (sparse sticks) + rope segments along the full cordon graph:
+   * every cardinal and diagonal link between two frontier cells gets one sagging arc
+   * (so bends and diagonals are closed; not only straight pole-to-pole rays).
+   */
+  private buildCordonGeometry(frontier: ReadonlySet<string>): {
+    poleKeys: Set<string>;
+    ropes: Array<{ ax: number; ay: number; bx: number; by: number; dBack: number }>;
+  } {
+    const stride = CORDON_POLE_STRIDE_CELLS;
+    const poleKeys = new Set<string>();
+    for (const k of frontier) {
+      const [xs, ys] = k.split(',');
+      const x = Number(xs);
+      const y = Number(ys);
+      if (((x + y) % stride + stride) % stride === 0) {
+        poleKeys.add(k);
+      }
+    }
+
+    const directions: readonly [number, number][] = [
+      [-1, 0],
+      [1, 0],
+      [0, -1],
+      [0, 1],
+      [-1, -1],
+      [-1, 1],
+      [1, -1],
+      [1, 1],
+    ];
+    const ropes: Array<{ ax: number; ay: number; bx: number; by: number; dBack: number }> = [];
+    const seenEdge = new Set<string>();
+    const edgeKey = (x0: number, y0: number, x1: number, y1: number): string => {
+      const a = territoryKey(x0, y0);
+      const b = territoryKey(x1, y1);
+      return a < b ? `${a}|${b}` : `${b}|${a}`;
+    };
+
+    for (const k of frontier) {
+      const [xs, ys] = k.split(',');
+      const x = Number(xs);
+      const y = Number(ys);
+      for (const [dx, dy] of directions) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!frontier.has(territoryKey(nx, ny))) continue;
+        const ek = edgeKey(x, y, nx, ny);
+        if (seenEdge.has(ek)) continue;
+        seenEdge.add(ek);
+        const dBack = Math.min(x + y, nx + ny);
+        ropes.push({ ax: x, ay: y, bx: nx, by: ny, dBack });
+      }
+    }
+
+    return { poleKeys, ropes };
   }
 
   private tileHash(x: number, y: number, salt: number = 0): number {
@@ -1542,10 +1682,16 @@ export class RenderSystem extends System {
 
   private renderDepthSorted(
     sortedEntities: Entity[],
-    viewportBounds: { minX: number; maxX: number; minY: number; maxY: number }
+    viewportBounds: { minX: number; maxX: number; minY: number; maxY: number },
+    cordonPack: { frontier: ReadonlySet<string>; unionU: ReadonlySet<string> } | null
   ): void {
     const minDepth = viewportBounds.minX + viewportBounds.minY;
     const maxDepth = viewportBounds.maxX + viewportBounds.maxY;
+
+    const cordonGeo =
+      cordonPack && cordonPack.frontier.size > 0
+        ? this.buildCordonGeometry(cordonPack.frontier)
+        : null;
 
     const { blocks: mountainBlocks, covered: mountainCovered } = this.findMountainBlocks(viewportBounds);
 
@@ -1606,6 +1752,18 @@ export class RenderSystem extends System {
         }
       }
 
+      // Cordon sticks at this depth (behind trees/rocks on the same tile)
+      if (cordonGeo) {
+        for (let x = xMin; x <= xMax; x++) {
+          const y = d - x;
+          const k = territoryKey(x, y);
+          if (!cordonGeo.poleKeys.has(k)) continue;
+          const t = this.tileMap.getTile(x, y);
+          if (!t?.isExplored()) continue;
+          this.renderCordonStickAt(x, y);
+        }
+      }
+
       // Trees at this depth
       for (let x = xMin; x <= xMax; x++) {
         const y = d - x;
@@ -1624,6 +1782,14 @@ export class RenderSystem extends System {
           this.renderForestCluster(center.x, center.y, x, y);
         }
         if (flatGrass) this.ctx.restore();
+      }
+
+      // Cordon ropes: one arc per pole-to-pole chain; draw after the rear (min depth) tile's trees
+      if (cordonGeo) {
+        for (const seg of cordonGeo.ropes) {
+          if (seg.dBack !== d) continue;
+          this.renderCordonRopeBetweenCellTops(seg.ax, seg.ay, seg.bx, seg.by);
+        }
       }
 
       // Entities and wild rabbits at this depth (same float-depth rules as walkers vs trees)

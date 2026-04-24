@@ -33,6 +33,7 @@ import { axisAlignedGridLine } from '@/utils/gridLine';
 import { SurveyCoordinator } from '@/survey/SurveyCoordinator';
 import { ensureWellAquiferInitialized } from '@/map/wellAquifer';
 import { WildlifeCoordinator } from '@/wildlife/WildlifeCoordinator';
+import { TerritoryCoordinator } from '@/map/TerritoryCoordinator';
 
 export class Game {
   private entities: Entity[] = [];
@@ -43,7 +44,6 @@ export class Game {
   private frameCount = 0;
   private fpsTime = 0;
 
-  private canvas: HTMLCanvasElement;
   public tileMap: TileMap;
   public renderSystem: RenderSystem;
   public movementSystem: MovementSystem;
@@ -56,9 +56,9 @@ export class Game {
   public isDraggingEntity = false;
   public dragPreviewPosition: { x: number; y: number } | null = null;
 
-  // Exploration optimization
-  private lastExplorationPos: { x: number; y: number } | null = null;
-  private explorationThreshold = 10; // Only explore when camera moves this many tiles
+  /** Settlement disks + cordon; fog lifts via {@link TerritoryCoordinator.applyFogReveal}. */
+  private territory: TerritoryCoordinator;
+  private territoryDirty = true;
 
   // Game economy
   public inventory: Inventory = {};
@@ -93,10 +93,9 @@ export class Game {
   private readonly frameHooks: Array<() => void> = [];
 
   constructor(canvas: HTMLCanvasElement, skipInit = false) {
-    this.canvas = canvas;
-
     // Initialize large map (20x bigger: 1000x1000)
     this.tileMap = new TileMap(1000, 1000);
+    this.territory = new TerritoryCoordinator(this.tileMap);
 
     // Initialize systems
     this.renderSystem = new RenderSystem(canvas, this.tileMap);
@@ -109,6 +108,17 @@ export class Game {
     this.inputSystem = new InputSystem(canvas, this.renderSystem);
     this.pathFinder = new PathFinder();
     this.renderSystem.setWildRabbitSupplier(() => this.wildlife.getRabbits());
+    this.renderSystem.placementPreviewHooks = {
+      canPlaceBuildingPreview: (type, gx, gy, w, h) =>
+        this.canPreviewPlaceBuilding(type as BuildingType, gx, gy, w, h, undefined),
+      canPlaceRoadPreview: (gx, gy) => this.canPreviewPlaceRoadCell(gx, gy),
+    };
+    this.renderSystem.getTerritoryCordonOverlay = () => {
+      this.refreshTerritoryIfDirty();
+      const frontier = this.territory.getFrontier();
+      if (frontier.size === 0) return null;
+      return { frontier, unionU: this.territory.getUnionU() };
+    };
 
     // Production runs before movement, movement before render
     this.systems.push(this.productionSystem, this.movementSystem, this.renderSystem);
@@ -224,36 +234,26 @@ export class Game {
     const centerX = Math.floor(this.tileMap.width / 2);
     const centerY = Math.floor(this.tileMap.height / 2);
 
-    // Explore initial area around spawn
-    this.exploreArea(centerX, centerY, 25);
-
     // Build base camp — no roads, no workers. Roads are built by the player.
     this.buildBaseCamp(centerX, centerY);
+
+    this.markTerritoryDirty();
+    this.refreshTerritoryIfDirty();
 
     this.wildlife.seedInitialRabbits(this.tileMap, centerX, centerY);
 
     console.log(`World initialized at (${centerX}, ${centerY}) - Map size: ${this.tileMap.width}x${this.tileMap.height}`);
   }
 
-  exploreArea(centerX: number, centerY: number, radius: number): { x: number; y: number }[] {
-    const newlyExplored: { x: number; y: number }[] = [];
+  private markTerritoryDirty(): void {
+    this.territoryDirty = true;
+  }
 
-    for (let y = centerY - radius; y <= centerY + radius; y++) {
-      for (let x = centerX - radius; x <= centerX + radius; x++) {
-        const tile = this.tileMap.getTile(x, y);
-        if (tile && !tile.isExplored()) {
-          tile.explore();
-          newlyExplored.push({ x, y });
-        }
-      }
-    }
-
-    // Update minimap with newly explored tiles
-    if (newlyExplored.length > 0) {
-      this.renderSystem.updateMinimapTiles(newlyExplored);
-    }
-
-    return newlyExplored;
+  private refreshTerritoryIfDirty(): void {
+    if (!this.territoryDirty) return;
+    this.territory.rebuildFrom(this.entities, this.baseCampEntity);
+    this.territory.applyFogReveal(this.renderSystem);
+    this.territoryDirty = false;
   }
 
   private isAreaExplored(x: number, y: number, width: number = 1, height: number = 1): boolean {
@@ -266,6 +266,27 @@ export class Game {
       }
     }
     return true;
+  }
+
+  /** Canvas build preview: walkable tiles, fog, and settlement interior / military cordon rule. */
+  public canPreviewPlaceBuilding(
+    _buildingType: BuildingType,
+    gx: number,
+    gy: number,
+    w: number,
+    h: number,
+    ignoreEntityId?: number
+  ): boolean {
+    if (!this.canPlaceBuilding(gx, gy, w, h, ignoreEntityId)) return false;
+    if (!this.isAreaExplored(gx, gy, w, h)) return false;
+    this.refreshTerritoryIfDirty();
+    return this.territory.isInteriorFootprint(gx, gy, w, h);
+  }
+
+  /** Road preview / placement: fog lifted and strictly inside the cordon (not on rope cells). */
+  public canPreviewPlaceRoadCell(gx: number, gy: number): boolean {
+    this.refreshTerritoryIfDirty();
+    return this.territory.isInteriorCell(gx, gy);
   }
 
   private segmentRecalcTimer: ReturnType<typeof setTimeout> | null = null;
@@ -467,6 +488,10 @@ export class Game {
     if (!this.isAreaExplored(x, y)) {
       return;
     }
+    this.refreshTerritoryIfDirty();
+    if (!this.territory.isInteriorCell(x, y)) {
+      return;
+    }
 
     const tile = this.tileMap.getTile(x, y);
     if (!tile) return;
@@ -600,6 +625,15 @@ export class Game {
     roadSegmentManager.recalculate(this.tileMap);
     this.recomputeTransportRoutes();
     this.updateBuildingRoadConnections();
+    if (building && this.buildingAffectsTerritoryDisk(building.buildingType)) {
+      this.markTerritoryDirty();
+    }
+  }
+
+  private buildingAffectsTerritoryDisk(buildingType: BuildingType): boolean {
+    if (buildingType === 'base_camp') return true;
+    const def = dataManager.getBuilding(buildingType);
+    return typeof def?.military?.territoryVisionRadius === 'number';
   }
 
 
@@ -809,9 +843,17 @@ export class Game {
       return;
     }
 
-    // Check if area is explored
+    // Fog + settlement placement (interior or military cordon-touch rule)
     if (!this.isAreaExplored(x, y, buildingDef.size.width, buildingDef.size.height)) {
       eventBus.emit('build:failed', { reason: 'Cannot build in unexplored area' });
+      return;
+    }
+
+    this.refreshTerritoryIfDirty();
+    if (!this.territory.isInteriorFootprint(x, y, buildingDef.size.width, buildingDef.size.height)) {
+      eventBus.emit('build:failed', {
+        reason: 'Build only inside the settlement, not on the cordon or in the preview ring.',
+      });
       return;
     }
 
@@ -1915,8 +1957,7 @@ export class Game {
     // Update building construction progress
     this.updateConstruction();
 
-    // Explore area around visible viewport
-    this.exploreVisibleArea();
+    this.refreshTerritoryIfDirty();
 
     this.surveys.tick();
     this.renderSystem.setSurveyWorkerIdsOnTop(this.surveys.getActiveSurveyorWorkerIds());
@@ -1979,6 +2020,9 @@ export class Game {
           this.recheckProductionInputDeliveries(true);
           this.recomputePopulationMaxCapacity();
           this.tryFinalizeWellAquifer(entity);
+          if (typeof buildingDef?.military?.territoryVisionRadius === 'number') {
+            this.markTerritoryDirty();
+          }
         }
       }
     }
@@ -2000,32 +2044,6 @@ export class Game {
 
   private syncInventory(): void {
     this.inventory = resourceManager.getGlobalInventory();
-  }
-
-  private exploreVisibleArea(): void {
-    // Get viewport bounds in grid coordinates
-    const viewportCenterWorld = this.renderSystem.screenToWorld(
-      this.canvas.width / 2,
-      this.canvas.height / 2
-    );
-
-    const centerX = Math.floor(viewportCenterWorld.x);
-    const centerY = Math.floor(viewportCenterWorld.y);
-
-    // Only explore if camera has moved significantly (optimization)
-    if (this.lastExplorationPos) {
-      const dx = Math.abs(centerX - this.lastExplorationPos.x);
-      const dy = Math.abs(centerY - this.lastExplorationPos.y);
-      if (dx < this.explorationThreshold && dy < this.explorationThreshold) {
-        return; // Camera hasn't moved enough
-      }
-    }
-
-    this.lastExplorationPos = { x: centerX, y: centerY };
-
-    const viewportRadius = 30; // Explore 30 tiles around viewport center
-
-    this.exploreArea(centerX, centerY, viewportRadius);
   }
 
   private updateDebugInfo(): void {
@@ -2237,10 +2255,22 @@ export class Game {
       console.log(`Attempting to drop building at (${x}, ${y}), original was (${this.originalDragPosition?.x}, ${this.originalDragPosition?.y})`);
 
       // Check if new position is valid (ignore tiles occupied by this entity itself)
-      if (this.canPlaceBuilding(x, y, building.width, building.height, this.selectedEntity.id)) {
+      if (
+        this.canPreviewPlaceBuilding(
+          building.buildingType,
+          x,
+          y,
+          building.width,
+          building.height,
+          this.selectedEntity.id
+        )
+      ) {
         // Update the actual position now
         pos.set(x, y);
         this.occupyBuildingTiles(this.selectedEntity.id, x, y, building.width, building.height, building);
+        if (this.buildingAffectsTerritoryDisk(building.buildingType)) {
+          this.markTerritoryDirty();
+        }
         console.log(`✅ Successfully moved entity from (${this.originalDragPosition?.x}, ${this.originalDragPosition?.y}) to (${x}, ${y})`);
       } else {
         console.warn(`❌ Cannot place building at (${x}, ${y}), reverting to original position`);
@@ -2346,6 +2376,7 @@ export class Game {
     transportManager.reset();
 
     this.tileMap = new TileMap(1000, 1000);
+    this.territory = new TerritoryCoordinator(this.tileMap);
     this.renderSystem.updateTileMap(this.tileMap);
 
     this.cellSurveyMenuOpen = false;
@@ -2354,7 +2385,6 @@ export class Game {
     this.baseCampEntity = null;
     this.isDraggingEntity = false;
     this.dragPreviewPosition = null;
-    this.lastExplorationPos = null;
     this.inventory = {};
     this.population = { current: 0, max: 0 };
     this.workers.resetState();
@@ -2370,6 +2400,7 @@ export class Game {
   loadSaveData(saveData: any): boolean {
     try {
       this.tileMap = TileMap.deserialize(saveData.map);
+      this.territory = new TerritoryCoordinator(this.tileMap);
       this.renderSystem.updateTileMap(this.tileMap);
       this.rebuildMinimapFromLoadedMap();
 
@@ -2384,7 +2415,6 @@ export class Game {
       this.selectedEntity = null;
       this.isDraggingEntity = false;
       this.dragPreviewPosition = null;
-      this.lastExplorationPos = null;
       this.workers.resetState();
       this.surveys.reset();
       this.pendingBuildingPickups.clear();
@@ -2518,6 +2548,9 @@ export class Game {
 
       this.recomputePopulationMaxCapacity();
       this.recheckProductionInputDeliveries(true);
+
+      this.markTerritoryDirty();
+      this.refreshTerritoryIfDirty();
 
       return true;
     } catch (error) {

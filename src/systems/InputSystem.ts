@@ -2,6 +2,9 @@
  * Input System - handles mouse and touch input
  *
  * Keyboard shortcuts are managed centrally in src/input/KeyboardShortcuts.ts
+ *
+ * Right mouse button: always camera pan on the canvas (no place/erase/select).
+ * See .claude/GAME_INPUTS.md for the full control reference.
  */
 
 import { eventBus } from '@/core/EventBus';
@@ -26,6 +29,8 @@ export class InputSystem {
   private shiftKeyHeld = false;
   /** View mode: true once this pointer gesture has panned the camera (suppress click on release). */
   private viewDragDidPan = false;
+  /** Right mouse (button 2): entire gesture is camera pan only — no build, erase, select, or drag. */
+  private isRightButtonPan = false;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -52,13 +57,18 @@ export class InputSystem {
   private setupEventListeners(): void {
     // Mouse events
     this.canvas.addEventListener('mousedown', (e) =>
-      this.handlePointerDown(e.clientX, e.clientY, e.shiftKey)
+      this.handlePointerDown(e.clientX, e.clientY, e.shiftKey, e.button, e.buttons)
     );
     this.canvas.addEventListener('mousemove', (e) =>
-      this.handlePointerMove(e.clientX, e.clientY, e.shiftKey)
+      this.handlePointerMove(
+        e.clientX,
+        e.clientY,
+        e.shiftKey,
+        'buttons' in e ? (e as MouseEvent).buttons : undefined
+      )
     );
     this.canvas.addEventListener('mouseup', (e) =>
-      this.handlePointerUp(e.clientX, e.clientY, e.shiftKey)
+      this.handlePointerUp(e.clientX, e.clientY, e.shiftKey, e.button)
     );
     this.canvas.addEventListener('wheel', (e) => this.handleWheel(e));
 
@@ -76,7 +86,24 @@ export class InputSystem {
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
-  private handlePointerDown(clientX: number, clientY: number, shiftKey = false): void {
+  private handlePointerDown(
+    clientX: number,
+    clientY: number,
+    shiftKey = false,
+    button = 0,
+    mouseButtons?: number
+  ): void {
+    // Right pan ended off-canvas without our mouseup — clear stale gesture before a new press
+    const rightStillDown = mouseButtons !== undefined && (mouseButtons & 2) !== 0;
+    if (button !== 2 && this.isRightButtonPan && !rightStillDown) {
+      this.isRightButtonPan = false;
+      this.isDragging = false;
+      this.dragStartGridPos = null;
+      this.lastRoadBuildPos = null;
+      this.lastErasePos = null;
+      eventBus.emit('road:drag_end');
+    }
+
     this.hoverClientPos = { x: clientX, y: clientY };
     this.shiftKeyHeld = shiftKey;
     this.isDragging = true;
@@ -86,6 +113,15 @@ export class InputSystem {
     // If spacebar is held, we're always in pan mode
     if (this.spacebarPressed) {
       this.canvas.style.cursor = 'grabbing';
+      return;
+    }
+
+    // Right mouse: pan only (never place roads/buildings, erase, or select)
+    if (button === 2) {
+      this.isRightButtonPan = true;
+      this.canvas.style.cursor = 'grabbing';
+      const w = this.renderSystem.clientToGrid(clientX, clientY);
+      this.hoverGridPos = { x: w.x, y: w.y };
       return;
     }
 
@@ -112,9 +148,18 @@ export class InputSystem {
     }
   }
 
-  private handlePointerMove(clientX: number, clientY: number, shiftKey = false): void {
+  private handlePointerMove(clientX: number, clientY: number, shiftKey = false, mouseButtons?: number): void {
     this.hoverClientPos = { x: clientX, y: clientY };
     this.shiftKeyHeld = shiftKey;
+
+    if (
+      this.isRightButtonPan &&
+      mouseButtons !== undefined &&
+      (mouseButtons & 2) === 0
+    ) {
+      this.handlePointerUp(clientX, clientY, shiftKey, 2);
+      return;
+    }
 
     const raw = this.renderSystem.clientToGrid(clientX, clientY);
     let gx = raw.x;
@@ -141,8 +186,8 @@ export class InputSystem {
     this.hoverGridPos = { x: gx, y: gy };
 
     if (this.isDragging) {
-      // Spacebar + drag = always pan camera (regardless of mode)
-      if (this.spacebarPressed) {
+      // Spacebar or right mouse + drag = pan camera only (regardless of mode)
+      if (this.spacebarPressed || this.isRightButtonPan) {
         const dx = clientX - this.lastPos.x;
         const dy = clientY - this.lastPos.y;
         this.renderSystem.moveCamera(dx, dy);
@@ -179,8 +224,25 @@ export class InputSystem {
     }
   }
 
-  private handlePointerUp(clientX: number, clientY: number, shiftKey = false): void {
+  private handlePointerUp(clientX: number, clientY: number, shiftKey = false, button = 0): void {
     this.shiftKeyHeld = shiftKey;
+
+    if (this.isRightButtonPan && button === 2) {
+      this.isRightButtonPan = false;
+      this.isDragging = false;
+      this.dragStartGridPos = null;
+      this.viewDragDidPan = false;
+      this.lastRoadBuildPos = null;
+      this.lastErasePos = null;
+      if (this.spacebarPressed) {
+        this.canvas.style.cursor = 'grabbing';
+      } else {
+        this.canvas.style.cursor = this.mode === 'erase' ? 'crosshair' : 'default';
+      }
+      eventBus.emit('road:drag_end');
+      return;
+    }
+
     // If spacebar was held, this was just panning - don't do anything else
     if (this.spacebarPressed) {
       this.canvas.style.cursor = 'grab';

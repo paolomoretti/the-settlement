@@ -51,7 +51,7 @@ npm run preview  # Preview production build
 - **Map:** 1000x1000 tiles, procedurally generated from a seed using Perlin-like noise
 - **Rendering:** Viewport culling, isometric depth sorting (back-to-front), minimap with offscreen canvas cache
 - **Save/Load:** localStorage - stores RLE-encoded terrain, explored tiles, roads, buildings. Terrain is generated once on new game and persisted; loads restore exact saved terrain without regeneration
-- **Input modes:** view, build_road, build_warehouse, build_lumberjack, select (drag)
+- **Input modes:** view, build_road, build_warehouse, build_lumberjack, select (drag); **right mouse drag always pans** (never places or selects on the main canvas)
 
 ## Current State
 
@@ -68,6 +68,7 @@ Not yet implemented: tool requirements for workers, mine food system (bread/fish
 - [Asset Guide](.claude/ASSET_GUIDE.md) - Comprehensive guide for creating game sprites
 - [AI Prompt Template](.claude/AI_PROMPT_TEMPLATE.txt) - Quick-reference template for AI image generation
 - [Performance Guidelines](.claude/PERFORMANCE.md) - Mandatory rules for rendering, textures, and canvas performance
+- [Game inputs & controls](.claude/GAME_INPUTS.md) - **Player-facing input reference** — mouse (incl. right-pan), wheel, modes, toolbar, minimap, touch, Alt insight; source for in-game help
 - [Keyboard Shortcuts](.claude/KEYBOARD_SHORTCUTS.md) - Centralized shortcut system using hotkeys-js, all bindings and how to add more
 - [Building Dependencies](.claude/BUILDING_DEPENDENCIES.md) - **Local storage, demand routing, production chains** — how buildings receive inputs and produce outputs
 - [Construction Delivery](.claude/CONSTRUCTION_DELIVERY.md) - **Material delivery to construction sites** — builder workers, material dispatch, construction flow

@@ -105,7 +105,7 @@
     "requiredTool": "shovel",
     "production": {
       "outputs": { "planted_tree": 1 },
-      "productionTime": 120,
+      "productionTime": 300,
       "continuous": true,
       "maxOutputBuffer": 6
     },
@@ -231,7 +231,7 @@
       "productionTime": 180,
       "continuous": true,
       "maxOutputBuffer": 6,
-      "maxGatherRadius": 16,
+      "maxGatherRadius": 25,
       "maxGatherWalkCells": 36
     },
     "animation": {

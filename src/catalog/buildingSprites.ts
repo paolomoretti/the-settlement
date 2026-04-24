@@ -27,6 +27,8 @@ export const BUILDING_FINAL_SPRITES: Record<string, string> = {
   gold_mine: '/assets/buildings/gold_mine.png',
   granite_mine: '/assets/buildings/granite_mine.png',
   iron_smelter: '/assets/buildings/iron_smelter.png',
+  metalworks: '/assets/buildings/metalworks.png',
+  mint: '/assets/buildings/mint.png',
 };
 
 /**
@@ -115,6 +117,16 @@ export const BUILDING_CONSTRUCTION_SPRITES: Record<string, string[]> = {
     '/assets/buildings/iron_smelter_build_0.png',
     '/assets/buildings/iron_smelter_build_1.png',
     '/assets/buildings/iron_smelter_build_2.png',
+  ],
+  metalworks: [
+    '/assets/buildings/metalworks_build_0.png',
+    '/assets/buildings/metalworks_build_1.png',
+    '/assets/buildings/metalworks_build_2.png',
+  ],
+  mint: [
+    '/assets/buildings/mint_build_0.png',
+    '/assets/buildings/mint_build_1.png',
+    '/assets/buildings/mint_build_2.png',
   ],
 };
 

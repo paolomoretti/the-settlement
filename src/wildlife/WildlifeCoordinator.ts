@@ -38,7 +38,7 @@ export interface WildRabbit {
 
 const SPAWN_INTERVAL_MS = 120_000;
 /** Explored rabbit-habitat tiles per batch / per 3 rabbits of cap (see countExploredRabbitHabitatCells). */
-const HABITAT_TILES_PER_CHUNK = 500;
+const HABITAT_TILES_PER_CHUNK = 2000;
 const RABBITS_PER_HABITAT_CHUNK = 3;
 const WANDER_INTERVAL_MS = 40_000;
 const INITIAL_MIN = 2;

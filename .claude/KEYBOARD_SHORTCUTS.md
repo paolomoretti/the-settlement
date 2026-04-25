@@ -19,7 +19,7 @@ All keyboard shortcuts are defined and registered in `src/input/KeyboardShortcut
 | **R** | no modal dialog | Enter build road mode |
 | **E** | no modal dialog | Erase tool (roads, buildings, trees); drag to strip tiles like roads |
 | **B** | no modal dialog | Toggle building menu |
-| **S** | no modal dialog | Quick save (auto-saves to last slot, or opens dialog if first save) |
+| **S** | no modal dialog | Save to the current manually picked slot, or open the save dialog if this game has not been manually saved yet |
 | **Arrow Up** | view mode, no modal dialog | Pan camera up |
 | **Arrow Down** | view mode, no modal dialog | Pan camera down |
 | **Arrow Left** | view mode, no modal dialog | Pan camera left |

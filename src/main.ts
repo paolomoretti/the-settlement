@@ -39,6 +39,8 @@ const saveSession = new GameSaveSession({
   getGame: () => game,
   isAutosaveEnabled: () => loadOptions().autosave,
   toast: showToast,
+  saveToast: showSaveToast,
+  onSlotsChanged: updateWelcomeLoadButton,
 });
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -99,6 +101,34 @@ function showScreen(screen: 'welcome' | 'game'): void {
 function updateWelcomeLoadButton(): void {
   const btn = document.getElementById('btn-load-game-welcome') as HTMLButtonElement;
   if (btn) btn.disabled = !anySaveSlotsExist();
+}
+
+function openSaveSlotDialog(): void {
+  saveSession.openSaveDialog(undefined, 'Save As — pick a slot');
+}
+
+function showSaveToast(): void {
+  showToast('Game saved', {
+    duration: 5000,
+    messageAsButton: true,
+    action: {
+      label: '✎',
+      title: 'Pick save slot',
+      onClick: openSaveSlotDialog,
+    },
+  });
+}
+
+function manualSaveOrPickSlot(): void {
+  const slot = saveSession.getCurrentSlot();
+  if (slot !== null && saveSession.hasManualSaveSlot()) {
+    const meta = saveSession.getSlotMeta(slot);
+    if (meta && saveSession.saveToSlot(slot, meta.name, { manual: true })) {
+      showSaveToast();
+      return;
+    }
+  }
+  saveSession.openSaveDialog(undefined, 'Save Game — pick a slot');
 }
 
 function launchGame(canvas: HTMLCanvasElement, saveData?: unknown): void {
@@ -208,19 +238,7 @@ function setupGameUI(game: Game): void {
   });
 
   document.getElementById('btn-save')?.addEventListener('click', () => {
-    const slot = saveSession.getCurrentSlot();
-    if (slot !== null) {
-      const meta = saveSession.getSlotMeta(slot);
-      if (meta && saveSession.saveToSlot(slot, meta.name)) {
-        showToast('Game saved!');
-        return;
-      }
-    }
-    saveSession.openSaveDialog(undefined, 'Save Game — pick a slot');
-  });
-
-  document.getElementById('btn-save-as')?.addEventListener('click', () => {
-    saveSession.openSaveDialog(undefined, 'Save As — pick a slot');
+    manualSaveOrPickSlot();
   });
 
   eventBus.on('open:save_dialog', () => {
@@ -228,15 +246,7 @@ function setupGameUI(game: Game): void {
   });
 
   eventBus.on('quick:save', () => {
-    const slot = saveSession.getCurrentSlot();
-    if (slot !== null) {
-      const meta = saveSession.getSlotMeta(slot);
-      if (meta && saveSession.saveToSlot(slot, meta.name)) {
-        showToast('Game saved!');
-        return;
-      }
-    }
-    saveSession.openSaveDialog(undefined, 'Save Game — pick a slot');
+    manualSaveOrPickSlot();
   });
 
   document.getElementById('btn-load')?.addEventListener('click', () => {

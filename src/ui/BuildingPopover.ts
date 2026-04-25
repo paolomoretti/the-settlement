@@ -18,9 +18,11 @@ export class BuildingPopover {
   private progressContainer: HTMLElement | null = null;
   private stoppedLabel: HTMLElement | null = null;
   private bufferContainer: HTMLElement | null = null;
+  private storageContainer: HTMLElement | null = null;
   private requirementsContainer: HTMLElement | null = null;
   private gatherWarningEl: HTMLElement | null = null;
   private militaryPanelEl: HTMLElement | null = null;
+  private staffingStatusEl: HTMLElement | null = null;
   private productionTimeSec: number = 0;
 
   constructor(game: Game) {
@@ -39,9 +41,11 @@ export class BuildingPopover {
       this.progressContainer = null;
       this.stoppedLabel = null;
       this.bufferContainer = null;
+      this.storageContainer = null;
       this.requirementsContainer = null;
       this.gatherWarningEl = null;
       this.militaryPanelEl = null;
+      this.staffingStatusEl = null;
     };
   }
 
@@ -67,7 +71,9 @@ export class BuildingPopover {
       this.popover.setTemporaryHidden(this.game.isDraggingEntity);
       this.updateProgressBar();
       this.updateBufferDisplay();
+      this.updateStorageDisplay();
       this.updateRequirements();
+      this.updateStaffingStatus();
       this.updateGatherWarning();
       this.updateMilitaryPanel();
 
@@ -90,14 +96,104 @@ export class BuildingPopover {
     this.progressContainer = null;
     this.stoppedLabel = null;
     this.bufferContainer = null;
+    this.storageContainer = null;
     this.requirementsContainer = null;
     this.gatherWarningEl = null;
     this.militaryPanelEl = null;
+    this.staffingStatusEl = null;
     this.popover.hide();
   }
 
   isVisible(): boolean {
     return this.popover.isVisible();
+  }
+
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  private getResourceName(resourceId: string): string {
+    return dataManager.getResource(resourceId as any)?.name || resourceId;
+  }
+
+  private getWorkerLabel(def: BuildingDefinition): string {
+    if (def.military?.soldierCapacity) return 'Soldier';
+    const flavorByTool: Record<string, string> = {
+      axe: 'Woodcutter',
+      saw: 'Sawyer',
+      pickaxe: def.id.includes('mine') ? 'Miner' : 'Stonemason',
+      shovel: 'Forester',
+      fishing_rod: 'Fisher',
+      scythe: 'Farmer',
+      hammer: 'Builder',
+      rolling_pin: 'Baker',
+      crucible: def.id === 'mint' ? 'Minter' : 'Smelter',
+      tongs: 'Blacksmith',
+      cleaver: 'Butcher',
+      bow: def.id === 'lookout_tower' ? 'Scout' : 'Hunter',
+    };
+    return def.requiredTool ? flavorByTool[def.requiredTool] || 'Worker' : 'Worker';
+  }
+
+  private renderResourceIcon(resourceId: string, className: string = ''): string {
+    const resource = dataManager.getResource(resourceId as any);
+    const fallbackSrc = `/assets/resources/${resourceId}.png`;
+    const primarySrc = resource?.icon || fallbackSrc;
+    const fallbackAttr = primarySrc === fallbackSrc
+      ? ''
+      : ` data-fallback="${this.escapeHtml(fallbackSrc)}"`;
+    const fallback = this.escapeHtml(this.getResourceName(resourceId).slice(0, 1).toUpperCase() || '?');
+    return (
+      `<span class="popover-resource-icon ${className}">` +
+      `<span class="popover-resource-icon-fallback">${fallback}</span>` +
+      `<img src="${this.escapeHtml(primarySrc)}" alt="" decoding="async"${fallbackAttr} onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;delete this.dataset.fallback;}else{this.remove();}">` +
+      `</span>`
+    );
+  }
+
+  private renderResourceChip(resourceId: string, amount?: number, extraClass: string = ''): string {
+    const name = this.escapeHtml(this.getResourceName(resourceId));
+    const amountText = amount && amount > 1 ? `<span class="popover-resource-amount">${amount}&times;</span>` : '';
+    return (
+      `<span class="popover-resource-chip ${extraClass}">` +
+      this.renderResourceIcon(resourceId) +
+      `<span class="popover-resource-name">${amountText}${name}</span>` +
+      `</span>`
+    );
+  }
+
+  private renderRecipeInputs(def: BuildingDefinition): string {
+    const inputs = def.production?.inputs ? Object.entries(def.production.inputs) : [];
+    const fixed = inputs
+      .filter(([, amount]) => (amount ?? 0) > 0)
+      .map(([id, amount]) => this.renderResourceChip(id, amount));
+    const anyGroups = (def.production?.inputsAny ?? []).map(group => {
+      const chips = group.resourceTypes
+        .map(id => this.renderResourceChip(id, undefined, 'popover-resource-chip--compact'))
+        .join('');
+      return (
+        `<span class="popover-any-input">` +
+        `<span class="popover-any-input-label">${group.amount}&times; any</span>` +
+        `<span class="popover-any-input-options">${chips}</span>` +
+        `</span>`
+      );
+    });
+
+    const all = [...fixed, ...anyGroups].join('');
+    return all || '<span class="popover-empty-note">None</span>';
+  }
+
+  private renderRecipeOutputs(def: BuildingDefinition): string {
+    const outputs = def.production ? Object.entries(def.production.outputs) : [];
+    return outputs
+      .filter(([, amount]) => (amount ?? 0) > 0)
+      .map(([id, amount]) => this.renderResourceChip(id, amount))
+      .join('') || '<span class="popover-empty-note">None</span>';
   }
 
   private updateMilitaryPanel(): void {
@@ -184,59 +280,6 @@ export class BuildingPopover {
     const production = this.currentEntity.getComponent(Production);
     if (!production) return;
 
-    const storage = this.currentEntity.getComponent(Storage);
-    if (storage && storage.isProductionStorage) {
-      const totalStored = storage.getTotalStored();
-      const totalBuffered = production.getTotalBuffered();
-      if (totalStored === 0 && totalBuffered === 0) {
-        this.bufferContainer.style.display = 'none';
-        return;
-      }
-      this.bufferContainer.style.display = '';
-      const ingredientLine =
-        totalStored > 0
-          ? (() => {
-              const isFull = storage.isFull();
-              const items = Object.entries(storage.items)
-                .filter(([, amt]) => amt > 0)
-                .map(([id, amt]) => {
-                  const res = dataManager.getResource(id as any);
-                  return `<img src="/assets/resources/${id}.png" class="resource-icon" onerror="this.style.display='none'">${amt} ${res?.name || id}`;
-                })
-                .join(', ');
-              return (
-                `<div><span class="popover-label">Ingredients:</span> ` +
-                `<span style="color:${isFull ? '#f44336' : '#4caf50'}">${totalStored}/${storage.capacity}</span>` +
-                `<span style="color:#aaa;margin-left:4px">(${items})</span>` +
-                (isFull ? `<span style="color:#f44336;margin-left:4px">⚠ Full</span>` : '') +
-                `</div>`
-              );
-            })()
-          : '';
-      const bufFull = production.status === 'stopped_full';
-      const pickupLine =
-        totalBuffered > 0
-          ? (() => {
-              const items = Object.entries(production.outputBuffer)
-                .filter(([, amt]) => amt > 0)
-                .map(([id, amt]) => {
-                  const res = dataManager.getResource(id as any);
-                  return `<img src="/assets/resources/${id}.png" class="resource-icon" onerror="this.style.display='none'">${amt} ${res?.name || id}`;
-                })
-                .join(', ');
-              return (
-                `<div><span class="popover-label">Outside (pickup):</span> ` +
-                `<span style="color:${bufFull ? '#f44336' : '#4caf50'}">${totalBuffered}/${production.maxOutputBuffer}</span>` +
-                `<span style="color:#aaa;margin-left:4px">(${items})</span>` +
-                (bufFull ? `<span style="color:#f44336;margin-left:4px">⚠ Full</span>` : '') +
-                `</div>`
-              );
-            })()
-          : '';
-      this.bufferContainer.innerHTML = ingredientLine + pickupLine;
-      return;
-    }
-
     const totalBuffered = production.getTotalBuffered();
     if (totalBuffered === 0) {
       this.bufferContainer.style.display = 'none';
@@ -248,17 +291,81 @@ export class BuildingPopover {
 
     const items = Object.entries(production.outputBuffer)
       .filter(([, amt]) => amt > 0)
-      .map(([id, amt]) => {
-        const res = dataManager.getResource(id as any);
-        return `<img src="/assets/resources/${id}.png" class="resource-icon" onerror="this.style.display='none'">${amt} ${res?.name || id}`;
-      })
-      .join(', ');
+      .map(([id, amt]) => this.renderResourceChip(id, amt))
+      .join('');
 
     this.bufferContainer.innerHTML =
-      `<span class="popover-label">Buffer:</span> ` +
-      `<span style="color:${isFull ? '#f44336' : '#4caf50'}">${totalBuffered}/${production.maxOutputBuffer}</span>` +
-      `<span style="color:#aaa;margin-left:4px">(${items})</span>` +
-      (isFull ? `<span style="color:#f44336;margin-left:4px">⚠ Full</span>` : '');
+      `<div class="popover-section-title">Ready for pickup</div>` +
+      `<div class="popover-storage-meta">` +
+      `<span class="${isFull ? 'popover-status-bad' : 'popover-status-good'}">${totalBuffered}/${production.maxOutputBuffer}</span>` +
+      (isFull ? `<span class="popover-status-bad">Full</span>` : '') +
+      `</div>` +
+      `<div class="popover-chip-row">${items}</div>`;
+  }
+
+  private updateStorageDisplay(): void {
+    if (!this.storageContainer || !this.currentEntity) return;
+    const storage = this.currentEntity.getComponent(Storage);
+    if (!storage) {
+      this.storageContainer.style.display = 'none';
+      return;
+    }
+
+    const totalStored = storage.getTotalStored();
+    const capacity = storage.capacity;
+    const isFull = storage.isFull();
+    const slotCount = capacity <= 20 ? capacity : Math.min(10, capacity);
+    const expandedItems: string[] = [];
+    for (const [id, amount] of Object.entries(storage.items)) {
+      for (let i = 0; i < amount && expandedItems.length < slotCount; i++) {
+        expandedItems.push(id);
+      }
+      if (expandedItems.length >= slotCount) break;
+    }
+
+    const cells = Array.from({ length: slotCount }, (_, idx) => {
+      const id = expandedItems[idx];
+      if (!id) return '<span class="popover-storage-cell"></span>';
+      const title = this.escapeHtml(this.getResourceName(id));
+      return (
+        `<span class="popover-storage-cell popover-storage-cell--filled" title="${title}">` +
+        this.renderResourceIcon(id, 'popover-resource-icon--slot') +
+        `</span>`
+      );
+    }).join('');
+
+    const accepts = storage.accepts?.length
+      ? `<div class="popover-storage-accepts">Accepts ${storage.accepts
+          .map(id => this.renderResourceChip(id, undefined, 'popover-resource-chip--compact'))
+          .join('')}</div>`
+      : '';
+    const previewNote = capacity > slotCount
+      ? `<span class="popover-empty-note">showing first ${slotCount}</span>`
+      : '';
+
+    this.storageContainer.style.display = '';
+    this.storageContainer.innerHTML =
+      `<div class="popover-section-title">Storage</div>` +
+      `<div class="popover-storage-meta">` +
+      `<span class="${isFull ? 'popover-status-bad' : 'popover-status-good'}">${totalStored}/${capacity}</span>` +
+      (isFull ? `<span class="popover-status-bad">Full</span>` : previewNote) +
+      `</div>` +
+      `<div class="popover-storage-grid" style="--storage-slots:${slotCount}">${cells}</div>` +
+      accepts;
+  }
+
+  private updateStaffingStatus(): void {
+    if (!this.staffingStatusEl || !this.currentEntity) return;
+    const building = this.currentEntity.getComponent(Building);
+    if (!building) return;
+    const def = dataManager.getBuilding(building.buildingType as BuildingType);
+    if (!def?.population?.requires) return;
+
+    const isWaitingForTool = building.isComplete() && !!def.requiredTool && !building.hasOperator;
+    this.staffingStatusEl.className = isWaitingForTool
+      ? 'popover-staff-status popover-status-warn'
+      : 'popover-staff-status popover-status-good';
+    this.staffingStatusEl.textContent = isWaitingForTool ? 'En route' : 'Assigned';
   }
 
   private updateRequirements(): void {
@@ -281,11 +388,6 @@ export class BuildingPopover {
       const builderColor = building.builderArrived ? '#4caf50' : '#ffb74d';
       const builderText = building.builderArrived ? 'Builder: Arrived' : 'Builder: En route...';
       lines.push(`<span style="color:${builderColor}">${builderText}</span>`);
-    }
-
-    if (building.isComplete() && !building.hasOperator && def?.requiredTool) {
-      const toolName = dataManager.getResource(def.requiredTool as any)?.name || def.requiredTool;
-      lines.push(`<span style="color:#ffb74d">${toolName} worker: En route...</span>`);
     }
 
     if (lines.length === 0) {
@@ -357,38 +459,13 @@ export class BuildingPopover {
 
     if (def?.production) {
       const prod = document.createElement('div');
-      prod.className = 'popover-production';
-
-      const outputs = Object.entries(def.production.outputs);
-      const inputs = def.production.inputs ? Object.entries(def.production.inputs) : [];
-      const inputsAny = def.production.inputsAny ?? [];
-
-      if (inputs.length > 0 || inputsAny.length > 0) {
-        const fixedParts = inputs
-          .filter(([, n]) => (n ?? 0) > 0)
-          .map(([id]) => {
-            const res = dataManager.getResource(id as any);
-            return res?.name || id;
-          });
-        const anyParts = inputsAny.map(g => {
-          const names = g.resourceTypes
-            .map(id => dataManager.getResource(id)?.name ?? id)
-            .join(' / ');
-          return g.amount > 1 ? `${g.amount}× (${names})` : `(${names})`;
-        });
-        const inputStr = [...fixedParts, ...anyParts].join(' + ');
-        const outputStr = outputs.map(([id, amt]) => {
-          const res = dataManager.getResource(id as any);
-          return `${amt} ${res?.name || id}`;
-        }).join(', ');
-        prod.innerHTML = `<span class="popover-label">Converts:</span> ${inputStr} &rarr; ${outputStr}`;
-      } else {
-        const outputStr = outputs.map(([id, amt]) => {
-          const res = dataManager.getResource(id as any);
-          return `${amt} ${res?.name || id}`;
-        }).join(', ');
-        prod.innerHTML = `<span class="popover-label">Produces:</span> ${outputStr}<br><span class="popover-label">Every:</span> ${def.production.productionTime}s`;
-      }
+      prod.className = 'popover-detail-card popover-production';
+      prod.innerHTML =
+        `<div class="popover-section-title">Input</div>` +
+        `<div class="popover-chip-row">${this.renderRecipeInputs(def)}</div>` +
+        `<div class="popover-section-title popover-section-title--spaced">Output</div>` +
+        `<div class="popover-chip-row">${this.renderRecipeOutputs(def)}</div>` +
+        `<div class="popover-cycle-note">Cycle: ${def.production.productionTime}s</div>`;
 
       if (building.state === 'complete') {
         const barContainer = document.createElement('div');
@@ -423,7 +500,7 @@ export class BuildingPopover {
       el.appendChild(prod);
 
       const bufferRow = document.createElement('div');
-      bufferRow.className = 'popover-row';
+      bufferRow.className = 'popover-detail-card popover-runtime-buffer';
       bufferRow.style.display = 'none';
       this.bufferContainer = bufferRow;
       el.appendChild(bufferRow);
@@ -431,23 +508,36 @@ export class BuildingPopover {
 
     if (def?.population) {
       const pop = document.createElement('div');
-      pop.className = 'popover-row';
+      pop.className = 'popover-detail-card popover-staffing';
       if (def.population.provides) {
-        pop.innerHTML = `<span class="popover-label">Housing:</span> +${def.population.provides} population`;
+        pop.innerHTML =
+          `<div class="popover-section-title">Population</div>` +
+          `<div class="popover-staff-row">` +
+          `<span class="popover-worker-name">Housing</span>` +
+          `<span class="popover-staff-status popover-status-good">+${def.population.provides}</span>` +
+          `</div>`;
       }
       if (def.population.requires) {
-        pop.innerHTML = `<span class="popover-label">Workers:</span> ${def.population.requires} needed`;
+        const workerLabel = this.escapeHtml(this.getWorkerLabel(def));
+        const tool = def.requiredTool
+          ? this.renderResourceChip(def.requiredTool, undefined, 'popover-resource-chip--tool')
+          : '<span class="popover-empty-note">No tool</span>';
+        pop.innerHTML =
+          `<div class="popover-section-title">Worker</div>` +
+          `<div class="popover-staff-row">` +
+          `<span class="popover-worker-name">${def.population.requires} ${workerLabel}</span>` +
+          `<span class="popover-staff-tool">${tool}</span>` +
+          `<span class="popover-staff-status"></span>` +
+          `</div>`;
+        this.staffingStatusEl = pop.querySelector('.popover-staff-status');
       }
       el.appendChild(pop);
     }
 
     if (def?.storage) {
       const storage = document.createElement('div');
-      storage.className = 'popover-row';
-      const accepts = def.storage.accepts?.length
-        ? ` (accepts: ${def.storage.accepts.join(', ')})`
-        : '';
-      storage.innerHTML = `<span class="popover-label">Storage:</span> ${def.storage.capacity} slots${accepts}`;
+      storage.className = 'popover-detail-card popover-storage-panel';
+      this.storageContainer = storage;
       el.appendChild(storage);
     }
 

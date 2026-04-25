@@ -30,12 +30,15 @@ export interface GameSaveSessionDeps {
   getGame: () => Game | null;
   isAutosaveEnabled: () => boolean;
   toast: (msg: string) => void;
+  saveToast?: () => void;
+  onSlotsChanged?: () => void;
 }
 
 export interface SlotPayload {
   name: string;
   timestamp: number;
   data: unknown;
+  manual?: boolean;
 }
 
 export function anySaveSlotsExist(): boolean {
@@ -91,28 +94,48 @@ export class GameSaveSession {
     }
   }
 
-  getSlotMeta(index: number): { name: string; timestamp: number } | null {
+  getSlotMeta(index: number): { name: string; timestamp: number; manual: boolean } | null {
     const data = this.getFullSlotData(index);
     if (!data) return null;
-    return { name: data.name, timestamp: data.timestamp };
+    return { name: data.name, timestamp: data.timestamp, manual: data.manual !== false };
   }
 
-  saveToSlot(index: number, name: string): boolean {
+  hasManualSaveSlot(): boolean {
+    if (this.currentSlot === null) return false;
+    const meta = this.getSlotMeta(this.currentSlot);
+    return !!meta?.manual;
+  }
+
+  saveToSlot(index: number, name: string, opts: { manual?: boolean } = {}): boolean {
     const game = this.deps.getGame();
     if (!game) return false;
     try {
       const gameData = game.getSaveData();
-      const slotData: SlotPayload = { name, timestamp: Date.now(), data: gameData };
+      const slotData: SlotPayload = {
+        name,
+        timestamp: Date.now(),
+        data: gameData,
+        manual: opts.manual !== false,
+      };
       const key = `${SAVE_SLOT_PREFIX}${index}`;
       localStorage.setItem(key, JSON.stringify(slotData));
       localStorage.setItem(LAST_SAVE_KEY, index.toString());
       this.currentSlot = index;
+      this.deps.onSlotsChanged?.();
       return true;
     } catch (e) {
       console.error('saveToSlot failed:', e);
       this.deps.toast('Save failed (storage may be full)');
       return false;
     }
+  }
+
+  clearSlot(index: number): void {
+    localStorage.removeItem(`${SAVE_SLOT_PREFIX}${index}`);
+    if (this.currentSlot === index || this.parseResumeSlotIndex() === index) {
+      this.clearResumeAndSlot();
+    }
+    this.deps.onSlotsChanged?.();
   }
 
   private findFirstEmptySaveSlot(): number | null {
@@ -133,11 +156,11 @@ export class GameSaveSession {
       return true;
     }
     if (this.currentSlot !== null && !this.getSlotMeta(this.currentSlot)) {
-      return this.saveToSlot(this.currentSlot, 'autosave');
+      return this.saveToSlot(this.currentSlot, 'autosave', { manual: false });
     }
     const empty = this.findFirstEmptySaveSlot();
     const index = empty !== null ? empty : 0;
-    return this.saveToSlot(index, 'autosave');
+    return this.saveToSlot(index, 'autosave', { manual: false });
   }
 
   openSaveDialog(onComplete?: () => void, dialogTitle: string = 'Save Game'): void {
@@ -149,7 +172,7 @@ export class GameSaveSession {
     this.renderSlots(slotsContainer, 'save', (slotIndex, name) => {
       if (!this.saveToSlot(slotIndex, name!)) return;
       dialog.style.display = 'none';
-      this.deps.toast('Game saved!');
+      this.deps.saveToast?.() ?? this.deps.toast('Game saved!');
       onComplete?.();
     });
 
@@ -200,7 +223,10 @@ export class GameSaveSession {
           <span class="slot-number">${i + 1}.</span>
           <span class="slot-name">${GameSaveSession.escapeHtml(meta.name)}</span>
           <span class="slot-date">${dateStr}</span>
-          ${mode === 'save' ? '<span class="slot-edit-btn" title="Rename">&#9998;</span>' : ''}
+          <span class="slot-actions">
+            ${mode === 'save' ? '<button type="button" class="slot-icon-btn slot-edit-btn" title="Rename" aria-label="Rename save">&#9998;</button>' : ''}
+            <button type="button" class="slot-icon-btn slot-clear-btn" title="Clear slot" aria-label="Clear save slot">&#128465;</button>
+          </span>
         `;
         } else {
           slot.innerHTML = `
@@ -231,7 +257,14 @@ export class GameSaveSession {
         });
       } else if (mode === 'save' && meta) {
         slot.addEventListener('click', (e) => {
-          if ((e.target as HTMLElement).classList.contains('slot-edit-btn')) {
+          const target = e.target as HTMLElement;
+          if (target.closest('.slot-clear-btn')) {
+            e.stopPropagation();
+            this.clearSlot(i);
+            this.deps.toast('Save slot cleared');
+            this.renderSlots(container, mode, onAction);
+          } else if (target.closest('.slot-edit-btn')) {
+            e.stopPropagation();
             this.renderSlots(container, mode, onAction, i);
           } else {
             onAction(i, meta.name);
@@ -242,7 +275,17 @@ export class GameSaveSession {
           this.renderSlots(container, mode, onAction, i);
         });
       } else if (mode === 'load' && meta) {
-        slot.addEventListener('click', () => onAction(i));
+        slot.addEventListener('click', (e) => {
+          const target = e.target as HTMLElement;
+          if (target.closest('.slot-clear-btn')) {
+            e.stopPropagation();
+            this.clearSlot(i);
+            this.deps.toast('Save slot cleared');
+            this.renderSlots(container, mode, onAction);
+            return;
+          }
+          onAction(i);
+        });
       } else if (mode === 'load') {
         slot.classList.add('disabled');
       }
@@ -308,7 +351,7 @@ export class GameSaveSession {
     if (!this.ensureAutoSaveSlot()) return;
     if (hadBoundSlot) {
       const meta = this.getSlotMeta(this.currentSlot!);
-      if (!meta || !this.saveToSlot(this.currentSlot!, meta.name)) return;
+      if (!meta || !this.saveToSlot(this.currentSlot!, meta.name, { manual: meta.manual })) return;
     }
     this.deps.toast('Auto saved');
   }
@@ -336,6 +379,6 @@ export class GameSaveSession {
     if (!this.deps.isAutosaveEnabled() || !this.deps.getGame()) return;
     if (!this.ensureAutoSaveSlot()) return;
     const meta = this.getSlotMeta(this.currentSlot!);
-    this.saveToSlot(this.currentSlot!, meta?.name ?? 'autosave');
+    this.saveToSlot(this.currentSlot!, meta?.name ?? 'autosave', { manual: meta?.manual ?? false });
   }
 }

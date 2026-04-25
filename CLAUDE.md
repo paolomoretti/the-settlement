@@ -72,6 +72,7 @@ Not yet implemented: tool requirements for workers, mine food system (bread/fish
 - [Performance Guidelines](.claude/PERFORMANCE.md) - Mandatory rules for rendering, textures, and canvas performance
 - [Game inputs & controls](.claude/GAME_INPUTS.md) - **Player-facing input reference** — mouse (incl. right-pan), wheel, modes, toolbar, minimap, touch, Alt insight; source for in-game help
 - [Keyboard Shortcuts](.claude/KEYBOARD_SHORTCUTS.md) - Centralized shortcut system using hotkeys-js, all bindings and how to add more
+- [Save Slots](.claude/SAVE_SLOTS.md) - Save/load slot storage, resume pointer, autosave binding, and clear-slot behavior
 - [Building Dependencies](.claude/BUILDING_DEPENDENCIES.md) - **Local storage, demand routing, production chains** — how buildings receive inputs and produce outputs
 - [Construction Delivery](.claude/CONSTRUCTION_DELIVERY.md) - **Material delivery to construction sites** — builder workers, material dispatch, construction flow
 - [Toast Notifications](.claude/TOAST.md) - Reusable short-lived messages via `showToast()` or EventBus `'toast'` event

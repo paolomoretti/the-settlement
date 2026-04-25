@@ -74,8 +74,7 @@ Behavior depends on **input mode** (toolbar, hotkeys, or post-placement return t
 | **Build Road** `[R]` | Enter road building mode. |
 | **Erase** `[E]` | Enter erase mode. |
 | **Buildings** `[B]` | Open / toggle the building menu overlay. |
-| **Save Game** `[S]` | Quick-save to the current slot, or open save dialog if none. |
-| **Save As…** | Open save dialog to pick a slot and name. |
+| **Save Game** `[S]` | Save to the current manually picked slot, or open the save dialog if this game has not been manually saved yet. Successful saves show a top toast with a pencil action for picking a different slot. |
 | **Load Game** | Open load / save dialog focused on loading. |
 
 ## Top-right chrome

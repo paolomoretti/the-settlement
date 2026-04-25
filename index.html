@@ -334,8 +334,8 @@
       position: absolute;
       z-index: 10;
       background: rgba(10, 10, 10, 0.92);
-      min-width: 220px;
-      max-width: 280px;
+      min-width: 260px;
+      max-width: 340px;
       pointer-events: auto;
       font-size: 12px;
     }
@@ -394,13 +394,211 @@
     }
 
     .popover-production {
+      color: #ccc;
+    }
+
+    .popover-detail-card {
       margin: 8px 0;
-      padding: 6px 8px;
-      background: rgba(255, 255, 255, 0.04);
+      padding: 7px 8px;
+      background: rgba(255, 255, 255, 0.045);
+      border: 1px solid rgba(154, 183, 145, 0.18);
       border-radius: 4px;
-      color: #9acd32;
+      color: #ccc;
       font-size: 11px;
-      line-height: 1.5;
+      line-height: 1.35;
+    }
+
+    .popover-section-title {
+      color: #9ab791;
+      font-size: 10px;
+      line-height: 1;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .popover-section-title--spaced {
+      margin-top: 8px;
+    }
+
+    .popover-chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      align-items: center;
+    }
+
+    .popover-resource-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+      padding: 3px 6px 3px 4px;
+      background: rgba(0, 0, 0, 0.24);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 999px;
+      color: #e0e0d0;
+      white-space: nowrap;
+    }
+
+    .popover-resource-chip--compact {
+      padding-right: 4px;
+    }
+
+    .popover-resource-chip--tool {
+      border-color: rgba(255, 183, 77, 0.35);
+      background: rgba(255, 183, 77, 0.08);
+    }
+
+    .popover-resource-icon {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+      color: #9ab791;
+      font-size: 10px;
+      font-weight: bold;
+    }
+
+    .popover-resource-icon img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+
+    .popover-resource-icon--slot {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+    }
+
+    .popover-resource-icon-fallback {
+      opacity: 0.8;
+    }
+
+    .popover-resource-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .popover-resource-amount {
+      color: #ffff99;
+      margin-right: 2px;
+    }
+
+    .popover-any-input {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 100%;
+    }
+
+    .popover-any-input-label {
+      color: #ffcc80;
+      font-size: 10px;
+      white-space: nowrap;
+    }
+
+    .popover-any-input-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .popover-cycle-note,
+    .popover-empty-note {
+      color: #888;
+      font-size: 10px;
+    }
+
+    .popover-cycle-note {
+      margin-top: 8px;
+    }
+
+    .popover-staff-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .popover-worker-name {
+      color: #eee;
+      min-width: 0;
+    }
+
+    .popover-staff-tool {
+      grid-column: 1 / -1;
+    }
+
+    .popover-staff-status {
+      justify-self: end;
+      font-size: 10px;
+    }
+
+    .popover-status-good {
+      color: #7cb342;
+    }
+
+    .popover-status-warn {
+      color: #ffb74d;
+    }
+
+    .popover-status-bad {
+      color: #f44336;
+    }
+
+    .popover-storage-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+      color: #aaa;
+      font-size: 10px;
+    }
+
+    .popover-storage-grid {
+      display: grid;
+      grid-template-columns: repeat(var(--storage-slots, 10), minmax(0, 1fr));
+      gap: 3px;
+      width: 100%;
+    }
+
+    .popover-storage-cell {
+      aspect-ratio: 1;
+      min-width: 0;
+      border: 1px solid rgba(154, 183, 145, 0.28);
+      border-radius: 3px;
+      background: rgba(0, 0, 0, 0.22);
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+    }
+
+    .popover-storage-cell--filled {
+      background: rgba(122, 151, 113, 0.16);
+      border-color: rgba(154, 183, 145, 0.5);
+    }
+
+    .popover-storage-accepts {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px;
+      margin-top: 6px;
+      color: #888;
+      font-size: 10px;
     }
 
     .popover-progress {
@@ -1045,19 +1243,33 @@
       flex-shrink: 0;
     }
 
-    .slot-edit-btn {
-      color: #666;
-      font-size: 14px;
-      padding: 2px 6px;
-      cursor: pointer;
+    .slot-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
       flex-shrink: 0;
       margin-left: 8px;
+    }
+
+    .slot-icon-btn {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: #666;
+      font-size: 14px;
+      line-height: 1;
+      padding: 4px 6px;
+      cursor: pointer;
       border-radius: 3px;
     }
 
-    .slot-edit-btn:hover {
+    .slot-icon-btn:hover {
       color: #ffff00;
       background: rgba(255, 255, 255, 0.1);
+    }
+
+    .slot-clear-btn:hover {
+      color: #ff6b6b;
     }
 
     .slot-name-input {
@@ -1153,11 +1365,44 @@
       opacity: 0;
       transform: translateY(-8px);
       transition: opacity 0.4s, transform 0.4s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      pointer-events: auto;
     }
 
     .toast.visible {
       opacity: 1;
       transform: translateY(0);
+    }
+
+    .toast-message-btn,
+    .toast-action-btn {
+      font-family: 'Courier New', monospace;
+      font-weight: bold;
+      line-height: 1;
+      border-radius: 4px;
+    }
+
+    .toast-message-btn {
+      color: #ffff00;
+      background: rgba(74, 103, 65, 0.28);
+      border: 1px solid #6b8e5f;
+      padding: 6px 10px;
+      cursor: default;
+    }
+
+    .toast-action-btn {
+      color: #fff6a6;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      padding: 5px 8px;
+      cursor: pointer;
+    }
+
+    .toast-action-btn:hover {
+      color: #ffff00;
+      background: rgba(255, 255, 255, 0.16);
     }
 
     /* Canvas delayed hover (buildings, rock tiles, …) */
@@ -1291,12 +1536,6 @@
             </span>
             <span class="icon-palette-label">
               <span class="dock-toolbar-caption">Save Game <span class="shortcut-hint">[S]</span></span>
-            </span>
-          </button>
-          <button id="btn-save-as" type="button" class="chromeless-icon-btn dock-toolbar-btn">
-            <span class="icon-palette-img-wrap icon-palette-img-wrap--placeholder" aria-hidden="true">⋯</span>
-            <span class="icon-palette-label">
-              <span class="dock-toolbar-caption">Save As… <span class="dock-toolbar-subhint">Pick a slot</span></span>
             </span>
           </button>
           <button id="btn-load" type="button" class="chromeless-icon-btn dock-toolbar-btn">

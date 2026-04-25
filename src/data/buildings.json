@@ -36,6 +36,15 @@
     "name": "Hut",
     "description": "Basic housing for 3 workers.",
     "size": { "width": 2, "height": 2 },
+    "chimneySmoke": {
+      "offsetX": -2,
+      "offsetY": -2,
+      "density": 0.7,
+      "schedule": {
+        "everySec": 30,
+        "onSec": 5
+      }
+    },
     "visual": { "buildingHeight": 50, "color": "#8b6914", "spriteScale": 1.3 },
     "buildCost": { "wood_plank": 2 },
     "buildTime": 20,
@@ -288,6 +297,15 @@
     "buildTime": 35,
     "requiresRoad": true,
     "requiredTool": "scythe",
+    "chimneySmoke": {
+      "offsetX": 48,
+      "offsetY": -36,
+      "density": 0.8,
+      "schedule": {
+        "everySec": 30,
+        "onSec": 10
+      }
+    },
     "production": {
       "outputs": { "grain": 1 },
       "productionTime": 45,
@@ -567,6 +585,11 @@
     "name": "Iron Smelter",
     "description": "Smelts iron ore and coal into iron bars.",
     "size": { "width": 2, "height": 2 },
+    "chimneySmoke": {
+      "offsetX": 2,
+      "offsetY": -50,
+      "density": 1
+    },
     "visual": { "buildingHeight": 70, "color": "#d2691e", "spriteScale": 1.4, "offsetX": -1 },
     "buildCost": { "wood_plank": 2, "stone": 2 },
     "buildTime": 35,
@@ -618,10 +641,15 @@
     "buildTime": 35,
     "requiresRoad": true,
     "requiredTool": "tongs",
+    "chimneySmoke": {
+      "offsetX": 28,
+      "offsetY": 14,
+      "density": 2
+    },
     "production": {
       "outputs": { "hammer": 1 },
       "inputs": { "wood_plank": 1, "iron_bar": 1 },
-      "productionTime": 30,
+      "productionTime": 90,
       "continuous": true
     },
     "storage": { "capacity": 10 },

@@ -53,7 +53,7 @@ When a building is placed, resources are deducted from base camp storage and dis
 ```
 
 - **awaiting_materials**: Building placed, first construction sprite shown (progress 0). Waiting for materials + builder.
-- **under_construction**: Builder and materials present. Wall-clock timer running. Construction overlay with progress bar.
+- **under_construction**: Builder and materials present. Wall-clock timer running. Construction overlay with progress bar plus centered pulsed smoke (15s on, 3–5s off) for all building sizes.
 - **complete**: Building operational. Builder returned to base camp.
 
 ---

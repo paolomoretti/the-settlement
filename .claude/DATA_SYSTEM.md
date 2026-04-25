@@ -89,6 +89,17 @@ All buildings are defined in `src/data/buildings.json`.
     "sprite": "/assets/buildings/lumberjack.png",
     "spriteScale": 1.2    // Optional: multiplies footprint-fitted sprite size (default 1)
   },
+
+  // Optional chimney smoke (building-local pixel offsets)
+  "chimneySmoke": {
+    "offsetX": 2,
+    "offsetY": -50,
+    "density": 1,
+    "schedule": {
+      "everySec": 30,   // Optional override: cycle length
+      "onSec": 5        // Emit duration within each cycle
+    }
+  },
   
   // Construction requirements
   "buildCost": {
@@ -129,6 +140,8 @@ All buildings are defined in `src/data/buildings.json`.
   "isHeadquarters": false
 }
 ```
+
+If `chimneySmoke.schedule` is present, smoke follows that schedule and does **not** depend on `production.status === 'producing'`.
 
 ### Production Chains
 

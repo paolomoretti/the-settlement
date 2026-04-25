@@ -29,6 +29,7 @@ import {
 } from '@/rendering/WorkerSpritePainter';
 import { RABBIT_JUMP_DURATION_MS, type WildRabbit } from '@/wildlife/WildlifeCoordinator';
 import { CORDON_POLE_STRIDE_CELLS, territoryKey } from '@/map/TerritoryCoordinator';
+import { createChimneySmoke, type ChimneySmoke } from '@/rendering/chimneySmoke';
 
 /** World-space half-plane clip for long straight iso shores (same screen row / column of tile centers). */
 type FlatShoreCut =
@@ -43,10 +44,19 @@ const RESOURCE_ICON_DRAW_SCALE = 1.25;
 /** TEMP (visual QA): time between decorative fish jumps — restore to `30_000` / `300_000` when done. */
 const FISH_SPAWN_GAP_MIN_MS = 400;
 const FISH_SPAWN_GAP_MAX_MS = 2_000;
+const CONSTRUCTION_SMOKE_ON_SEC = 15;
+const CONSTRUCTION_SMOKE_OFF_MIN_SEC = 3;
+const CONSTRUCTION_SMOKE_OFF_MAX_SEC = 5;
 
 function nextFishSpawnGapMs(): number {
   return FISH_SPAWN_GAP_MIN_MS + Math.random() * (FISH_SPAWN_GAP_MAX_MS - FISH_SPAWN_GAP_MIN_MS);
 }
+
+type ConstructionSmokeState = {
+  smoke: ChimneySmoke;
+  phase: 'on' | 'off';
+  phaseRemainingSec: number;
+};
 
 export class RenderSystem extends System {
   private ctx: CanvasRenderingContext2D;
@@ -92,6 +102,10 @@ export class RenderSystem extends System {
   private fishJumps: Array<{ x: number; y: number; startTime: number }> = [];
   private nextFishSpawn: number = 0;
   private eraseSmokePuffs: Array<{ gx: number; gy: number; start: number }> = [];
+  /** Per-building chimney smoke (entity id → instance). */
+  private chimneySmokes = new Map<number, ChimneySmoke>();
+  /** Per-building construction smoke with on/off pulse phases. */
+  private constructionSmokes = new Map<number, ConstructionSmokeState>();
   /** Survey flag + dominant-ore hint icons (world space; cleared when null). */
   private surveyOverlay: SurveyOverlayForRender | null = null;
   /** Tile outline while the grass “Send Surveyor” menu is open. */
@@ -270,7 +284,71 @@ export class RenderSystem extends System {
     return entity.hasComponent(Position) && entity.hasComponent(Renderable);
   }
 
+  /** Advance chimney particles; drive emitters from production or optional schedule override. */
+  private updateChimneySmokes(dt: number): void {
+    const validIds = new Set<number>();
+
+    for (const entity of this.entities) {
+      if (!entity.active) continue;
+      const building = entity.getComponent(Building);
+      if (!building) continue;
+
+      const def = dataManager.getBuilding(building.buildingType);
+      const cfg = def?.chimneySmoke;
+      if (!cfg) continue;
+
+      validIds.add(entity.id);
+
+      let smoke = this.chimneySmokes.get(entity.id);
+      if (!smoke) {
+        smoke = createChimneySmoke({
+          x: cfg.offsetX,
+          y: cfg.offsetY,
+          density: cfg.density ?? 1,
+          duration: cfg.duration ?? Infinity,
+        });
+        this.chimneySmokes.set(entity.id, smoke);
+      } else {
+        smoke.setPosition(cfg.offsetX, cfg.offsetY);
+        if (cfg.density !== undefined) smoke.setDensity(cfg.density);
+      }
+
+      const isBuildReady = building.isComplete() && building.state === 'complete' && building.isActive;
+      let shouldEmit = false;
+      if (isBuildReady && cfg.schedule) {
+        const everySec = Math.max(0.01, cfg.schedule.everySec);
+        const onSec = Math.max(0, Math.min(cfg.schedule.onSec, everySec));
+        const phaseOffsetSec = cfg.schedule.phaseOffsetSec ?? 0;
+        const nowSec = performance.now() / 1000;
+        const cyclePos = ((nowSec + phaseOffsetSec) % everySec + everySec) % everySec;
+        shouldEmit = cyclePos < onSec;
+      } else {
+        const production = entity.getComponent(Production) ?? null;
+        shouldEmit =
+          isBuildReady &&
+          production !== null &&
+          production.status === 'producing';
+      }
+
+      if (shouldEmit) {
+        if (!smoke.emitting) smoke.start();
+      } else {
+        smoke.stop();
+      }
+
+      smoke.update(dt);
+    }
+
+    for (const id of this.chimneySmokes.keys()) {
+      if (!validIds.has(id)) {
+        this.chimneySmokes.delete(id);
+      }
+    }
+  }
+
   update(_deltaTime: number): void {
+    this.updateChimneySmokes(_deltaTime);
+    this.updateConstructionSmokes(_deltaTime);
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
     this.ctx.save();
@@ -361,6 +439,77 @@ export class RenderSystem extends System {
 
     // Render minimap
     this.renderMinimap();
+  }
+
+  private nextConstructionSmokeOffSec(): number {
+    return CONSTRUCTION_SMOKE_OFF_MIN_SEC +
+      Math.random() * (CONSTRUCTION_SMOKE_OFF_MAX_SEC - CONSTRUCTION_SMOKE_OFF_MIN_SEC);
+  }
+
+  /** Center-biased smoke origin in building-local render space. */
+  private getConstructionSmokeOrigin(building: Building): { x: number; y: number } {
+    const tileW = this.iso.tileWidth;
+    const tileH = this.iso.tileHeight;
+    const centerX = ((building.width - building.height) * tileW) / 4;
+    const centerY = ((building.width + building.height) * tileH) / 4;
+    const lift = Math.max(16, building.buildingHeight * 0.35);
+    return { x: centerX, y: centerY - lift };
+  }
+
+  /**
+   * Construction smoke for all active builds:
+   * 15s emit, then 3–5s pause, looping while `under_construction`.
+   */
+  private updateConstructionSmokes(dt: number): void {
+    const validIds = new Set<number>();
+
+    for (const entity of this.entities) {
+      if (!entity.active) continue;
+      const building = entity.getComponent(Building);
+      if (!building) continue;
+      if (building.state !== 'under_construction') continue;
+
+      validIds.add(entity.id);
+      const origin = this.getConstructionSmokeOrigin(building);
+
+      let state = this.constructionSmokes.get(entity.id);
+      if (!state) {
+        const smoke = createChimneySmoke({ x: origin.x, y: origin.y, density: 1.2 });
+        state = {
+          smoke,
+          phase: 'on',
+          phaseRemainingSec: CONSTRUCTION_SMOKE_ON_SEC,
+        };
+        this.constructionSmokes.set(entity.id, state);
+      }
+
+      state.smoke.setPosition(origin.x, origin.y);
+
+      if (state.phase === 'on') {
+        if (!state.smoke.emitting) state.smoke.start();
+      } else {
+        state.smoke.stop();
+      }
+
+      state.smoke.update(dt);
+      state.phaseRemainingSec -= dt;
+
+      if (state.phaseRemainingSec <= 0) {
+        if (state.phase === 'on') {
+          state.phase = 'off';
+          state.phaseRemainingSec = this.nextConstructionSmokeOffSec();
+          state.smoke.stop();
+        } else {
+          state.phase = 'on';
+          state.phaseRemainingSec = CONSTRUCTION_SMOKE_ON_SEC;
+          state.smoke.start();
+        }
+      }
+    }
+
+    for (const id of this.constructionSmokes.keys()) {
+      if (!validIds.has(id)) this.constructionSmokes.delete(id);
+    }
   }
 
   // Update specific tiles on the minimap (called when tiles are explored)
@@ -2545,6 +2694,16 @@ export class RenderSystem extends System {
         this.renderIsometricBuilding(building, renderable, isSelected, insightHighlight);
       }
 
+      const chimneyCfg = dataManager.getBuilding(building.buildingType)?.chimneySmoke;
+      if (chimneyCfg && building.isComplete() && building.state === 'complete') {
+        const chimneySmoke = this.chimneySmokes.get(entity.id);
+        if (chimneySmoke) chimneySmoke.draw(this.ctx);
+      }
+      if (building.state === 'under_construction') {
+        const constructionSmoke = this.constructionSmokes.get(entity.id);
+        if (constructionSmoke) constructionSmoke.smoke.draw(this.ctx);
+      }
+
       if (entrance) {
         this.ctx.restore();
       }
@@ -3010,27 +3169,6 @@ export class RenderSystem extends System {
     this.ctx.lineWidth = 0.5;
     this.ctx.strokeRect(barX, barY, barWidth, barHeight);
 
-    // Dust particle effect
-    const now = Date.now();
-    const dustCount = 10;
-    const cycleDuration = 2200;
-    const spreadX = (width + depth) * tileW / 3;
-    const baseY = frontY / 2 - building.buildingHeight / 4;
-
-    for (let i = 0; i < dustCount; i++) {
-      const seed = i * 137.5;
-      const t = ((now + seed * 7) % cycleDuration) / cycleDuration;
-      if (t > 0.85) continue;
-      const fade = t < 0.15 ? t / 0.15 : 1 - (t / 0.85);
-      const px = centerX + Math.sin(seed) * spreadX * (0.3 + 0.7 * Math.sin(seed * 2.3));
-      const py = baseY - t * 40 + Math.sin(seed * 3.7) * 8;
-      const radius = 3 + t * 6;
-      this.ctx.globalAlpha = fade * 0.65;
-      this.ctx.fillStyle = '#d4c4a0';
-      this.ctx.beginPath();
-      this.ctx.arc(px, py, radius, 0, Math.PI * 2);
-      this.ctx.fill();
-    }
     this.ctx.globalAlpha = 1;
   }
 

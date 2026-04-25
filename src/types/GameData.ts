@@ -204,6 +204,30 @@ export type AnimationConfig =
       digAtSiteSec: number;
     };
 
+/** Optional chimney smoke (offsets in building-local sprite space; see RenderSystem building anchor). */
+export interface ChimneySmokeConfig {
+  /** Optional schedule that overrides production-based gating. */
+  schedule?: {
+    /** Full cycle length in seconds (e.g. 30 = repeats every 30s). */
+    everySec: number;
+    /** Emit time per cycle in seconds (e.g. 5 = smoke for 5s, then pause). */
+    onSec: number;
+    /** Optional phase shift in seconds for staggering identical buildings. */
+    phaseOffsetSec?: number;
+  };
+  /** Horizontal offset from the building render origin (pixels). */
+  offsetX: number;
+  /** Vertical offset from the building render origin (pixels, down = positive). */
+  offsetY: number;
+  /** Emission strength 0–3 (default 1). */
+  density?: number;
+  /**
+   * Emitter lifetime in seconds (default: unlimited).
+   * In-game, emission is still gated by production (`producing`); omit for smoke only while the furnace runs.
+   */
+  duration?: number;
+}
+
 export interface BuildingDefinition {
   id: BuildingType;
   name: string;
@@ -273,6 +297,9 @@ export interface BuildingDefinition {
     /** Chebyshev radius from footprint center; expands settlement disks when the building is complete. */
     territoryVisionRadius?: number;
   };
+
+  /** Retro chimney smoke while `Production.status === 'producing'` (when building has Production). */
+  chimneySmoke?: ChimneySmokeConfig;
 }
 
 // ============================================================================

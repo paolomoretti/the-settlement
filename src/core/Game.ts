@@ -163,6 +163,8 @@ export class Game {
       getMapSeed: () => this.tileMap.getSeed(),
       getAvailablePopulation: () => this.getAvailablePopulation(),
       getBaseCampSpawnTile: () => this.workers.getBaseCampSpawnTile(),
+      queueHqStreetEntry: (entity, path, options) =>
+        this.workers.queueHqStreetEntry(entity, path, options),
       attachSurveyorWorker: id => this.workers.attachSurveyorWorker(id),
       detachSurveyorWorker: id => this.workers.detachSurveyorWorker(id),
     });
@@ -1241,12 +1243,9 @@ export class Game {
 
     const soldier = createMilitaryWorker(spawnTile.x, spawnTile.y, 1);
     this.addEntity(soldier);
-    const movable = soldier.getComponent(Movable);
     const w = soldier.getComponent(Worker);
-    if (movable && w) {
-      movable.setPath(path);
-      w.setState('walking');
-    }
+    if (w) w.setState('idle');
+    this.workers.queueHqStreetEntry(soldier, path);
     this.workers.beginMilitaryDispatch(soldier.id, buildingEntity.id);
     if (!silent) {
       const hp = this.inputSystem.hoverGridPos;
@@ -1783,6 +1782,7 @@ export class Game {
       const movable = entity.getComponent(Movable);
       const pos = entity.getComponent(Position);
       if (!worker || !movable || !pos) continue;
+      if (worker.concealedInBuildingId != null) continue;
       if (movable.isMoving) continue;
       if (this.workers.isRoadWorkerReturning(entity.id)) continue;
       if (!worker.transportTask) {

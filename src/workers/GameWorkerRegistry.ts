@@ -26,6 +26,8 @@ import { applyProductionCycleOutputs } from '@/systems/ProductionSystem';
 import type { ResourceType, BuildingDefinition, AnimationConfig, BuildingType } from '@/types/GameData';
 import type { WildlifeCoordinator } from '@/wildlife/WildlifeCoordinator';
 
+const HQ_STREET_DISPATCH_SPACING_MS = 500;
+
 /** Same facing convention as `RenderSystem.renderWorkerSprite` for movement vectors. */
 function gridFacingTowardWater(dx: number, dy: number): number {
   if (dx > 0 && dy >= 0) return 0;
@@ -109,6 +111,7 @@ export class GameWorkerRegistry {
   private readonly animationWorkers = new Map<number, AnimationWorkerState>();
   private readonly reservedTreeTiles = new Set<string>();
   private readonly surveyorWorkers = new Set<number>();
+  private nextHqStreetDispatchAtMs = 0;
 
   constructor(private readonly world: WorkerWorldAccess) {}
 
@@ -183,6 +186,50 @@ export class GameWorkerRegistry {
 
   attachSurveyorWorker(workerEntityId: number): void {
     this.surveyorWorkers.add(workerEntityId);
+  }
+
+  /**
+   * Conceal a newly created HQ worker until their turn to step onto the road.
+   * This keeps synchronous job reservation (road segments, builders, soldiers)
+   * while preventing multiple workers from visibly spawning on the same tile.
+   */
+  queueHqStreetEntry(
+    entity: Entity,
+    path: Position[],
+    options: { speed?: number; onRelease?: () => void } = {}
+  ): void {
+    const hqId = this.world.getBaseCampEntity()?.id ?? null;
+    const worker = entity.getComponent(Worker);
+    const movable = entity.getComponent(Movable);
+    if (!worker || !movable || hqId == null) {
+      options.onRelease?.();
+      return;
+    }
+
+    worker.concealedInBuildingId = hqId;
+    worker.setState('idle');
+    movable.clearPath();
+
+    const now = Date.now();
+    const releaseAt = Math.max(now, this.nextHqStreetDispatchAtMs);
+    this.nextHqStreetDispatchAtMs = releaseAt + HQ_STREET_DISPATCH_SPACING_MS;
+
+    setTimeout(() => {
+      if (!entity.active) return;
+      const releaseWorker = entity.getComponent(Worker);
+      const releaseMovable = entity.getComponent(Movable);
+      if (!releaseWorker || !releaseMovable) return;
+
+      releaseWorker.concealedInBuildingId = null;
+      if (typeof options.speed === 'number') {
+        releaseMovable.speed = options.speed;
+      }
+      if (path.length > 0) {
+        releaseMovable.setPath(path);
+        releaseWorker.setState('walking');
+      }
+      options.onRelease?.();
+    }, Math.max(0, releaseAt - now));
   }
 
   detachSurveyorWorker(workerEntityId: number): void {
@@ -296,6 +343,8 @@ export class GameWorkerRegistry {
       }
 
       const movable = builderEntity.getComponent(Movable);
+      const builderWorker = builderEntity.getComponent(Worker);
+      if (builderWorker?.concealedInBuildingId != null) continue;
       if (movable && !movable.isMoving) {
         const buildingEntity = entities.find(e => e.id === buildingId && e.active);
         if (!buildingEntity) {
@@ -324,7 +373,7 @@ export class GameWorkerRegistry {
           );
           if (path.length > 0) {
             movable.setPath(path);
-            const workerComp = builderEntity.getComponent(Worker);
+          const workerComp = builderEntity.getComponent(Worker);
             if (workerComp) workerComp.setState('walking');
           }
         }
@@ -364,6 +413,8 @@ export class GameWorkerRegistry {
       }
 
       const movable = workerEntity.getComponent(Movable);
+      const militaryWorker = workerEntity.getComponent(Worker);
+      if (militaryWorker?.concealedInBuildingId != null) continue;
       if (movable && !movable.isMoving) {
         const buildingEntity = entities.find(e => e.id === buildingId && e.active);
         if (!buildingEntity) {
@@ -432,6 +483,8 @@ export class GameWorkerRegistry {
       }
 
       const movable = workerEntity.getComponent(Movable);
+      const toolWorker = workerEntity.getComponent(Worker);
+      if (toolWorker?.concealedInBuildingId != null) continue;
       if (movable && !movable.isMoving) {
         const buildingEntity = entities.find(e => e.id === buildingId && e.active);
         if (!buildingEntity) {
@@ -578,6 +631,7 @@ export class GameWorkerRegistry {
         const workerComp = workerEntity.getComponent(Worker);
         const workerPos = workerEntity.getComponent(Position);
         if (!workerComp || !workerPos) continue;
+        if (workerComp.concealedInBuildingId != null) continue;
 
         const buildingEntity = entities.find(e => e.id === state.buildingEntityId && e.active);
         const building = buildingEntity?.getComponent(Building);
@@ -1406,6 +1460,7 @@ export class GameWorkerRegistry {
     this.animationWorkers.clear();
     this.reservedTreeTiles.clear();
     this.surveyorWorkers.clear();
+    this.nextHqStreetDispatchAtMs = 0;
   }
 
   private spawnSegmentWorker(segment: RoadSegment): number | null {
@@ -1432,6 +1487,7 @@ export class GameWorkerRegistry {
     const worker = createWorker(spawnX, spawnY);
     this.world.addEntity(worker);
 
+    let streetPath: Position[] = [];
     if (spawnTile && (spawnX !== near.x || spawnY !== near.y)) {
       let path = pathFinder.findPath(new Position(spawnX, spawnY), new Position(near.x, near.y), tileMap);
       if (path.length > 0) {
@@ -1440,18 +1496,19 @@ export class GameWorkerRegistry {
         if (Math.hypot(endX - rest.x, endY - rest.y) > 1e-3) {
           path = [...path, new Position(rest.x, rest.y)];
         }
-        const movable = worker.getComponent(Movable);
-        const workerComp = worker.getComponent(Worker);
-        if (movable && workerComp) {
-          movable.setPath(path);
-          workerComp.setState('walking');
-        }
+        streetPath = path;
       }
     } else if (Math.hypot(spawnX - rest.x, spawnY - rest.y) > 1e-3) {
+      streetPath = [new Position(rest.x, rest.y)];
+    }
+
+    if (spawnTile) {
+      this.queueHqStreetEntry(worker, streetPath);
+    } else if (streetPath.length > 0) {
       const movable = worker.getComponent(Movable);
       const workerComp = worker.getComponent(Worker);
       if (movable && workerComp) {
-        movable.setPath([new Position(rest.x, rest.y)]);
+        movable.setPath(streetPath);
         workerComp.setState('walking');
       }
     }
@@ -1673,11 +1730,7 @@ export class GameWorkerRegistry {
     building.builderEntityId = builder.id;
     this.builderWorkers.set(builder.id, buildingEntity.id);
 
-    const movable = builder.getComponent(Movable);
-    if (movable && workerComp) {
-      movable.setPath(path);
-      workerComp.setState('walking');
-    }
+    this.queueHqStreetEntry(builder, path);
   }
 
   private spawnToolWorker(buildingEntity: Entity, tool: string): void {
@@ -1708,11 +1761,7 @@ export class GameWorkerRegistry {
 
     this.toolWorkers.set(worker.id, { buildingId: buildingEntity.id, tool });
 
-    const movable = worker.getComponent(Movable);
-    if (movable && workerComp) {
-      movable.setPath(path);
-      workerComp.setState('walking');
-    }
+    this.queueHqStreetEntry(worker, path);
   }
 
   /** Outfits tied to `interior_operator.operatorRole` (building-specific worker spec). */
@@ -1964,18 +2013,13 @@ export class GameWorkerRegistry {
     this.world.addEntity(worker);
 
     const workerComp = worker.getComponent(Worker);
-    const movable = worker.getComponent(Movable);
     if (workerComp) {
       workerComp.visualActivity = 'general';
-      workerComp.setState('walking');
       if (anim.type === 'interior_operator') {
         this.applyInteriorOperatorAppearance(workerComp, anim.operatorRole);
       }
     }
-    if (movable) {
-      movable.speed = speed;
-      movable.setPath(path);
-    }
+    this.queueHqStreetEntry(worker, path, { speed });
 
     building.animationWorkerId = worker.id;
     this.animationWorkers.set(worker.id, {

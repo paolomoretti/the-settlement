@@ -138,6 +138,7 @@ export interface SurveyCoordinatorDeps {
   getMapSeed: () => number;
   getAvailablePopulation: () => number;
   getBaseCampSpawnTile: () => { x: number; y: number } | null;
+  queueHqStreetEntry: (entity: Entity, path: Position[], options?: { speed?: number }) => void;
   attachSurveyorWorker: (workerEntityId: number) => void;
   detachSurveyorWorker: (workerEntityId: number) => void;
 }
@@ -232,14 +233,11 @@ export class SurveyCoordinator {
     if (w) {
       w.pickUpResource('shovel');
       w.visualActivity = 'general';
-      w.setState('walking');
     }
-    if (m) {
-      m.speed = 1.65;
-      m.setPath(fullPath);
-    }
+    if (m) m.clearPath();
 
     this.deps.addEntity(worker);
+    this.deps.queueHqStreetEntry(worker, fullPath, { speed: 1.65 });
     this.deps.attachSurveyorWorker(worker.id);
 
     this.active.push({

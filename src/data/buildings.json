@@ -114,7 +114,7 @@
     "requiredTool": "shovel",
     "production": {
       "outputs": { "planted_tree": 1 },
-      "productionTime": 300,
+      "productionTime": 360,
       "continuous": true,
       "maxOutputBuffer": 6
     },

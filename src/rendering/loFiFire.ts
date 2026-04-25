@@ -1,15 +1,25 @@
 /**
- * Self-contained retro fire + smoke effect for Canvas 2D games.
- * Coordinates are building-local or screen/world-space pixels, with x/y as the
- * bottom-center of the fire source.
+ * Canvas-only gradient fire/smoke particle effect.
+ *
+ * Adapted from a mouse-following gas/flame demo into a reusable emitter:
+ * no globals, no Stage/dat.GUI dependency, and no pointer target. Coordinates
+ * are world/canvas pixels with `x/y` as the bottom-center of the fire source.
  */
 export interface LoFiFireOptions {
   x: number;
   y: number;
+  /** Approximate base width of the fire in pixels. */
   width?: number;
+  /** Approximate rise height in pixels; controls upward velocity. */
   height?: number;
+  /** Relative spawn intensity. Usually 0.5 to 3. */
   density?: number;
+  /** Optional seconds before the emitter stops creating new particles. */
   duration?: number;
+  /** Direction in degrees. 0 is upward, 90 is right. */
+  direction?: number;
+  /** Spread in degrees around `direction`. */
+  directionSpread?: number;
 }
 
 export interface LoFiFire {
@@ -30,117 +40,95 @@ export interface LoFiFire {
   setDensity(density: number): void;
 }
 
-interface FlameParticle {
+type GradientStop = {
+  radius: number;
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+};
+
+type GradientKeyframe = {
+  position: number;
+  start: Partial<GradientStop> & Pick<GradientStop, 'radius'>;
+  middle?: Partial<GradientStop> & Pick<GradientStop, 'radius'>;
+  end: Partial<GradientStop> & Pick<GradientStop, 'radius'>;
+};
+
+type ExpandedKeyframe = {
+  position: number;
+  start: GradientStop;
+  middle: GradientStop;
+  end: GradientStop;
+};
+
+interface GasParticle {
+  remove: boolean;
   x: number;
   y: number;
-  vx: number;
-  vy: number;
-  age: number;
-  life: number;
-  startSize: number;
   size: number;
-  alpha: number;
-  maxAlpha: number;
-  seed: number;
-  colorPick: number;
+  speedX: number;
+  speedY: number;
+  lifespan: number;
+  age: number;
 }
 
-interface SmokeParticle {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  age: number;
-  life: number;
-  startSize: number;
-  endSize: number;
-  size: number;
-  alpha: number;
-  maxAlpha: number;
-}
-
-interface EmberParticle {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  age: number;
-  life: number;
-  size: number;
-  alpha: number;
-  maxAlpha: number;
-}
-
-const rand = (min: number, max: number): number => min + Math.random() * (max - min);
-const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
-const clamp = (v: number, a: number, b: number): number => Math.max(a, Math.min(b, v));
-const easeOut = (t: number): number => 1 - (1 - t) * (1 - t);
-const easeIn = (t: number): number => t * t;
+const TO_RAD = Math.PI / 180;
+const FRAME_MS = 1000 / 60;
+const GRADIENT_FRAME_COUNT = 120;
+const DEFAULT_SPAWN_DELAY_MS = 30;
+const DEFAULT_VELOCITY_SPREAD = 0.65;
+const clamp = (v: number, min: number, max: number): number => Math.max(min, Math.min(max, v));
+const lerp = (a: number, b: number, t: number): number => (b - a) * t + a;
 
 export function createLoFiFire(options: LoFiFireOptions): LoFiFire {
-  const flames: FlameParticle[] = [];
-  const smoke: SmokeParticle[] = [];
-  const embers: EmberParticle[] = [];
-  let flameAcc = 0;
-  let smokeAcc = 0;
-  let emberAcc = 0;
+  const gas: GasParticle[] = [];
+  const gasPool: GasParticle[] = [];
+
+  let spawnCounterMs = 0;
+  let gasRadius = computeGasRadius(options.width ?? 48, options.height ?? 64);
+  let gradientSprites = generateFlameGradientSprites(gasRadius);
+  let direction = options.direction ?? 0;
+  let directionSpread = options.directionSpread ?? 92;
 
   const fire: LoFiFire = {
     x: options.x,
     y: options.y,
     width: options.width ?? 48,
-    height: options.height ?? 64,
+    height: options.height ?? Math.max(64, (options.width ?? 48) * 1.2),
     density: options.density ?? 1,
     duration: options.duration ?? Infinity,
     elapsed: 0,
     emitting: true,
 
     update(dt: number) {
+      const dtMs = Math.max(0, dt * 1000);
+      const simSpeed = dtMs / FRAME_MS;
       this.elapsed += dt;
       if (this.elapsed >= this.duration) this.emitting = false;
 
-      const density = clamp(this.density, 0, 4);
-      const areaScale = clamp((this.width * this.height) / (48 * 64), 0.35, 5);
-      const scale = Math.sqrt(areaScale);
-
-      const flameRate = 18 * density * scale;
-      const smokeRate = 5.2 * density * scale;
-      const emberRate = 1.2 * density * scale;
-
-      const maxFlames = Math.ceil(48 * density * scale);
-      const maxSmoke = Math.ceil(26 * density * scale);
-      const maxEmbers = Math.ceil(5 * density * scale);
-
-      if (this.emitting && density > 0) {
-        flameAcc += dt * flameRate;
-        while (flameAcc >= 1) {
-          flameAcc--;
-          emitFlame(this, flames, maxFlames);
-        }
-
-        smokeAcc += dt * smokeRate;
-        while (smokeAcc >= 1) {
-          smokeAcc--;
-          emitSmoke(this, smoke, maxSmoke);
-        }
-
-        emberAcc += dt * emberRate;
-        while (emberAcc >= 1) {
-          emberAcc--;
-          emitEmber(this, embers, maxEmbers);
+      if (this.emitting && this.density > 0) {
+        spawnCounterMs += dtMs;
+        while (spawnCounterMs >= DEFAULT_SPAWN_DELAY_MS) {
+          spawnCounterMs -= DEFAULT_SPAWN_DELAY_MS;
+          emitGasBatch(this, gas, gasPool, gasRadius, direction, directionSpread);
         }
       }
 
-      updateFlames(this, flames, dt);
-      updateSmoke(smoke, dt);
-      updateEmbers(embers, dt);
-      removeDeadParticles(flames, smoke, embers);
+      updateGas(gas, gasPool, simSpeed, dtMs);
     },
 
     draw(ctx: CanvasRenderingContext2D) {
-      for (const s of smoke) drawSmoke(ctx, s);
-      for (const p of flames) drawFlame(ctx, p);
-      for (const e of embers) drawEmber(ctx, e);
+      ctx.save();
+      for (let i = gas.length - 1; i >= 0; i--) {
+        const g = gas[i]!;
+        const life = clamp(g.age / g.lifespan, 0, 1);
+        const spriteIndex = Math.floor(life * (gradientSprites.length - 1));
+        const sprite = gradientSprites[spriteIndex] ?? gradientSprites[gradientSprites.length - 1];
+        if (!sprite) continue;
+        ctx.drawImage(sprite, g.x - g.size, g.y - g.size, g.size * 2, g.size * 2);
+      }
+      ctx.restore();
     },
 
     stop() {
@@ -148,7 +136,7 @@ export function createLoFiFire(options: LoFiFireOptions): LoFiFire {
     },
 
     isFinished(): boolean {
-      return !this.emitting && flames.length === 0 && smoke.length === 0 && embers.length === 0;
+      return !this.emitting && gas.length === 0;
     },
 
     setPosition(x: number, y: number) {
@@ -159,6 +147,12 @@ export function createLoFiFire(options: LoFiFireOptions): LoFiFire {
     setSize(width: number, height: number) {
       this.width = width;
       this.height = height;
+      const nextRadius = computeGasRadius(width, height);
+      if (Math.abs(nextRadius - gasRadius) >= 1) {
+        gasRadius = nextRadius;
+        gradientSprites = generateFlameGradientSprites(gasRadius);
+        for (const g of gas) g.size = gasRadius;
+      }
     },
 
     setDensity(density: number) {
@@ -169,189 +163,246 @@ export function createLoFiFire(options: LoFiFireOptions): LoFiFire {
   return fire;
 }
 
-function emitFlame(emitter: LoFiFire, flames: FlameParticle[], maxFlames: number): void {
-  if (flames.length >= maxFlames) return;
-
-  const baseHalf = emitter.width * 0.5;
-  const offset = rand(-baseHalf, baseHalf);
-  const edge = Math.abs(offset) / Math.max(1, baseHalf);
-  const heightFactor = lerp(1, 0.55, edge);
-  const heightScale = clamp(emitter.height / 64, 0.7, 1.6);
-  const widthScale = clamp(emitter.width / 48, 0.65, 1.8);
-
-  flames.push({
-    x: emitter.x + offset,
-    y: emitter.y + rand(-3, 3),
-    vx: rand(-5, 5) * (0.35 + edge),
-    vy: -emitter.height * rand(0.42, 0.68),
-    age: 0,
-    life: rand(0.85, 1.45) * heightFactor * heightScale,
-    startSize: rand(8, 15) * widthScale,
-    size: 6,
-    alpha: 0,
-    maxAlpha: rand(0.5, 0.78),
-    seed: rand(0, 100),
-    colorPick: Math.random(),
-  });
+function computeGasRadius(width: number, height: number): number {
+  return clamp(Math.min(width * 0.18, height * 0.62), 8, 42);
 }
 
-function emitSmoke(emitter: LoFiFire, smoke: SmokeParticle[], maxSmoke: number): void {
-  if (smoke.length >= maxSmoke) return;
-
-  const widthScale = clamp(emitter.width / 48, 0.7, 1.7);
-
-  smoke.push({
-    x: emitter.x + rand(-emitter.width * 0.34, emitter.width * 0.34),
-    y: emitter.y - rand(emitter.height * 0.35, emitter.height * 0.72),
-    vx: rand(-3, 4),
-    vy: -rand(6, 12),
-    age: 0,
-    life: rand(2.6, 4.2),
-    startSize: rand(7, 12) * widthScale,
-    endSize: rand(24, 40) * widthScale,
-    size: 6,
-    alpha: 0,
-    maxAlpha: rand(0.18, 0.32),
-  });
+function computeVelocity(height: number): number {
+  return clamp(height / 22, 1.4, 6);
 }
 
-function emitEmber(emitter: LoFiFire, embers: EmberParticle[], maxEmbers: number): void {
-  if (embers.length >= maxEmbers) return;
-
-  embers.push({
-    x: emitter.x + rand(-emitter.width * 0.25, emitter.width * 0.25),
-    y: emitter.y - rand(10, emitter.height * 0.45),
-    vx: rand(-10, 14),
-    vy: -rand(9, 18),
-    age: 0,
-    life: rand(1.0, 1.8),
-    size: rand(1.5, 3),
-    alpha: 0,
-    maxAlpha: rand(0.45, 0.85),
-  });
-}
-
-function updateFlames(emitter: LoFiFire, flames: FlameParticle[], dt: number): void {
-  for (const p of flames) {
-    p.age += dt;
-    const t = clamp(p.age / p.life, 0, 1);
-
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
-
-    const centrePull = (emitter.x - p.x) * 0.9 * dt;
-    p.vx += centrePull;
-    p.vx += Math.sin((p.seed + p.age) * 5.5) * 1.8 * dt;
-    p.vy -= 3.5 * dt;
-
-    const grow = clamp(t / 0.28, 0, 1);
-    const shrink = clamp((t - 0.48) / 0.52, 0, 1);
-    const body = easeOut(grow) * (1 - shrink * 0.82);
-    p.size = lerp(p.startSize * 0.45, p.startSize, body);
-
-    const fadeIn = clamp(t / 0.22, 0, 1);
-    const fadeOut = 1 - easeIn(clamp((t - 0.62) / 0.38, 0, 1));
-    p.alpha = fadeIn * fadeOut * p.maxAlpha;
-  }
-}
-
-function updateSmoke(smoke: SmokeParticle[], dt: number): void {
-  for (const s of smoke) {
-    s.age += dt;
-    const t = clamp(s.age / s.life, 0, 1);
-
-    s.x += s.vx * dt;
-    s.y += s.vy * dt;
-    s.vx += 2.6 * dt;
-    s.vy -= 0.4 * dt;
-
-    s.size = lerp(s.startSize, s.endSize, easeOut(t));
-
-    const fadeIn = clamp(t / 0.2, 0, 1);
-    const fadeOut = 1 - easeIn(clamp((t - 0.35) / 0.65, 0, 1));
-    s.alpha = fadeIn * fadeOut * s.maxAlpha;
-  }
-}
-
-function updateEmbers(embers: EmberParticle[], dt: number): void {
-  for (const e of embers) {
-    e.age += dt;
-    const t = clamp(e.age / e.life, 0, 1);
-
-    e.x += e.vx * dt;
-    e.y += e.vy * dt;
-    e.vy -= 1.4 * dt;
-    e.alpha = (1 - t) * e.maxAlpha;
-  }
-}
-
-function removeDeadParticles(
-  flames: FlameParticle[],
-  smoke: SmokeParticle[],
-  embers: EmberParticle[]
+function emitGasBatch(
+  emitter: LoFiFire,
+  gas: GasParticle[],
+  gasPool: GasParticle[],
+  gasRadius: number,
+  direction: number,
+  directionSpread: number
 ): void {
-  for (let i = flames.length - 1; i >= 0; i--) {
-    if (flames[i]!.age >= flames[i]!.life) flames.splice(i, 1);
-  }
-  for (let i = smoke.length - 1; i >= 0; i--) {
-    if (smoke[i]!.age >= smoke[i]!.life) smoke.splice(i, 1);
-  }
-  for (let i = embers.length - 1; i >= 0; i--) {
-    if (embers[i]!.age >= embers[i]!.life) embers.splice(i, 1);
+  const density = clamp(emitter.density, 0, 4);
+  const gasCount = Math.max(2, Math.round(6 * density));
+  const baseAngle = (direction - directionSpread / 2) * TO_RAD;
+  const rotateIncrement = (directionSpread * TO_RAD) / gasCount;
+  const speed = computeVelocity(emitter.height);
+  const maxParticles = Math.ceil(120 * Math.max(0.4, density) * clamp(emitter.width / 48, 0.6, 3));
+  const baseHalf = Math.max(1, emitter.width * 0.5);
+  const sideLift = Math.max(4, Math.min(18, emitter.height * 0.32));
+  const baseJitterY = Math.max(2, gasRadius * 0.18);
+
+  for (let i = 0; i < gasCount && gas.length < maxParticles; i++) {
+    const subAngle = baseAngle + rotateIncrement * i + Math.random() * rotateIncrement;
+    const rand = Math.random();
+    const subSpeed = speed * (1 - (1 - rand * rand) * DEFAULT_VELOCITY_SPREAD);
+    const spreadX = (Math.random() - 0.5) * emitter.width;
+    const edge = Math.abs(spreadX) / baseHalf;
+    const isoBaseY = emitter.y - edge * sideLift;
+    const baseY = isoBaseY + (Math.random() - 0.5) * baseJitterY;
+    const inwardPull = -Math.sign(spreadX) * edge * speed * 0.18;
+
+    gas.push(newGasParticle(gasPool, {
+      x: emitter.x + spreadX,
+      y: baseY,
+      size: gasRadius * (0.78 + Math.random() * 0.34),
+      speedX: Math.sin(subAngle) * subSpeed + inwardPull,
+      speedY: -Math.cos(subAngle) * subSpeed,
+    }));
   }
 }
 
-function drawFlame(ctx: CanvasRenderingContext2D, p: FlameParticle): void {
-  const x = Math.round(p.x);
-  const y = Math.round(p.y);
-  const s = Math.max(1, Math.round(p.size));
+function newGasParticle(
+  gasPool: GasParticle[],
+  init: { x: number; y: number; size: number; speedX: number; speedY: number }
+): GasParticle {
+  const g = gasPool.pop() ?? {
+    remove: false,
+    x: 0,
+    y: 0,
+    size: 0,
+    speedX: 0,
+    speedY: 0,
+    lifespan: 0,
+    age: 0,
+  };
 
-  ctx.save();
-  ctx.globalAlpha = p.alpha;
-
-  if (p.colorPick < 0.18) ctx.fillStyle = '#ffd35a';
-  else if (p.colorPick < 0.68) ctx.fillStyle = '#f47a24';
-  else ctx.fillStyle = '#b9321b';
-
-  ctx.beginPath();
-  ctx.moveTo(x, y - s * 1.45);
-  ctx.lineTo(x + s * 0.8, y - s * 0.35);
-  ctx.lineTo(x + s * 0.55, y + s * 0.75);
-  ctx.lineTo(x, y + s);
-  ctx.lineTo(x - s * 0.65, y + s * 0.55);
-  ctx.lineTo(x - s * 0.85, y - s * 0.25);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.restore();
+  g.remove = false;
+  g.age = 0;
+  g.lifespan = Math.floor(Math.random() * 420 + 760);
+  g.size = init.size;
+  g.x = init.x;
+  g.y = init.y;
+  g.speedX = init.speedX;
+  g.speedY = init.speedY;
+  return g;
 }
 
-function drawSmoke(ctx: CanvasRenderingContext2D, s: SmokeParticle): void {
-  const x = Math.round(s.x);
-  const y = Math.round(s.y);
-  const r = Math.max(1, Math.round(s.size));
+function updateGas(gas: GasParticle[], gasPool: GasParticle[], simSpeed: number, dtMs: number): void {
+  const damp = Math.max(0, 1 - 0.04 * simSpeed);
+  const gravity = 0.14;
 
-  ctx.save();
+  for (let i = gas.length - 1; i >= 0; i--) {
+    const g = gas[i]!;
+    g.age += dtMs;
+    g.x += g.speedX * simSpeed;
+    g.y += g.speedY * simSpeed;
+    g.speedX += Math.sin((g.age + g.y) * 0.012) * 0.012 * simSpeed;
+    g.speedX *= damp;
+    g.speedY = g.speedY * damp - gravity * simSpeed;
 
-  ctx.globalAlpha = s.alpha;
-  ctx.fillStyle = 'rgb(72,72,68)';
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.globalAlpha = s.alpha * 0.55;
-  ctx.fillStyle = 'rgb(105,100,92)';
-  ctx.beginPath();
-  ctx.arc(x + r * 0.38, y + r * 0.18, r * 0.62, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.restore();
+    if (g.age >= g.lifespan) {
+      gas.splice(i, 1);
+      recycleGasParticle(gasPool, g);
+    }
+  }
 }
 
-function drawEmber(ctx: CanvasRenderingContext2D, e: EmberParticle): void {
-  ctx.save();
-  ctx.globalAlpha = e.alpha;
-  ctx.fillStyle = '#ffd35a';
-  ctx.fillRect(Math.round(e.x), Math.round(e.y), Math.ceil(e.size), Math.ceil(e.size));
-  ctx.restore();
+function recycleGasParticle(gasPool: GasParticle[], g: GasParticle): void {
+  g.remove = false;
+  gasPool.push(g);
+}
+
+function generateFlameGradientSprites(gasRadius: number): HTMLCanvasElement[] {
+  const expanded = expandKeyframes(buildGradientKeyframes());
+  const sprites: HTMLCanvasElement[] = [];
+
+  for (let i = 1; i < expanded.length; i++) {
+    const lastFrame = expanded[i - 1]!;
+    const thisFrame = expanded[i]!;
+    const frameBatchSize = Math.max(
+      1,
+      Math.floor((thisFrame.position - lastFrame.position) * GRADIENT_FRAME_COUNT)
+    );
+
+    for (let j = 1; j <= frameBatchSize; j++) {
+      const t = j / frameBatchSize;
+      sprites.push(renderGradientSprite(gasRadius, {
+        start: interpolateStop(lastFrame.start, thisFrame.start, t),
+        middle: interpolateStop(lastFrame.middle, thisFrame.middle, t),
+        end: interpolateStop(lastFrame.end, thisFrame.end, t),
+      }));
+    }
+  }
+
+  return sprites;
+}
+
+function buildGradientKeyframes(): GradientKeyframe[] {
+  return [
+    {
+      position: 0,
+      start: { radius: 0.2, r: 1, g: 0.72, b: 0.16, a: 0.55 },
+      end: { radius: 0.56, a: 0 },
+    },
+    {
+      position: 0.08,
+      start: { radius: 0.4, r: 1, g: 0.62, b: 0.02, a: 0.5 },
+      end: { radius: 1, a: 0 },
+    },
+    {
+      position: 0.25,
+      start: { radius: 0.2, r: 1, g: 0.48, b: 0, a: 0.52 },
+      middle: { radius: 0.6, r: 0.95, g: 0.22, b: 0, a: 0.48 },
+      end: { radius: 1, a: 0 },
+    },
+    {
+      position: 0.4,
+      start: { radius: 0.6, r: 0.82, g: 0.12, b: 0, a: 0.55 },
+      end: { radius: 1, a: 0 },
+    },
+    {
+      position: 0.5,
+      start: { radius: 0, r: 0.12, g: 0.1, b: 0.08, a: 0.5 },
+      middle: { radius: 0.8, r: 0.72, g: 0.1, b: 0, a: 0.5 },
+      end: { radius: 1, a: 0 },
+    },
+    {
+      position: 0.7,
+      start: { radius: 0.4, r: 0.15, g: 0.15, b: 0.15, a: 0.5 },
+      end: { radius: 1, a: 0 },
+    },
+    {
+      position: 1,
+      start: { radius: 0.4, r: 0.15, g: 0.15, b: 0.15, a: 0.2 },
+      end: { radius: 1, a: 0 },
+    },
+  ];
+}
+
+function expandKeyframes(keyframes: GradientKeyframe[]): ExpandedKeyframe[] {
+  return keyframes.map(k => {
+    const start = completeStop(k.start, {
+      radius: 0,
+      r: 1,
+      g: 1,
+      b: 1,
+      a: 1,
+    });
+    const middleSource = k.middle ? k.middle : { ...k.start, radius: k.start.radius };
+    const middle = completeStop(middleSource, start);
+    const end = completeStop(k.end, middle);
+
+    if (!k.middle) {
+      start.radius = 0;
+    }
+
+    return {
+      position: k.position,
+      start,
+      middle,
+      end,
+    };
+  });
+}
+
+function completeStop(partial: Partial<GradientStop> & Pick<GradientStop, 'radius'>, fallback: GradientStop): GradientStop {
+  return {
+    radius: partial.radius,
+    r: partial.r ?? fallback.r,
+    g: partial.g ?? fallback.g,
+    b: partial.b ?? fallback.b,
+    a: partial.a ?? fallback.a,
+  };
+}
+
+function interpolateStop(a: GradientStop, b: GradientStop, t: number): GradientStop {
+  return {
+    radius: lerp(a.radius, b.radius, t),
+    r: lerp(a.r, b.r, t),
+    g: lerp(a.g, b.g, t),
+    b: lerp(a.b, b.b, t),
+    a: lerp(a.a, b.a, t),
+  };
+}
+
+function renderGradientSprite(
+  gasRadius: number,
+  frame: { start: GradientStop; middle: GradientStop; end: GradientStop }
+): HTMLCanvasElement {
+  const size = Math.ceil(gasRadius * 2);
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+
+  const center = size / 2;
+  const gradient = ctx.createRadialGradient(
+    center,
+    size * 0.7,
+    0,
+    center,
+    center,
+    center
+  );
+
+  gradient.addColorStop(clamp(frame.start.radius, 0, 1), rgba(frame.start));
+  gradient.addColorStop(clamp(frame.middle.radius, 0, 1), rgba(frame.middle));
+  gradient.addColorStop(clamp(frame.end.radius, 0, 1), rgba(frame.end));
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+  return canvas;
+}
+
+function rgba(c: GradientStop): string {
+  return `rgba(${(c.r * 255) | 0},${(c.g * 255) | 0},${(c.b * 255) | 0},${c.a})`;
 }

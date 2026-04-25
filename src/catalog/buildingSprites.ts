@@ -30,6 +30,7 @@ export const BUILDING_FINAL_SPRITES: Record<string, string> = {
   metalworks: '/assets/buildings/metalworks.png',
   mint: '/assets/buildings/mint.png',
   barracks: '/assets/buildings/barracks.png',
+  guardhouse: '/assets/buildings/guardhouse.png',
 };
 
 /**
@@ -133,6 +134,11 @@ export const BUILDING_CONSTRUCTION_SPRITES: Record<string, string[]> = {
     '/assets/buildings/barracks_build_0.png',
     '/assets/buildings/barracks_build_1.png',
     '/assets/buildings/barracks_build_2.png',
+  ],
+  guardhouse: [
+    '/assets/buildings/guardhouse_build_0.png',
+    '/assets/buildings/guardhouse_build_1.png',
+    '/assets/buildings/guardhouse_build_2.png',
   ],
 };
 

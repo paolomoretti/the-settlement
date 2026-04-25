@@ -557,6 +557,7 @@ export class RenderSystem extends System {
           width: size.width,
           height: size.height,
           density: size.density,
+          duration: DEMOLITION_FIRE_DURATION_MS / 1000,
         });
         this.demolitionFires.set(site.id, fire);
       } else {
@@ -585,10 +586,11 @@ export class RenderSystem extends System {
 
   private getDemolitionFireSize(site: DemolitionSiteVisual): { width: number; height: number; density: number } {
     const footprint = Math.max(1, Math.sqrt(site.width * site.height));
+    const baseWidth = (site.width + site.height) * this.iso.tileWidth / 2;
     return {
-      width: Math.max(48, (site.width + site.height) * this.iso.tileWidth * 0.26),
-      height: Math.max(56, 48 + footprint * 18),
-      density: Math.min(2.2, 0.9 + footprint * 0.18),
+      width: Math.max(24, baseWidth * 0.5),
+      height: Math.max(14, 10 + footprint * 3),
+      density: Math.min(1.75, 0.82 + footprint * 0.1),
     };
   }
 
@@ -1461,34 +1463,29 @@ export class RenderSystem extends System {
       const fade = ageMs < DEMOLITION_FIRE_DURATION_MS
         ? 1
         : 1 - Math.min(1, scorchAgeMs / DEMOLITION_SCORCH_DURATION_MS);
-      const alpha = 0.12 + 0.42 * fade;
-
-      for (let dy = 0; dy < site.height; dy++) {
-        for (let dx = 0; dx < site.width; dx++) {
-          this.renderScorchedTile(site.x + dx, site.y + dy, alpha, site.id + dx * 17 + dy * 37);
-        }
-      }
+      this.renderScorchedFootprint(site, 0.18 + 0.48 * fade);
     }
   }
 
-  private renderScorchedTile(x: number, y: number, alpha: number, salt: number): void {
-    const center = this.iso.gridToScreen(x, y);
-    const jitterX = (this.tileHash(x, y, salt) - 0.5) * this.iso.tileWidth * 0.16;
-    const jitterY = (this.tileHash(x, y, salt + 11) - 0.5) * this.iso.tileHeight * 0.16;
-    const rx = this.iso.tileWidth * (0.26 + this.tileHash(x, y, salt + 23) * 0.1);
-    const ry = this.iso.tileHeight * (0.2 + this.tileHash(x, y, salt + 31) * 0.08);
+  private renderScorchedFootprint(site: DemolitionSiteVisual, alpha: number): void {
+    const centerGridX = site.x + (site.width - 1) / 2;
+    const centerGridY = site.y + (site.height - 1) / 2;
+    const center = this.iso.gridToScreen(centerGridX, centerGridY);
+    const baseWidth = (site.width + site.height) * this.iso.tileWidth / 2;
+    const baseHeight = (site.width + site.height) * this.iso.tileHeight / 2;
+    const rx = Math.max(this.iso.tileWidth * 0.44, baseWidth * 0.54);
+    const ry = Math.max(this.iso.tileHeight * 0.42, baseHeight * 0.54);
 
     this.ctx.save();
-    this.ctx.globalAlpha = alpha;
-    this.ctx.fillStyle = '#17120f';
+    this.ctx.translate(center.x, center.y);
+    this.ctx.scale(rx, ry);
+    const gradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+    gradient.addColorStop(0, `rgba(24, 18, 14, ${alpha})`);
+    gradient.addColorStop(0.48, `rgba(39, 28, 21, ${alpha * 0.55})`);
+    gradient.addColorStop(1, 'rgba(39, 28, 21, 0)');
+    this.ctx.fillStyle = gradient;
     this.ctx.beginPath();
-    this.ctx.ellipse(center.x + jitterX, center.y + jitterY, rx, ry, -0.08, 0, Math.PI * 2);
-    this.ctx.fill();
-
-    this.ctx.globalAlpha = alpha * 0.45;
-    this.ctx.fillStyle = '#4a3426';
-    this.ctx.beginPath();
-    this.ctx.ellipse(center.x - rx * 0.18, center.y - ry * 0.1, rx * 0.42, ry * 0.32, 0.35, 0, Math.PI * 2);
+    this.ctx.arc(0, 0, 1, 0, Math.PI * 2);
     this.ctx.fill();
     this.ctx.restore();
   }

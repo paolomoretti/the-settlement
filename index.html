@@ -497,6 +497,39 @@
       gap: 8px;
     }
 
+    .inventory-tabs {
+      display: flex;
+      gap: 8px;
+      margin: 10px 0 8px 0;
+      border-bottom: 1px solid #444;
+      padding-bottom: 8px;
+    }
+
+    .inventory-tab-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid #555;
+      color: #ccc;
+      padding: 6px 10px;
+      font-size: 11px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: 'Courier New', monospace;
+    }
+
+    .inventory-tab-btn.active {
+      background: #4a6741;
+      border-color: #6b8e5f;
+      color: #ffff00;
+    }
+
+    .inventory-section {
+      display: none;
+    }
+
+    .inventory-section.active {
+      display: block;
+    }
+
     .inventory-item {
       background: rgba(255, 255, 255, 0.05);
       padding: 8px;
@@ -1286,8 +1319,16 @@
             <div style="font-size: 11px; margin-bottom: 10px; opacity: 0.8;">
               <div>Population: <span id="population-display">0/0</span></div>
             </div>
-            <h4 style="margin: 10px 0 5px 0; font-size: 12px;">Resources</h4>
-            <div id="inventory-list" style="max-height: 400px; overflow-y: auto; font-size: 11px;"></div>
+            <div class="inventory-tabs">
+              <button type="button" id="inventory-tab-resources" class="inventory-tab-btn active">Resources</button>
+              <button type="button" id="inventory-tab-workers" class="inventory-tab-btn">Specialized Workers</button>
+            </div>
+            <div id="inventory-section-resources" class="inventory-section active">
+              <div id="inventory-list" style="max-height: 400px; overflow-y: auto; font-size: 11px;"></div>
+            </div>
+            <div id="inventory-section-workers" class="inventory-section">
+              <div id="workers-list" style="max-height: 400px; overflow-y: auto; font-size: 11px;"></div>
+            </div>
           </div>
         </div>
       </div>

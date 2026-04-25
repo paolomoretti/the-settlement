@@ -9,6 +9,9 @@ export type { BuildingType };
 
 export type BuildingState = 'awaiting_materials' | 'under_construction' | 'complete';
 
+/** One garrisoned soldier at a military post (assembled at HQ, rank promoted by gold at the fort). */
+export type MilitaryGarrisonSlot = { rank: 1 | 2 | 3; workerEntityId: number };
+
 export class Building extends Component {
   public state: BuildingState = 'complete';
   public constructionProgress: number = 0; // 0-1
@@ -29,6 +32,8 @@ export class Building extends Component {
   public builderEntityId: number | null = null;
   public builderArrived: boolean = false;
   public hasOperator: boolean = true;
+  /** Required-tool operator currently assigned to this building (tool id), if any. */
+  public assignedToolSpecialist: string | null = null;
   public animationWorkerId: number | null = null;
   /** Lumberjack / quarry / fisher: no harvestable tile within search radius with a short enough off-road walk from the entrance. */
   public outOfMapResources: boolean = false;
@@ -36,6 +41,9 @@ export class Building extends Component {
   public lastWaterFishProbeAt: number = 0;
   /** Throttle reachability scans for wild rabbits near the hunter (realtime ms). */
   public lastHuntRabbitProbeAt: number = 0;
+
+  /** Length = `military.soldierCapacity` when set; entries `null` = empty slot. */
+  public militaryGarrison: (MilitaryGarrisonSlot | null)[] | null = null;
 
   constructor(
     public buildingType: BuildingType,
@@ -131,5 +139,62 @@ export class Building extends Component {
     if (!this.completedAt || this.state !== 'complete' || productionTimeSec <= 0) return 0;
     const elapsed = (Date.now() - this.completedAt) / 1000;
     return (elapsed % productionTimeSec) / productionTimeSec;
+  }
+
+  initMilitaryGarrison(capacity: number): void {
+    if (capacity <= 0) {
+      this.militaryGarrison = null;
+      return;
+    }
+    if (!this.militaryGarrison || this.militaryGarrison.length !== capacity) {
+      this.militaryGarrison = Array.from({ length: capacity }, () => null);
+    }
+  }
+
+  getMilitaryGarrisonFilledCount(): number {
+    if (!this.militaryGarrison) return 0;
+    return this.militaryGarrison.filter(s => s != null).length;
+  }
+
+  /** At least one soldier garrisoned — used for settlement vision from soldier posts. */
+  hasMilitaryTerritoryContributor(): boolean {
+    return this.getMilitaryGarrisonFilledCount() > 0;
+  }
+
+  findFreeMilitarySlotIndex(): number {
+    if (!this.militaryGarrison) return -1;
+    return this.militaryGarrison.findIndex(s => s == null);
+  }
+
+  assignMilitarySlot(slotIndex: number, workerEntityId: number): void {
+    if (!this.militaryGarrison || slotIndex < 0 || slotIndex >= this.militaryGarrison.length) return;
+    this.militaryGarrison[slotIndex] = { rank: 1, workerEntityId };
+  }
+
+  /** Lowest rank &lt; 3 first, then lowest slot index. */
+  pickSlotIndexForGoldPromotion(): number {
+    if (!this.militaryGarrison) return -1;
+    let best: { idx: number; rank: number } | null = null;
+    for (let i = 0; i < this.militaryGarrison.length; i++) {
+      const s = this.militaryGarrison[i];
+      if (!s || s.rank >= 3) continue;
+      if (!best || s.rank < best.rank || (s.rank === best.rank && i < best.idx)) {
+        best = { idx: i, rank: s.rank };
+      }
+    }
+    return best ? best.idx : -1;
+  }
+
+  promoteMilitaryAtSlot(slotIndex: number): void {
+    if (!this.militaryGarrison) return;
+    const s = this.militaryGarrison[slotIndex];
+    if (!s || s.rank >= 3) return;
+    const next = (s.rank + 1) as 1 | 2 | 3;
+    this.militaryGarrison[slotIndex] = { rank: next, workerEntityId: s.workerEntityId };
+  }
+
+  militaryWantsMoreGold(): boolean {
+    if (!this.militaryGarrison) return false;
+    return this.militaryGarrison.some(s => s != null && s.rank < 3);
   }
 }

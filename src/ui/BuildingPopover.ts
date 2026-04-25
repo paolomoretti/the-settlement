@@ -20,6 +20,7 @@ export class BuildingPopover {
   private bufferContainer: HTMLElement | null = null;
   private requirementsContainer: HTMLElement | null = null;
   private gatherWarningEl: HTMLElement | null = null;
+  private militaryPanelEl: HTMLElement | null = null;
   private productionTimeSec: number = 0;
 
   constructor(game: Game) {
@@ -40,6 +41,7 @@ export class BuildingPopover {
       this.bufferContainer = null;
       this.requirementsContainer = null;
       this.gatherWarningEl = null;
+      this.militaryPanelEl = null;
     };
   }
 
@@ -67,6 +69,7 @@ export class BuildingPopover {
       this.updateBufferDisplay();
       this.updateRequirements();
       this.updateGatherWarning();
+      this.updateMilitaryPanel();
 
       const p = entity.getComponent(Position);
       if (!p) return { x: 0, y: 0 };
@@ -89,11 +92,29 @@ export class BuildingPopover {
     this.bufferContainer = null;
     this.requirementsContainer = null;
     this.gatherWarningEl = null;
+    this.militaryPanelEl = null;
     this.popover.hide();
   }
 
   isVisible(): boolean {
     return this.popover.isVisible();
+  }
+
+  private updateMilitaryPanel(): void {
+    if (!this.militaryPanelEl || !this.currentEntity) return;
+    const building = this.currentEntity.getComponent(Building);
+    const def = dataManager.getBuilding(building!.buildingType as BuildingType);
+    const cap = def?.military?.soldierCapacity;
+    if (typeof cap !== 'number' || cap <= 0 || !building) return;
+    if (building.isComplete()) {
+      building.initMilitaryGarrison(cap);
+    }
+    if (!building.militaryGarrison) return;
+    const filled = building.getMilitaryGarrisonFilledCount();
+    const ranks = building.militaryGarrison.map(s => (s ? `R${s.rank}` : '—')).join(' ');
+    this.militaryPanelEl.innerHTML =
+      `<span class="popover-label">Garrison:</span> ${filled}/${cap} <span style="color:#aaa;font-size:10px">${ranks}</span>` +
+      `<div style="color:#888;font-size:10px;margin-top:4px">Settlers march from HQ when you have 1+ sword &amp; shield <b>in HQ storage</b> and a road path. Auto-fill runs every few seconds.</div>`;
   }
 
   private updateGatherWarning(): void {
@@ -247,8 +268,9 @@ export class BuildingPopover {
     const def = dataManager.getBuilding(building.buildingType as BuildingType);
 
     const lines: string[] = [];
+    const isMilitaryPost = typeof def?.military?.soldierCapacity === 'number' && (def?.military?.soldierCapacity ?? 0) > 0;
 
-    if (building.state === 'awaiting_materials' && building.constructionMaterials) {
+    if (!isMilitaryPost && building.state === 'awaiting_materials' && building.constructionMaterials) {
       for (const [res, required] of Object.entries(building.constructionMaterials)) {
         const delivered = building.materialsDelivered[res] || 0;
         const resName = dataManager.getResource(res as any)?.name || res;
@@ -279,6 +301,8 @@ export class BuildingPopover {
 
   private buildContent(building: Building, def?: BuildingDefinition): HTMLElement {
     const el = document.createElement('div');
+    const militaryCap = def?.military?.soldierCapacity ?? 0;
+    const isMilitaryPost = militaryCap > 0;
 
     if (def?.description) {
       const desc = document.createElement('div');
@@ -299,11 +323,16 @@ export class BuildingPopover {
 
     const status = document.createElement('div');
     status.className = 'popover-row';
-    if (building.state === 'awaiting_materials') {
+    if (building.state === 'awaiting_materials' && !isMilitaryPost) {
       status.innerHTML = `<span class="popover-label">Status:</span> <span style="color:#ffb74d">Awaiting materials</span>`;
     } else if (building.state === 'under_construction') {
       const pct = Math.floor(building.constructionProgress * 100);
       status.innerHTML = `<span class="popover-label">Status:</span> Under construction (${pct}%)`;
+    } else if (isMilitaryPost) {
+      const filled = building.getMilitaryGarrisonFilledCount();
+      const color = filled > 0 ? '#4caf50' : '#ffb74d';
+      const text = filled > 0 ? 'Garrisoned' : 'Awaiting garrison';
+      status.innerHTML = `<span class="popover-label">Status:</span> <span style="color:${color}">${text} (${filled}/${militaryCap})</span>`;
     } else {
       status.innerHTML = `<span class="popover-label">Status:</span> <span style="color:#4caf50">Complete</span>`;
     }
@@ -415,8 +444,20 @@ export class BuildingPopover {
     if (def?.storage) {
       const storage = document.createElement('div');
       storage.className = 'popover-row';
-      storage.innerHTML = `<span class="popover-label">Storage:</span> ${def.storage.capacity} slots`;
+      const accepts = def.storage.accepts?.length
+        ? ` (accepts: ${def.storage.accepts.join(', ')})`
+        : '';
+      storage.innerHTML = `<span class="popover-label">Storage:</span> ${def.storage.capacity} slots${accepts}`;
       el.appendChild(storage);
+    }
+
+    if (isMilitaryPost) {
+      const mil = document.createElement('div');
+      mil.className = 'popover-row';
+      mil.style.fontSize = '11px';
+      mil.style.lineHeight = '1.5';
+      this.militaryPanelEl = mil;
+      el.appendChild(mil);
     }
 
     const deleteBtn = document.createElement('button');

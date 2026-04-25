@@ -15,7 +15,7 @@ export interface WorkerAppearance {
   variant: 'default' | 'hat' | 'tunic2' | 'dress';
 }
 
-export type WorkerRole = 'peasant';
+export type WorkerRole = 'peasant' | 'military';
 
 /** How a carried resource or tool is attached to the body in `RenderSystem`. */
 export type WorkerHeldItemStyle = 'overhead' | 'side';
@@ -70,6 +70,20 @@ export const WORKER_DEFS: Record<WorkerRole, WorkerDef> = {
       },
     ],
   },
+  military: {
+    role: 'military',
+    speed: 1.75,
+    variants: [
+      {
+        skin: '#d4a66a',
+        hair: '#3a2518',
+        tunic: '#6a5a4a',
+        pants: '#4a4035',
+        boots: '#2a2018',
+        variant: 'default',
+      },
+    ],
+  },
 };
 
 export interface TransportTask {
@@ -89,6 +103,8 @@ export class Worker extends Component {
   public transportTask: TransportTask | null = null;
   public role: WorkerRole;
   public appearance: WorkerAppearance;
+  /** Garrison rank 1–3 for {@link WorkerRole} `military` (promoted at fort). */
+  public militaryRank: 1 | 2 | 3 = 1;
 
   /** Render pose for anything currently carried (tools vs logs, etc.). */
   public heldItemStyle: WorkerHeldItemStyle = 'overhead';
@@ -96,6 +112,8 @@ export class Worker extends Component {
   public visualActivity: WorkerVisualActivity = 'general';
   /** When set, the worker is inside this building entity and must not be drawn (e.g. mill operator). */
   public concealedInBuildingId: number | null = null;
+  /** On arrival at HQ return tile, convert this worker into a persistent specialist pool entry. */
+  public returnToHqAsSpecialist = false;
   /** Builder may hammer on site only after `beginConstruction()` runs. */
   public hammerConstructionEnabled = false;
   /** Builder stands and plays hammer idle until this time (ms since epoch). */
@@ -128,6 +146,43 @@ export class Worker extends Component {
     this.appearance = { ...variants[Math.floor(Math.random() * variants.length)] };
     this.nextIdleCheck = Date.now() + 2000 + Math.random() * 5000;
     this.idleFacing = Math.floor(Math.random() * 4);
+    if (role === 'military') {
+      this.militaryRank = 1;
+      this.applyMilitaryAppearance(1);
+    }
+  }
+
+  applyMilitaryAppearance(rank: 1 | 2 | 3): void {
+    this.militaryRank = rank;
+    if (this.role !== 'military') return;
+    if (rank === 1) {
+      this.appearance = {
+        skin: '#d4a66a',
+        hair: '#3a2518',
+        tunic: '#5c4d3a',
+        pants: '#4a4035',
+        boots: '#2a2018',
+        variant: 'hat',
+      };
+    } else if (rank === 2) {
+      this.appearance = {
+        skin: '#d0c4b8',
+        hair: '#2a2a2a',
+        tunic: '#6a6a6a',
+        pants: '#4a4a4a',
+        boots: '#2a2a2a',
+        variant: 'hat',
+      };
+    } else {
+      this.appearance = {
+        skin: '#e8d4b8',
+        hair: '#5a4018',
+        tunic: '#8a7020',
+        pants: '#6a5520',
+        boots: '#4a3810',
+        variant: 'tunic2',
+      };
+    }
   }
 
   setState(state: WorkerState): void {

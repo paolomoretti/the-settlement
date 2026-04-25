@@ -12,7 +12,7 @@ import type { TileMap } from '@/map/TileMap';
 import type { PathFinder } from '@/pathfinding/AStar';
 import { fisherHasReachableFish } from '@/map/fisherFishProbe';
 import type { WildlifeCoordinator } from '@/wildlife/WildlifeCoordinator';
-import { ResourceType } from '@/types/GameData';
+import { BuildingType, ResourceType } from '@/types/GameData';
 
 /**
  * One full production tick: consume inputs, buffer outputs, emit events, re-check buffer full.
@@ -27,7 +27,9 @@ export function applyProductionCycleOutputs(
   const storage = entity.getComponent(Storage);
   if (!building || !production) return;
 
+  const buildingType = building.buildingType as BuildingType;
   const useLocalStorage = storage?.isProductionStorage;
+  const effectiveOutputs = production.getEffectiveOutputs(buildingType);
 
   if (useLocalStorage) {
     for (const [res, amount] of Object.entries(production.inputs)) {
@@ -44,11 +46,14 @@ export function applyProductionCycleOutputs(
         remaining -= take;
       }
     }
-    for (const [res, amount] of Object.entries(production.outputs)) {
+    for (const [res, amount] of Object.entries(effectiveOutputs)) {
       if (amount <= 0) continue;
       if (dataManager.getResource(res as ResourceType)?.virtualOutput) continue;
       production.addToBuffer(res, amount);
       resourceManager.requestPickup(entity.id, res, amount);
+    }
+    if (buildingType === 'armory') {
+      production.armoryNextOutput = production.armoryNextOutput === 'sword' ? 'shield' : 'sword';
     }
   } else {
     if (production.hasInputs()) {
@@ -72,7 +77,7 @@ export function applyProductionCycleOutputs(
         return;
       }
     }
-    for (const [resource, amount] of Object.entries(production.outputs)) {
+    for (const [resource, amount] of Object.entries(effectiveOutputs)) {
       if (amount <= 0) continue;
       if (dataManager.getResource(resource as ResourceType)?.virtualOutput) continue;
       production.addToBuffer(resource, amount);
@@ -82,7 +87,7 @@ export function applyProductionCycleOutputs(
 
   eventBus.emit('production:complete', {
     entityId: entity.id,
-    outputs: { ...production.outputs },
+    outputs: { ...effectiveOutputs },
   });
 
   if (building.buildingType === 'well' && opts?.getTileMap) {
@@ -113,7 +118,7 @@ export function applyProductionCycleOutputs(
   }
 
   if (useLocalStorage) {
-    if (!production.hasBufferSpace()) {
+    if (!production.hasBufferSpaceForBuilding(buildingType)) {
       production.status = 'stopped_full';
       eventBus.emit('production:stopped', {
         entityId: entity.id,
@@ -121,7 +126,7 @@ export function applyProductionCycleOutputs(
       });
     }
   } else {
-    if (!production.hasBufferSpace()) {
+    if (!production.hasBufferSpaceForBuilding(buildingType)) {
       production.status = 'stopped_full';
       eventBus.emit('production:stopped', {
         entityId: entity.id,
@@ -169,6 +174,7 @@ export class ProductionSystem extends System {
       }
 
       const buildingDef = dataManager.getBuilding(building.buildingType);
+      const buildingType = building.buildingType as BuildingType;
       const mapLinkedGather = buildingDef?.animation?.type === 'gather';
       const storage = entity.getComponent(Storage);
       const useLocalStorage = storage?.isProductionStorage;
@@ -189,7 +195,7 @@ export class ProductionSystem extends System {
       // Check buffer/storage space for outputs (skip if cycle already in progress)
       if (production.timer === 0) {
         if (useLocalStorage) {
-          if (!production.hasBufferSpace()) {
+          if (!production.hasBufferSpaceForBuilding(buildingType)) {
             if (production.status !== 'stopped_full') {
               production.status = 'stopped_full';
               eventBus.emit('production:stopped', {
@@ -201,7 +207,7 @@ export class ProductionSystem extends System {
             continue;
           }
         } else {
-          if (!production.hasBufferSpace()) {
+          if (!production.hasBufferSpaceForBuilding(buildingType)) {
             if (production.status !== 'stopped_full') {
               production.status = 'stopped_full';
               eventBus.emit('production:stopped', {

@@ -1,5 +1,5 @@
 import { Component } from '@/core/Component';
-import type { ResourceType } from '@/types/GameData';
+import type { BuildingType, ResourceType } from '@/types/GameData';
 
 export type ProductionStatus = 'idle' | 'producing' | 'stopped_full' | 'stopped_no_inputs' | 'stopped_no_road';
 
@@ -17,6 +17,8 @@ export class Production extends Component {
   public outputBuffer: Record<string, number> = {};
   public maxOutputBuffer: number;
   public continuous: boolean;
+  /** Armory alternates sword / shield each completed cycle (starts with sword). */
+  public armoryNextOutput: 'sword' | 'shield' = 'sword';
 
   constructor(
     productionTime: number,
@@ -44,6 +46,21 @@ export class Production extends Component {
       total += amount;
     }
     return total;
+  }
+
+  /** Per-cycle outputs; armory produces one weapon per tick, alternating. */
+  getEffectiveOutputs(buildingType: BuildingType): Record<string, number> {
+    if (buildingType === 'armory') {
+      return { [this.armoryNextOutput]: 1 };
+    }
+    return this.outputs;
+  }
+
+  hasBufferSpaceForBuilding(buildingType: BuildingType): boolean {
+    const outs = this.getEffectiveOutputs(buildingType);
+    const totalAfterProduction =
+      this.getTotalBuffered() + Object.values(outs).reduce((sum, n) => sum + n, 0);
+    return totalAfterProduction <= this.maxOutputBuffer;
   }
 
   hasBufferSpace(): boolean {
@@ -105,6 +122,7 @@ export class Production extends Component {
       status: this.status,
       timer: this.timer,
       outputBuffer: { ...this.outputBuffer },
+      armoryNextOutput: this.armoryNextOutput,
     };
   }
 
@@ -112,5 +130,8 @@ export class Production extends Component {
     if (data.status) this.status = data.status;
     if (data.timer !== undefined) this.timer = data.timer;
     if (data.outputBuffer) this.outputBuffer = { ...data.outputBuffer };
+    if (data.armoryNextOutput === 'sword' || data.armoryNextOutput === 'shield') {
+      this.armoryNextOutput = data.armoryNextOutput;
+    }
   }
 }

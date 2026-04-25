@@ -2780,6 +2780,9 @@ export class RenderSystem extends System {
           this.renderProductionBubble(building, production, false);
         }
       }
+      if (building.getMilitaryGarrisonFilledCount() > 0) {
+        this.renderGarrisonStarMarker(building);
+      }
       if (building.isActive && building.outOfMapResources) {
         const bd = dataManager.getBuilding(building.buildingType);
         if (bd?.animation?.type === 'gather' || building.buildingType === 'well') {
@@ -2811,6 +2814,37 @@ export class RenderSystem extends System {
     this.ctx.lineTo(size, size);
     this.ctx.moveTo(size, -size);
     this.ctx.lineTo(-size, size);
+    this.ctx.stroke();
+    this.ctx.restore();
+  }
+
+  /** Gold star on the right/front side for military posts with at least one garrisoned soldier. */
+  private renderGarrisonStarMarker(building: Building): void {
+    const tileW = this.iso.tileWidth;
+    const tileH = this.iso.tileHeight;
+    const centerX = ((building.width - building.height) * tileW) / 4;
+    const frontY = ((building.width + building.height) * tileH) / 2;
+    const markerX = centerX + building.width * (tileW / 4) + 16;
+    const markerY = frontY - building.buildingHeight * 0.35 - 6;
+    const outer = 8;
+    const inner = 3.5;
+
+    this.ctx.save();
+    this.ctx.translate(markerX, markerY);
+    this.ctx.fillStyle = '#ffd54f';
+    this.ctx.strokeStyle = 'rgba(70, 45, 0, 0.95)';
+    this.ctx.lineWidth = 1.5;
+    this.ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const angle = -Math.PI / 2 + i * (Math.PI / 5);
+      const r = i % 2 === 0 ? outer : inner;
+      const x = Math.cos(angle) * r;
+      const y = Math.sin(angle) * r;
+      if (i === 0) this.ctx.moveTo(x, y);
+      else this.ctx.lineTo(x, y);
+    }
+    this.ctx.closePath();
+    this.ctx.fill();
     this.ctx.stroke();
     this.ctx.restore();
   }
@@ -3488,7 +3522,8 @@ export class RenderSystem extends System {
 
     const now = Date.now();
     const frame = isMoving ? Math.floor(now / 200) % 4 : 0;
-    const s = 2;
+    // Keep military close to civilian size; body proportions are normalized in painter.
+    const s = worker.role === 'military' ? 2.05 : 2;
     const anim = worker.idleAnim;
     const animT = anim !== 'none' ? (now - worker.idleAnimStart) / worker.idleAnimDuration : 0;
 

@@ -30,6 +30,7 @@ import {
 import { RABBIT_JUMP_DURATION_MS, type WildRabbit } from '@/wildlife/WildlifeCoordinator';
 import { CORDON_POLE_STRIDE_CELLS, territoryKey } from '@/map/TerritoryCoordinator';
 import { createChimneySmoke, type ChimneySmoke } from '@/rendering/chimneySmoke';
+import { createLoFiFire, type LoFiFire } from '@/rendering/loFiFire';
 
 /** World-space half-plane clip for long straight iso shores (same screen row / column of tile centers). */
 type FlatShoreCut =
@@ -47,6 +48,8 @@ const FISH_SPAWN_GAP_MAX_MS = 2_000;
 const CONSTRUCTION_SMOKE_ON_SEC = 15;
 const CONSTRUCTION_SMOKE_OFF_MIN_SEC = 3;
 const CONSTRUCTION_SMOKE_OFF_MAX_SEC = 5;
+const DEMOLITION_FIRE_DURATION_MS = 30_000;
+const DEMOLITION_SCORCH_DURATION_MS = 60_000;
 
 function nextFishSpawnGapMs(): number {
   return FISH_SPAWN_GAP_MIN_MS + Math.random() * (FISH_SPAWN_GAP_MAX_MS - FISH_SPAWN_GAP_MIN_MS);
@@ -57,6 +60,15 @@ type ConstructionSmokeState = {
   phase: 'on' | 'off';
   phaseRemainingSec: number;
 };
+
+export interface DemolitionSiteVisual {
+  id: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  startedAt: number;
+}
 
 export class RenderSystem extends System {
   private ctx: CanvasRenderingContext2D;
@@ -106,6 +118,9 @@ export class RenderSystem extends System {
   private chimneySmokes = new Map<number, ChimneySmoke>();
   /** Per-building construction smoke with on/off pulse phases. */
   private constructionSmokes = new Map<number, ConstructionSmokeState>();
+  /** Recently demolished footprints, shown as fire first and scorch marks after. */
+  private demolitionSites: DemolitionSiteVisual[] = [];
+  private demolitionFires = new Map<number, LoFiFire>();
   /** Survey flag + dominant-ore hint icons (world space; cleared when null). */
   private surveyOverlay: SurveyOverlayForRender | null = null;
   /** Tile outline while the grass “Send Surveyor” menu is open. */
@@ -349,6 +364,7 @@ export class RenderSystem extends System {
   update(_deltaTime: number): void {
     this.updateChimneySmokes(_deltaTime);
     this.updateConstructionSmokes(_deltaTime);
+    this.updateDemolitionFires(_deltaTime);
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
     this.ctx.save();
@@ -357,6 +373,7 @@ export class RenderSystem extends System {
 
     // Render tiles
     this.renderTiles();
+    this.renderDemolitionScorches(this.getViewportBounds());
     this.renderFishJumps();
 
     const cordonPack = this.getTerritoryCordonOverlay?.() ?? null;
@@ -510,6 +527,69 @@ export class RenderSystem extends System {
     for (const id of this.constructionSmokes.keys()) {
       if (!validIds.has(id)) this.constructionSmokes.delete(id);
     }
+  }
+
+  setDemolitionSites(sites: DemolitionSiteVisual[]): void {
+    this.demolitionSites = sites.map(site => ({ ...site }));
+    const validIds = new Set(this.demolitionSites.map(site => site.id));
+    for (const id of this.demolitionFires.keys()) {
+      if (!validIds.has(id)) this.demolitionFires.delete(id);
+    }
+  }
+
+  private updateDemolitionFires(dt: number): void {
+    const now = Date.now();
+    const activeIds = new Set<number>();
+
+    for (const site of this.demolitionSites) {
+      const ageMs = now - site.startedAt;
+      if (ageMs >= DEMOLITION_FIRE_DURATION_MS) continue;
+
+      activeIds.add(site.id);
+      const origin = this.getDemolitionFireOrigin(site);
+      const size = this.getDemolitionFireSize(site);
+      let fire = this.demolitionFires.get(site.id);
+
+      if (!fire) {
+        fire = createLoFiFire({
+          x: origin.x,
+          y: origin.y,
+          width: size.width,
+          height: size.height,
+          density: size.density,
+        });
+        this.demolitionFires.set(site.id, fire);
+      } else {
+        fire.setPosition(origin.x, origin.y);
+        fire.setSize(size.width, size.height);
+        fire.setDensity(size.density);
+      }
+
+      fire.update(dt);
+    }
+
+    for (const [id, fire] of this.demolitionFires) {
+      if (!activeIds.has(id)) fire.stop();
+      if (!activeIds.has(id) && fire.isFinished()) {
+        this.demolitionFires.delete(id);
+      }
+    }
+  }
+
+  private getDemolitionFireOrigin(site: DemolitionSiteVisual): { x: number; y: number } {
+    const centerX = site.x + (site.width - 1) / 2;
+    const centerY = site.y + (site.height - 1) / 2;
+    const base = this.iso.gridToScreen(centerX, centerY);
+    return { x: base.x, y: base.y + this.iso.tileHeight * 0.38 };
+  }
+
+  private getDemolitionFireSize(site: DemolitionSiteVisual): { width: number; height: number; density: number } {
+    const footprint = Math.max(1, Math.sqrt(site.width * site.height));
+    return {
+      width: Math.max(48, (site.width + site.height) * this.iso.tileWidth * 0.26),
+      height: Math.max(56, 48 + footprint * 18),
+      density: Math.min(2.2, 0.9 + footprint * 0.18),
+    };
   }
 
   // Update specific tiles on the minimap (called when tiles are explored)
@@ -1357,6 +1437,62 @@ export class RenderSystem extends System {
     }
   }
 
+  private renderDemolitionScorches(viewportBounds: {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  }): void {
+    const now = Date.now();
+    for (const site of this.demolitionSites) {
+      if (
+        site.x + site.width < viewportBounds.minX ||
+        site.x > viewportBounds.maxX ||
+        site.y + site.height < viewportBounds.minY ||
+        site.y > viewportBounds.maxY
+      ) {
+        continue;
+      }
+
+      const ageMs = now - site.startedAt;
+      if (ageMs >= DEMOLITION_FIRE_DURATION_MS + DEMOLITION_SCORCH_DURATION_MS) continue;
+
+      const scorchAgeMs = Math.max(0, ageMs - DEMOLITION_FIRE_DURATION_MS);
+      const fade = ageMs < DEMOLITION_FIRE_DURATION_MS
+        ? 1
+        : 1 - Math.min(1, scorchAgeMs / DEMOLITION_SCORCH_DURATION_MS);
+      const alpha = 0.12 + 0.42 * fade;
+
+      for (let dy = 0; dy < site.height; dy++) {
+        for (let dx = 0; dx < site.width; dx++) {
+          this.renderScorchedTile(site.x + dx, site.y + dy, alpha, site.id + dx * 17 + dy * 37);
+        }
+      }
+    }
+  }
+
+  private renderScorchedTile(x: number, y: number, alpha: number, salt: number): void {
+    const center = this.iso.gridToScreen(x, y);
+    const jitterX = (this.tileHash(x, y, salt) - 0.5) * this.iso.tileWidth * 0.16;
+    const jitterY = (this.tileHash(x, y, salt + 11) - 0.5) * this.iso.tileHeight * 0.16;
+    const rx = this.iso.tileWidth * (0.26 + this.tileHash(x, y, salt + 23) * 0.1);
+    const ry = this.iso.tileHeight * (0.2 + this.tileHash(x, y, salt + 31) * 0.08);
+
+    this.ctx.save();
+    this.ctx.globalAlpha = alpha;
+    this.ctx.fillStyle = '#17120f';
+    this.ctx.beginPath();
+    this.ctx.ellipse(center.x + jitterX, center.y + jitterY, rx, ry, -0.08, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    this.ctx.globalAlpha = alpha * 0.45;
+    this.ctx.fillStyle = '#4a3426';
+    this.ctx.beginPath();
+    this.ctx.ellipse(center.x - rx * 0.18, center.y - ry * 0.1, rx * 0.42, ry * 0.32, 0.35, 0, Math.PI * 2);
+    this.ctx.fill();
+    this.ctx.restore();
+  }
+
   private shouldShowGrid(): number {
     // Alt/Option insight — full grid at any zoom
     if (this.showInsightGrid) return 0.34;
@@ -1880,6 +2016,16 @@ export class RenderSystem extends System {
       list.sort((a, b) => a.x + a.y - (b.x + b.y) || a.x - b.x || a.id - b.id);
     }
 
+    const demolitionSitesByDepth = new Map<number, DemolitionSiteVisual[]>();
+    const now = Date.now();
+    for (const site of this.demolitionSites) {
+      if (now - site.startedAt >= DEMOLITION_FIRE_DURATION_MS) continue;
+      const depth = Math.floor(site.x + site.y + site.width + site.height - 2);
+      const list = demolitionSitesByDepth.get(depth);
+      if (list) list.push(site);
+      else demolitionSitesByDepth.set(depth, [site]);
+    }
+
     for (let d = minDepth; d <= maxDepth; d++) {
       const xMin = Math.max(viewportBounds.minX, d - viewportBounds.maxY);
       const xMax = Math.min(viewportBounds.maxX, d - viewportBounds.minY);
@@ -1965,7 +2111,18 @@ export class RenderSystem extends System {
           else this.renderWildRabbit(item.rabbit);
         }
       }
+
+      const demolitionSites = demolitionSitesByDepth.get(d);
+      if (demolitionSites) {
+        for (const site of demolitionSites) this.renderDemolitionFire(site);
+      }
     }
+  }
+
+  private renderDemolitionFire(site: DemolitionSiteVisual): void {
+    const fire = this.demolitionFires.get(site.id);
+    if (!fire) return;
+    fire.draw(this.ctx);
   }
 
   private getMountainHeight(tileX: number, tileY: number): number {

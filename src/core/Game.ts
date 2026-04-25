@@ -6,7 +6,7 @@ import { Entity } from './Entity';
 import { System } from './System';
 import { eventBus } from './EventBus';
 import { TileMap } from '@/map/TileMap';
-import { RenderSystem } from '@/systems/RenderSystem';
+import { RenderSystem, type DemolitionSiteVisual } from '@/systems/RenderSystem';
 import { MovementSystem } from '@/systems/MovementSystem';
 import { ProductionSystem } from '@/systems/ProductionSystem';
 import { InputSystem } from '@/systems/InputSystem';
@@ -34,6 +34,9 @@ import { SurveyCoordinator } from '@/survey/SurveyCoordinator';
 import { ensureWellAquiferInitialized } from '@/map/wellAquifer';
 import { WildlifeCoordinator } from '@/wildlife/WildlifeCoordinator';
 import { TerritoryCoordinator } from '@/map/TerritoryCoordinator';
+
+const DEMOLITION_FIRE_DURATION_MS = 30_000;
+const DEMOLITION_SCORCH_DURATION_MS = 60_000;
 
 export class Game {
   private entities: Entity[] = [];
@@ -93,6 +96,9 @@ export class Game {
   private worldTimeSeconds = 0;
   /** Next `worldTimeSeconds` at which we run water fish population regen (+1 per school tile). */
   private nextWaterFishRegenWorldSecond = 7200;
+  /** Recently demolished building footprints: 30s blocking fire, then 60s cosmetic scorch. */
+  private demolitionSites: DemolitionSiteVisual[] = [];
+  private nextDemolitionSiteId = 1;
 
   private readonly frameHooks: Array<() => void> = [];
 
@@ -295,6 +301,7 @@ export class Game {
 
   /** Road preview / placement: fog lifted and strictly inside the cordon (not on rope cells). */
   public canPreviewPlaceRoadCell(gx: number, gy: number): boolean {
+    if (this.isDemolitionFireBlockingCell(gx, gy)) return false;
     this.refreshTerritoryIfDirty();
     return this.territory.isInteriorCell(gx, gy);
   }
@@ -508,6 +515,9 @@ export class Game {
     if (!this.isAreaExplored(x, y)) {
       return;
     }
+    if (this.isDemolitionFireBlockingCell(x, y)) {
+      return;
+    }
     this.refreshTerritoryIfDirty();
     if (!this.territory.isInteriorCell(x, y)) {
       return;
@@ -597,6 +607,7 @@ export class Game {
     const building = entity.getComponent(Building);
 
     if (!pos || !building) return;
+    this.addDemolitionSite(pos.x, pos.y, building.width, building.height);
 
     if (building.state === 'awaiting_materials' && building.constructionMaterials) {
       const baseCampStorage = this.baseCampEntity?.getComponent(Storage);
@@ -774,9 +785,44 @@ export class Game {
         if (!tile.walkable) return false;
 
         if (tile.isOccupied() && tile.occupiedBy !== ignoreEntityId) return false;
+        if (this.isDemolitionFireBlockingCell(x + dx, y + dy)) return false;
       }
     }
     return true;
+  }
+
+  private isDemolitionFireBlockingCell(x: number, y: number): boolean {
+    const now = Date.now();
+    return this.demolitionSites.some(site =>
+      now - site.startedAt < DEMOLITION_FIRE_DURATION_MS &&
+      x >= site.x &&
+      x < site.x + site.width &&
+      y >= site.y &&
+      y < site.y + site.height
+    );
+  }
+
+  private addDemolitionSite(x: number, y: number, width: number, height: number): void {
+    this.demolitionSites.push({
+      id: this.nextDemolitionSiteId++,
+      x,
+      y,
+      width,
+      height,
+      startedAt: Date.now(),
+    });
+    this.syncDemolitionSitesToRender();
+  }
+
+  private cleanupDemolitionSites(): void {
+    const expiresBefore = Date.now() - DEMOLITION_FIRE_DURATION_MS - DEMOLITION_SCORCH_DURATION_MS;
+    const before = this.demolitionSites.length;
+    this.demolitionSites = this.demolitionSites.filter(site => site.startedAt > expiresBefore);
+    if (this.demolitionSites.length !== before) this.syncDemolitionSitesToRender();
+  }
+
+  private syncDemolitionSitesToRender(): void {
+    this.renderSystem.setDemolitionSites(this.demolitionSites);
   }
 
   private occupyBuildingTiles(entityId: number, x: number, y: number, width: number, height: number, building?: Building): void {
@@ -2201,6 +2247,7 @@ export class Game {
       this.nextWaterFishRegenWorldSecond += 7200;
       this.tileMap.applyWaterFishPopulationRegen();
     }
+    this.cleanupDemolitionSites();
 
     this.wildlife.tick(this.tileMap);
 
@@ -2761,6 +2808,8 @@ export class Game {
       },
       camera: this.renderSystem.getCamera(),
       wildlife: this.wildlife.serialize(),
+      demolitionSites: this.demolitionSites,
+      nextDemolitionSiteId: this.nextDemolitionSiteId,
       timestamp: Date.now()
     };
   }
@@ -2790,6 +2839,9 @@ export class Game {
     this.workers.resetState();
     this.surveys.reset();
     this.pendingBuildingPickups.clear();
+    this.demolitionSites = [];
+    this.nextDemolitionSiteId = 1;
+    this.syncDemolitionSitesToRender();
 
     this.wildlife.reset();
 
@@ -2820,6 +2872,9 @@ export class Game {
       this.pendingBuildingPickups.clear();
       this.toolSpecialistsAtHq = {};
       this.militarySpecialistsAtHq = 0;
+      this.demolitionSites = [];
+      this.nextDemolitionSiteId = 1;
+      this.syncDemolitionSitesToRender();
 
       if (saveData.wildlife) {
         this.wildlife.deserialize(saveData.wildlife);
@@ -2982,6 +3037,33 @@ export class Game {
           if (!needsRoute) continue;
           transportManager.computeRoutesToBuilding(segments, entity.id);
         }
+      }
+
+      if (Array.isArray(saveData.demolitionSites)) {
+        const now = Date.now();
+        const maxAge = DEMOLITION_FIRE_DURATION_MS + DEMOLITION_SCORCH_DURATION_MS;
+        this.demolitionSites = saveData.demolitionSites
+          .filter((site: any) =>
+            typeof site?.id === 'number' &&
+            typeof site.x === 'number' &&
+            typeof site.y === 'number' &&
+            typeof site.width === 'number' &&
+            typeof site.height === 'number' &&
+            typeof site.startedAt === 'number' &&
+            now - site.startedAt < maxAge
+          )
+          .map((site: any) => ({
+            id: site.id,
+            x: site.x,
+            y: site.y,
+            width: site.width,
+            height: site.height,
+            startedAt: site.startedAt,
+          }));
+        const maxId = this.demolitionSites.reduce((m, site) => Math.max(m, site.id), 0);
+        const savedNextId = typeof saveData.nextDemolitionSiteId === 'number' ? saveData.nextDemolitionSiteId : 1;
+        this.nextDemolitionSiteId = Math.max(savedNextId, maxId + 1);
+        this.syncDemolitionSitesToRender();
       }
 
       if (saveData.camera) {

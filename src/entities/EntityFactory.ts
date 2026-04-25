@@ -29,8 +29,16 @@ export function createWorker(x: number, y: number, role: WorkerRole = 'peasant')
     0
   ));
   entity.addComponent(new Movable(def.speed));
-  entity.addComponent(new Worker(def.role, role));
+  entity.addComponent(new Worker(role === 'military' ? 'Soldier' : 'Peasant', role));
 
+  return entity;
+}
+
+/** Assembled at HQ; `rank` is updated after gold promotions at the fort. */
+export function createMilitaryWorker(x: number, y: number, rank: 1 | 2 | 3 = 1): Entity {
+  const entity = createWorker(x, y, 'military');
+  const w = entity.getComponent(Worker);
+  if (w) w.applyMilitaryAppearance(rank);
   return entity;
 }
 
@@ -96,6 +104,10 @@ export function createBuilding(
     buildingComp.buildTimeSec = buildingDef.buildTime;
   } else {
     buildingComp.completedAt = Date.now();
+    const cap = buildingDef.military?.soldierCapacity;
+    if (typeof cap === 'number' && cap > 0) {
+      buildingComp.initMilitaryGarrison(cap);
+    }
   }
 
   entity.addComponent(buildingComp);

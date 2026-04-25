@@ -59,7 +59,10 @@ export class TerritoryCoordinator {
       if (b.buildingType === 'base_camp') continue;
       const def = dataManager.getBuilding(b.buildingType);
       const tr = def?.military?.territoryVisionRadius;
-      if (typeof tr === 'number' && tr > 0) {
+      const soldierCap = def?.military?.soldierCapacity;
+      const needsGarrisonForDisk =
+        typeof soldierCap === 'number' && soldierCap > 0 ? b.hasMilitaryTerritoryContributor() : true;
+      if (typeof tr === 'number' && tr > 0 && needsGarrisonForDisk) {
         const cx = pos.x + Math.floor(b.width / 2);
         const cy = pos.y + Math.floor(b.height / 2);
         this.sources.push({ cx, cy, r: tr });

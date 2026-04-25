@@ -18,6 +18,7 @@ let buildingPopover: BuildingPopover | null = null;
 let cellSurveyPopover: GamePopover | null = null;
 let canvasHoverTooltip: CanvasHoverTooltip | null = null;
 let unregisterHoverFrameHook: (() => void) | null = null;
+let inventoryActiveTab: 'resources' | 'workers' = 'resources';
 
 const OPTIONS_KEY = 'settler_options';
 
@@ -375,6 +376,12 @@ function setupGameUI(game: Game): void {
   document.getElementById('btn-close-inventory')?.addEventListener('click', () => {
     hideInventoryPanel();
   });
+  document.getElementById('inventory-tab-resources')?.addEventListener('click', () => {
+    setInventoryTab('resources');
+  });
+  document.getElementById('inventory-tab-workers')?.addEventListener('click', () => {
+    setInventoryTab('workers');
+  });
 
   const inventoryOverlay = document.getElementById('inventory-overlay');
   inventoryOverlay?.addEventListener('click', (e) => {
@@ -514,6 +521,32 @@ function showInventoryPanel(game: Game): void {
     });
   });
 
+  const workersList = document.getElementById('workers-list');
+  if (workersList) {
+    workersList.innerHTML = '';
+    const specialistRows = game.getSpecializedWorkersSummary();
+    if (specialistRows.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'inventory-item inventory-item--zero';
+      empty.innerHTML = `<span class="inventory-item-name">No specialists yet</span><span class="inventory-item-count">0</span>`;
+      workersList.appendChild(empty);
+    } else {
+      specialistRows.forEach(row => {
+        const item = document.createElement('div');
+        item.className = 'inventory-item';
+        const icon = row.iconResourceId
+          ? `<img src="/assets/resources/${row.iconResourceId}.png" class="resource-icon" style="width:16px;height:16px" onerror="this.style.display='none'">`
+          : '';
+        item.innerHTML =
+          `<span class="inventory-item-name">${icon}${row.label}</span>` +
+          `<span class="inventory-item-count">${row.total} <span style="color:#9ab791;font-weight:normal">(HQ ready ${row.hqReady})</span></span>`;
+        workersList.appendChild(item);
+      });
+    }
+  }
+
+  setInventoryTab(inventoryActiveTab);
+
   overlay.classList.add('is-open');
   overlay.setAttribute('aria-hidden', 'false');
 }
@@ -523,6 +556,18 @@ function hideInventoryPanel(): void {
   if (!overlay) return;
   overlay.classList.remove('is-open');
   overlay.setAttribute('aria-hidden', 'true');
+}
+
+function setInventoryTab(tab: 'resources' | 'workers'): void {
+  inventoryActiveTab = tab;
+  const resBtn = document.getElementById('inventory-tab-resources');
+  const workersBtn = document.getElementById('inventory-tab-workers');
+  const resSection = document.getElementById('inventory-section-resources');
+  const workersSection = document.getElementById('inventory-section-workers');
+  resBtn?.classList.toggle('active', tab === 'resources');
+  workersBtn?.classList.toggle('active', tab === 'workers');
+  resSection?.classList.toggle('active', tab === 'resources');
+  workersSection?.classList.toggle('active', tab === 'workers');
 }
 
 function updateButtonStates(activeButtonId: string | null): void {

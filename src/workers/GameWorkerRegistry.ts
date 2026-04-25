@@ -8,6 +8,7 @@
  */
 
 import { Entity } from '@/core/Entity';
+import { eventBus } from '@/core/EventBus';
 import { TileMap } from '@/map/TileMap';
 import { pickRandomReachableWaterFishTarget } from '@/map/fisherFishProbe';
 import { PathFinder } from '@/pathfinding/AStar';
@@ -22,7 +23,7 @@ import { roadSegmentManager, RoadSegment } from '@/economics/RoadSegmentManager'
 import { transportManager } from '@/economics/TransportManager';
 import { createWorker } from '@/entities/EntityFactory';
 import { applyProductionCycleOutputs } from '@/systems/ProductionSystem';
-import type { ResourceType, BuildingDefinition, AnimationConfig } from '@/types/GameData';
+import type { ResourceType, BuildingDefinition, AnimationConfig, BuildingType } from '@/types/GameData';
 import type { WildlifeCoordinator } from '@/wildlife/WildlifeCoordinator';
 
 /** Same facing convention as `RenderSystem.renderWorkerSprite` for movement vectors. */
@@ -90,13 +91,21 @@ export interface WorkerWorldAccess {
   getAvailablePeasantSlotCount(): number;
   /** Wild rabbits for hunter gather + render hooks. */
   getWildlife(): WildlifeCoordinator;
+  /** Reserve one tool specialist for dispatch (from HQ pool first, else consume peasant + tool resource). */
+  claimToolSpecialistForDispatch(tool: string): boolean;
+  /** Dispatch was cancelled; specialist returns to HQ ready pool. */
+  returnToolSpecialistToHq(tool: string): void;
+  /** A returning military specialist reached HQ and should be added to the persistent pool. */
+  onMilitarySpecialistReturnedToHq(): void;
 }
 
 export class GameWorkerRegistry {
   private readonly returningWorkers = new Set<number>();
   private readonly builderWorkers = new Map<number, number>();
   private readonly returningBuilders = new Set<number>();
-  private readonly toolWorkers = new Map<number, number>();
+  private readonly toolWorkers = new Map<number, { buildingId: number; tool: string }>();
+  /** HQ-assembled soldier walking to a military building (`workerId` → `buildingEntityId`). */
+  private readonly militaryDispatchWorkers = new Map<number, number>();
   private readonly animationWorkers = new Map<number, AnimationWorkerState>();
   private readonly reservedTreeTiles = new Set<string>();
   private readonly surveyorWorkers = new Set<number>();
@@ -139,9 +148,37 @@ export class GameWorkerRegistry {
       this.builderWorkers.size +
       this.returningBuilders.size +
       this.toolWorkers.size +
+      this.militaryDispatchWorkers.size +
       this.animationWorkers.size +
       this.surveyorWorkers.size
     );
+  }
+
+  beginMilitaryDispatch(workerEntityId: number, targetBuildingEntityId: number): void {
+    this.militaryDispatchWorkers.set(workerEntityId, targetBuildingEntityId);
+  }
+
+  /** How many soldiers are currently walking from HQ to this fort (not yet slotted). */
+  countMilitaryDispatchToBuilding(buildingEntityId: number): number {
+    let n = 0;
+    for (const [, bid] of this.militaryDispatchWorkers) {
+      if (bid === buildingEntityId) n++;
+    }
+    return n;
+  }
+
+  /** Soldiers currently walking from HQ to any military post. */
+  getMilitaryDispatchCount(): number {
+    return this.militaryDispatchWorkers.size;
+  }
+
+  /** In-transit required-tool specialists per tool id. */
+  getToolDispatchCounts(): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const { tool } of this.toolWorkers.values()) {
+      counts[tool] = (counts[tool] || 0) + 1;
+    }
+    return counts;
   }
 
   attachSurveyorWorker(workerEntityId: number): void {
@@ -220,6 +257,10 @@ export class GameWorkerRegistry {
         }
         const movable = entity.getComponent(Movable);
         if (movable && !movable.isMoving) {
+          const worker = entity.getComponent(Worker);
+          if (worker?.returnToHqAsSpecialist && worker.role === 'military') {
+            this.world.onMilitarySpecialistReturnedToHq();
+          }
           this.world.removeEntity(entity);
           this.returningWorkers.delete(workerId);
         }
@@ -315,7 +356,75 @@ export class GameWorkerRegistry {
       }
     }
 
-    for (const [workerId, buildingId] of this.toolWorkers) {
+    for (const [workerId, buildingId] of this.militaryDispatchWorkers) {
+      const workerEntity = entities.find(e => e.id === workerId && e.active);
+      if (!workerEntity) {
+        this.militaryDispatchWorkers.delete(workerId);
+        continue;
+      }
+
+      const movable = workerEntity.getComponent(Movable);
+      if (movable && !movable.isMoving) {
+        const buildingEntity = entities.find(e => e.id === buildingId && e.active);
+        if (!buildingEntity) {
+          this.world.removeEntity(workerEntity);
+          this.militaryDispatchWorkers.delete(workerId);
+          continue;
+        }
+
+        const targetTile = this.findBuildingAdjacentRoadTile(buildingEntity);
+        const workerPos = workerEntity.getComponent(Position);
+        if (!workerPos) {
+          this.militaryDispatchWorkers.delete(workerId);
+          continue;
+        }
+
+        const gx = Math.floor(workerPos.x + 1e-6);
+        const gy = Math.floor(workerPos.y + 1e-6);
+        const onGoalTile =
+          targetTile && workerPos && gx === targetTile.x && gy === targetTile.y;
+
+        if (onGoalTile) {
+          const building = buildingEntity.getComponent(Building);
+          const workerComp = workerEntity.getComponent(Worker);
+          const def = building ? dataManager.getBuilding(building.buildingType as BuildingType) : null;
+          const cap = def?.military?.soldierCapacity;
+          if (building && workerComp && typeof cap === 'number' && cap > 0) {
+            building.initMilitaryGarrison(cap);
+          }
+          if (building && workerComp && building.militaryGarrison) {
+            const idx = building.findFreeMilitarySlotIndex();
+            if (idx >= 0) {
+              building.assignMilitarySlot(idx, workerEntity.id);
+              workerComp.concealedInBuildingId = buildingEntity.id;
+              workerComp.setState('idle');
+              workerComp.dropResource();
+              workerPos.set(targetTile.x + 0.5, targetTile.y + 0.5);
+              eventBus.emit('military:garrison_changed', { buildingEntityId: buildingEntity.id });
+            } else {
+              this.world.removeEntity(workerEntity);
+            }
+          } else {
+            this.world.removeEntity(workerEntity);
+          }
+          this.militaryDispatchWorkers.delete(workerId);
+        } else if (targetTile && workerPos) {
+          const path = pathFinder.findPath(
+            new Position(Math.floor(workerPos.x), Math.floor(workerPos.y)),
+            new Position(targetTile.x, targetTile.y),
+            tileMap
+          );
+          if (path.length > 0) {
+            movable.setPath(path);
+            const wc = workerEntity.getComponent(Worker);
+            if (wc) wc.setState('walking');
+          }
+        }
+      }
+    }
+
+    for (const [workerId, payload] of this.toolWorkers) {
+      const { buildingId, tool } = payload;
       const workerEntity = entities.find(e => e.id === workerId && e.active);
       if (!workerEntity) {
         this.toolWorkers.delete(workerId);
@@ -327,6 +436,7 @@ export class GameWorkerRegistry {
         const buildingEntity = entities.find(e => e.id === buildingId && e.active);
         if (!buildingEntity) {
           this.world.removeEntity(workerEntity);
+          this.world.returnToolSpecialistToHq(tool);
           this.toolWorkers.delete(workerId);
           continue;
         }
@@ -341,7 +451,10 @@ export class GameWorkerRegistry {
           Math.floor(workerPos.y) === targetTile.y
         ) {
           const building = buildingEntity.getComponent(Building);
-          if (building) building.hasOperator = true;
+          if (building) {
+            building.hasOperator = true;
+            building.assignedToolSpecialist = tool;
+          }
           this.world.removeEntity(workerEntity);
           this.toolWorkers.delete(workerId);
         } else if (targetTile && workerPos) {
@@ -366,8 +479,8 @@ export class GameWorkerRegistry {
       if (!building.isActive) continue;
 
       let hasToolWorker = false;
-      for (const [, bId] of this.toolWorkers) {
-        if (bId === entity.id) {
+      for (const { buildingId } of this.toolWorkers.values()) {
+        if (buildingId === entity.id) {
           hasToolWorker = true;
           break;
         }
@@ -1162,6 +1275,63 @@ export class GameWorkerRegistry {
     building.builderEntityId = null;
   }
 
+  /** On military-building demolition, reveal garrisoned soldiers and send them back to HQ on roads. */
+  returnMilitaryGarrisonWorkers(buildingEntity: Entity, workerEntityIds: number[]): void {
+    if (workerEntityIds.length === 0) return;
+
+    const entities = [...this.world.getEntities()];
+    const tileMap = this.world.getTileMap();
+    const pathFinder = this.world.getPathFinder();
+    const spawnTile = this.findBaseCampSpawnTile();
+    const roadTile = this.findBuildingAdjacentRoadTile(buildingEntity);
+
+    if (!spawnTile || !roadTile) {
+      for (const wid of workerEntityIds) {
+        const entity = entities.find(e => e.id === wid && e.active);
+        if (entity) this.world.removeEntity(entity);
+      }
+      return;
+    }
+
+    const roadPath = pathFinder.findPath(
+      new Position(roadTile.x, roadTile.y),
+      new Position(spawnTile.x, spawnTile.y),
+      tileMap
+    );
+    const fallbackPath = pathFinder.findOffRoadPath(
+      new Position(roadTile.x, roadTile.y),
+      new Position(spawnTile.x, spawnTile.y),
+      tileMap
+    );
+
+    for (const wid of workerEntityIds) {
+      const entity = entities.find(e => e.id === wid && e.active);
+      if (!entity) continue;
+
+      const pos = entity.getComponent(Position);
+      const movable = entity.getComponent(Movable);
+      const worker = entity.getComponent(Worker);
+      if (!pos || !movable || !worker) {
+        this.world.removeEntity(entity);
+        continue;
+      }
+
+      worker.concealedInBuildingId = null;
+      worker.dropResource();
+      worker.visualActivity = 'general';
+      worker.setState('walking');
+      worker.returnToHqAsSpecialist = true;
+      pos.set(roadTile.x + 0.5, roadTile.y + 0.5);
+      movable.speed = 1.8;
+      const chosenPath =
+        roadPath.length > 0
+          ? roadPath
+          : (fallbackPath.length > 0 ? fallbackPath : [new Position(spawnTile.x, spawnTile.y)]);
+      movable.setPath(chosenPath);
+      this.returningWorkers.add(wid);
+    }
+  }
+
   /** Remove attached worker entities and clear registry entries when a building is destroyed. */
   detachWorkersForDestroyedBuilding(entity: Entity): void {
     const building = entity.getComponent(Building);
@@ -1194,12 +1364,21 @@ export class GameWorkerRegistry {
       }
     }
 
-    for (const [workerId, buildingId] of this.toolWorkers) {
+    for (const [workerId, payload] of this.toolWorkers) {
+      if (payload.buildingId === entity.id) {
+        const workerEntity = entities.find(e => e.id === workerId && e.active);
+        if (workerEntity) this.world.removeEntity(workerEntity);
+        this.world.returnToolSpecialistToHq(payload.tool);
+        this.toolWorkers.delete(workerId);
+        break;
+      }
+    }
+
+    for (const [workerId, buildingId] of this.militaryDispatchWorkers) {
       if (buildingId === entity.id) {
         const workerEntity = entities.find(e => e.id === workerId && e.active);
         if (workerEntity) this.world.removeEntity(workerEntity);
-        this.toolWorkers.delete(workerId);
-        break;
+        this.militaryDispatchWorkers.delete(workerId);
       }
     }
   }
@@ -1213,11 +1392,17 @@ export class GameWorkerRegistry {
     return this.findBaseCampSpawnTile();
   }
 
+  /** Road tile used as the goal for HQ→building walkers (tool delivery, soldiers, …). */
+  getBuildingDispatchRoadTile(buildingEntity: Entity): { x: number; y: number } | null {
+    return this.findBuildingAdjacentRoadTile(buildingEntity);
+  }
+
   resetState(): void {
     this.returningWorkers.clear();
     this.builderWorkers.clear();
     this.returningBuilders.clear();
     this.toolWorkers.clear();
+    this.militaryDispatchWorkers.clear();
     this.animationWorkers.clear();
     this.reservedTreeTiles.clear();
     this.surveyorWorkers.clear();
@@ -1496,8 +1681,6 @@ export class GameWorkerRegistry {
   }
 
   private spawnToolWorker(buildingEntity: Entity, tool: string): void {
-    if (this.world.getAvailablePeasantSlotCount() <= 0) return;
-
     const spawnTile = this.findBaseCampSpawnTile();
     if (!spawnTile) return;
 
@@ -1512,6 +1695,7 @@ export class GameWorkerRegistry {
       tileMap
     );
     if (path.length === 0) return;
+    if (!this.world.claimToolSpecialistForDispatch(tool)) return;
 
     const worker = createWorker(spawnTile.x, spawnTile.y);
     this.world.addEntity(worker);
@@ -1522,7 +1706,7 @@ export class GameWorkerRegistry {
       workerComp.visualActivity = 'deliver_tool';
     }
 
-    this.toolWorkers.set(worker.id, buildingEntity.id);
+    this.toolWorkers.set(worker.id, { buildingId: buildingEntity.id, tool });
 
     const movable = worker.getComponent(Movable);
     if (movable && workerComp) {

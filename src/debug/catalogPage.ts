@@ -534,7 +534,7 @@ function workerSection(): HTMLElement {
   const intro = el(
     'p',
     'sub',
-    'Peasant role: clothing variants, walk, idle poses, job carries, and floor nap. Drawing matches the main game (shared painter).'
+    'Peasant + military roles: clothing variants, walk, idle poses, job carries, floor nap, and soldier ranks. Drawing matches the main game (shared painter).'
   );
   intro.style.marginBottom = '16px';
 
@@ -737,6 +737,30 @@ function workerSection(): HTMLElement {
         anim: 'none',
         armAnim: 'none',
       }),
+  });
+
+  const soldierR1 = new Worker('Soldier R1', 'military');
+  soldierR1.applyMilitaryAppearance(1);
+  addCard('military-rank-1', 'Military rank 1 (sword + shield)', {
+    kind: 'normal',
+    worker: soldierR1,
+    patch: (now) => basePatch(now, { isMoving: true, facing: 0, anim: 'none', armAnim: 'none' }),
+  });
+
+  const soldierR2 = new Worker('Soldier R2', 'military');
+  soldierR2.applyMilitaryAppearance(2);
+  addCard('military-rank-2', 'Military rank 2 (helmet)', {
+    kind: 'normal',
+    worker: soldierR2,
+    patch: (now) => basePatch(now, { facing: 0, anim: 'none' }),
+  });
+
+  const soldierR3 = new Worker('Soldier R3', 'military');
+  soldierR3.applyMilitaryAppearance(3);
+  addCard('military-rank-3', 'Military rank 3 (gold trim)', {
+    kind: 'normal',
+    worker: soldierR3,
+    patch: (now) => basePatch(now, { facing: 0, anim: 'none' }),
   });
 
   wrap.appendChild(buildSectionToc('Jump to worker preview', workerToc));

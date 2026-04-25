@@ -25,7 +25,7 @@ import { transportManager } from '@/economics/TransportManager';
 import { Inventory, BuildingType, ResourceType } from '@/types/GameData';
 
 // Entity factories
-import { createWorker, createBuilding, createBaseCamp } from '@/entities/EntityFactory';
+import { createWorker, createMilitaryWorker, createBuilding, createBaseCamp } from '@/entities/EntityFactory';
 import { GameWorkerRegistry } from '@/workers';
 import { isInsightAltHeld } from '@/input/InsightAltKey';
 import { isInsightRockTile } from '@/ui/hoverInsight/buildHoverLines';
@@ -67,6 +67,10 @@ export class Game {
     current: 0,
     max: 0
   };
+  /** Specialized workers idle at HQ and ready for reassignment. */
+  private toolSpecialistsAtHq: Record<string, number> = {};
+  /** Specialized military workers idle at HQ and ready for reassignment. */
+  private militarySpecialistsAtHq = 0;
 
   /** Wild rabbits (spawn, wander, hunt targets); see `.claude/WILDLIFE_RABBITS.md`. */
   public wildlife = new WildlifeCoordinator();
@@ -135,9 +139,11 @@ export class Game {
       removeEntity: e => this.removeEntity(e),
       getRenderSystem: () => this.renderSystem,
       getBaseCampConnectedRoads: () => this.getBaseCampConnectedRoads(),
-      getAvailablePeasantSlotCount: () =>
-        this.population.current - roadSegmentManager.getWorkerCount() - this.workers.getReservedPopulationCount(),
+      getAvailablePeasantSlotCount: () => this.getAvailablePopulation(),
       getWildlife: () => this.wildlife,
+      claimToolSpecialistForDispatch: (tool: string) => this.claimToolSpecialistForDispatch(tool),
+      returnToolSpecialistToHq: (tool: string) => this.addToolSpecialistToHqPool(tool, 1),
+      onMilitarySpecialistReturnedToHq: () => this.addMilitarySpecialistToHqPool(1),
     });
 
     this.surveys = new SurveyCoordinator({
@@ -216,6 +222,10 @@ export class Game {
         if (b?.buildingType !== 'well') return;
         this.destroyBuildingEntity(ent);
       }, 2000);
+    });
+
+    eventBus.on('military:garrison_changed', () => {
+      this.markTerritoryDirty();
     });
 
     // Input mode changes
@@ -344,6 +354,16 @@ export class Game {
       // Routes for production buildings with inputs
       const production = entity.getComponent(Production);
       if (production && production.hasInputs() && building.isComplete()) {
+        transportManager.computeRoutesToBuilding(segments, entity.id);
+      }
+
+      const storage = entity.getComponent(Storage);
+      if (
+        building.isComplete() &&
+        storage &&
+        !storage.isProductionStorage &&
+        storage.accepts?.includes('gold_coin')
+      ) {
         transportManager.computeRoutesToBuilding(segments, entity.id);
       }
 
@@ -589,6 +609,23 @@ export class Game {
           if (delivered > 0) baseCampStorage.addItem(res, delivered);
         }
       }
+    }
+
+    if (building.militaryGarrison) {
+      const garrisonWorkerIds: number[] = [];
+      for (const slot of building.militaryGarrison) {
+        if (!slot) continue;
+        garrisonWorkerIds.push(slot.workerEntityId);
+      }
+      if (garrisonWorkerIds.length > 0) {
+        this.workers.returnMilitaryGarrisonWorkers(entity, garrisonWorkerIds);
+      }
+      building.militaryGarrison = null;
+    }
+
+    if (building.assignedToolSpecialist) {
+      this.addToolSpecialistToHqPool(building.assignedToolSpecialist, 1);
+      building.assignedToolSpecialist = null;
     }
 
     this.workers.detachWorkersForDestroyedBuilding(entity);
@@ -873,11 +910,16 @@ export class Game {
 
     if (!building) return;
 
-    // Set construction state based on whether building has costs
-    const hasCosts = Object.values(buildingDef.buildCost).some(v => v > 0);
+    // Military garrison posts consume build costs instantly but still require a builder walk-in.
+    const isMilitaryPost = typeof buildingDef.military?.soldierCapacity === 'number' && buildingDef.military.soldierCapacity > 0;
+    // Set construction state based on whether building has deliverable material costs.
+    const hasCosts = Object.values(buildingDef.buildCost).some(v => v > 0) && !isMilitaryPost;
     if (building.buildTimeSec > 0) {
       if (hasCosts) {
         building.startAwaitingMaterials(building.buildTimeSec, buildingDef.buildCost);
+      } else if (isMilitaryPost) {
+        // No carts needed, but keep the visible builder arrival -> build -> return sequence.
+        building.startAwaitingMaterials(building.buildTimeSec, {});
       } else {
         building.startConstruction(building.buildTimeSec);
       }
@@ -915,8 +957,290 @@ export class Game {
     console.log(`${buildingDef.name} (${building.width}x${building.height}) placed at (${x}, ${y}) — ${building.state}`);
   }
 
+  private getToolSpecialistsAtHqCount(): number {
+    return Object.values(this.toolSpecialistsAtHq).reduce((sum, n) => sum + n, 0);
+  }
+
+  private getToolSpecialistsAssignedToBuildingsCount(): number {
+    let n = 0;
+    for (const e of this.entities) {
+      if (!e.active) continue;
+      const b = e.getComponent(Building);
+      if (b?.assignedToolSpecialist) n++;
+    }
+    return n;
+  }
+
+  private getToolSpecialistsInTransitCount(): number {
+    return Object.values(this.workers.getToolDispatchCounts()).reduce((sum, n) => sum + n, 0);
+  }
+
+  private getTotalToolSpecialistsCount(): number {
+    return (
+      this.getToolSpecialistsAtHqCount() +
+      this.getToolSpecialistsAssignedToBuildingsCount() +
+      this.getToolSpecialistsInTransitCount()
+    );
+  }
+
+  private getTotalMilitarySpecialistsCount(): number {
+    let activeMilitaryWorkers = 0;
+    for (const e of this.entities) {
+      if (!e.active) continue;
+      const w = e.getComponent(Worker);
+      if (w?.role === 'military') activeMilitaryWorkers++;
+    }
+    return this.militarySpecialistsAtHq + activeMilitaryWorkers;
+  }
+
+  private claimToolSpecialistForDispatch(tool: string): boolean {
+    const pooled = this.toolSpecialistsAtHq[tool] || 0;
+    if (pooled > 0) {
+      this.toolSpecialistsAtHq[tool] = pooled - 1;
+      return true;
+    }
+
+    if (this.getAvailablePopulation() <= 0) return false;
+    const hqStorage = this.baseCampEntity?.getComponent(Storage);
+    if (!hqStorage || hqStorage.getAmount(tool) < 1) return false;
+    hqStorage.removeItem(tool, 1);
+    this.syncInventory();
+    return true;
+  }
+
+  private addToolSpecialistToHqPool(tool: string, count: number = 1): void {
+    if (count <= 0) return;
+    this.toolSpecialistsAtHq[tool] = (this.toolSpecialistsAtHq[tool] || 0) + count;
+  }
+
+  private consumeMilitarySpecialistFromHqPool(): boolean {
+    if (this.militarySpecialistsAtHq <= 0) return false;
+    this.militarySpecialistsAtHq--;
+    return true;
+  }
+
+  private addMilitarySpecialistToHqPool(count: number = 1): void {
+    if (count <= 0) return;
+    this.militarySpecialistsAtHq += count;
+  }
+
+  public getSpecializedWorkersSummary(): Array<{
+    id: string;
+    label: string;
+    total: number;
+    hqReady: number;
+    iconResourceId: string;
+  }> {
+    const rows: Array<{
+      id: string;
+      label: string;
+      total: number;
+      hqReady: number;
+      iconResourceId: string;
+    }> = [];
+    const flavorByTool: Record<string, string> = {
+      axe: 'Woodcutter',
+      saw: 'Sawyer',
+      pickaxe: 'Miner',
+      shovel: 'Digger',
+      fishing_rod: 'Fisher',
+      scythe: 'Farmer',
+      hammer: 'Builder',
+      rolling_pin: 'Baker',
+      crucible: 'Smelter',
+      tongs: 'Blacksmith',
+      cleaver: 'Butcher',
+      bow: 'Hunter',
+    };
+    const toolDispatch = this.workers.getToolDispatchCounts();
+    const toolAssigned: Record<string, number> = {};
+    for (const e of this.entities) {
+      if (!e.active) continue;
+      const b = e.getComponent(Building);
+      if (!b?.assignedToolSpecialist) continue;
+      toolAssigned[b.assignedToolSpecialist] = (toolAssigned[b.assignedToolSpecialist] || 0) + 1;
+    }
+
+    const toolIds = new Set<string>([
+      ...Object.keys(this.toolSpecialistsAtHq),
+      ...Object.keys(toolDispatch),
+      ...Object.keys(toolAssigned),
+    ]);
+    for (const tool of toolIds) {
+      const atHq = this.toolSpecialistsAtHq[tool] || 0;
+      const total = atHq + (toolDispatch[tool] || 0) + (toolAssigned[tool] || 0);
+      if (total <= 0) continue;
+      const resName = dataManager.getResource(tool as ResourceType)?.name || tool;
+      const flavor = flavorByTool[tool];
+      const label = flavor ? `${flavor} (${resName})` : `${resName} Specialist`;
+      rows.push({ id: `tool:${tool}`, label, total, hqReady: atHq, iconResourceId: tool });
+    }
+
+    const militaryTotal = this.getTotalMilitarySpecialistsCount();
+    if (militaryTotal > 0) {
+      rows.push({
+        id: 'military',
+        label: 'Soldier (Sword + Shield)',
+        total: militaryTotal,
+        hqReady: this.militarySpecialistsAtHq,
+        iconResourceId: 'sword',
+      });
+    }
+
+    return rows.sort((a, b) => a.label.localeCompare(b.label));
+  }
+
   public getAvailablePopulation(): number {
-    return this.population.current - roadSegmentManager.getWorkerCount() - this.workers.getReservedPopulationCount();
+    return (
+      this.population.current -
+      roadSegmentManager.getWorkerCount() -
+      this.workers.getReservedPopulationCount() -
+      this.getTotalToolSpecialistsCount() -
+      this.getTotalMilitarySpecialistsCount()
+    );
+  }
+
+  /** Soldiers inside military posts (not available for roads / HQ dispatch). */
+  public getTotalMilitaryGarrisonedCount(): number {
+    let n = 0;
+    for (const e of this.entities) {
+      if (!e.active) continue;
+      const b = e.getComponent(Building);
+      if (b?.militaryGarrison) n += b.getMilitaryGarrisonFilledCount();
+    }
+    return n;
+  }
+
+  /**
+   * Assemble one soldier at HQ (1× worker slot + sword + shield), walk to the target military building.
+   * Weapons must already be in HQ storage (delivered by road workers from the armory).
+   * @param opts.silent — no on-screen toasts (used by automatic garrison fill).
+   */
+  public trainMilitary(buildingEntity: Entity, opts?: { silent?: boolean }): boolean {
+    const silent = opts?.silent ?? false;
+    const toastFail = (msg: string) => {
+      if (silent) return;
+      const hp = this.inputSystem.hoverGridPos;
+      if (hp) {
+        const sp = this.renderSystem.gridToScreen(hp.x, hp.y);
+        this.renderSystem.showToast(msg, sp.x, sp.y);
+      } else {
+        const canvas = this.renderSystem['canvas'] as HTMLCanvasElement | undefined;
+        const w = canvas?.clientWidth ?? 800;
+        this.renderSystem.showToast(msg, w * 0.5, 96);
+      }
+    };
+
+    const building = buildingEntity.getComponent(Building);
+    const def = building ? dataManager.getBuilding(building.buildingType as BuildingType) : null;
+    const cap = def?.military?.soldierCapacity;
+    if (!this.baseCampEntity || !building || !def || typeof cap !== 'number' || cap <= 0) return false;
+    if (!building.isComplete() || !building.isActive) return false;
+
+    building.initMilitaryGarrison(cap);
+    if (building.findFreeMilitarySlotIndex() < 0) {
+      toastFail('Garrison is full');
+      return false;
+    }
+    const pending = this.workers.countMilitaryDispatchToBuilding(buildingEntity.id);
+    const emptySlots = building.militaryGarrison!.filter(s => s == null).length;
+    if (pending >= emptySlots) {
+      toastFail('Every free slot already has a soldier marching to this post');
+      return false;
+    }
+    const usePooledMilitary = this.militarySpecialistsAtHq > 0;
+    if (!usePooledMilitary) {
+      if (this.getAvailablePopulation() <= 0) {
+        toastFail('No free settlers');
+        return false;
+      }
+
+      const hqStorage = this.baseCampEntity.getComponent(Storage);
+      if (!hqStorage || hqStorage.getAmount('sword') < 1 || hqStorage.getAmount('shield') < 1) {
+        toastFail('Need sword and shield at HQ (not only in armory buffer)');
+        return false;
+      }
+    }
+
+    const spawnTile = this.workers.getBaseCampSpawnTile();
+    const roadGoal = this.workers.getBuildingDispatchRoadTile(buildingEntity);
+    if (!spawnTile || !roadGoal) {
+      toastFail('No road to HQ or fort entrance');
+      return false;
+    }
+
+    const path = this.pathFinder.findPath(
+      new Position(spawnTile.x, spawnTile.y),
+      new Position(roadGoal.x, roadGoal.y),
+      this.tileMap
+    );
+    if (path.length === 0) {
+      toastFail('No road path from HQ to this fort — connect both to the same road network');
+      return false;
+    }
+
+    if (usePooledMilitary) {
+      // Pool count was validated above; consume only after dispatch path is confirmed.
+      this.consumeMilitarySpecialistFromHqPool();
+    } else {
+      const hqStorage = this.baseCampEntity.getComponent(Storage);
+      if (!hqStorage || hqStorage.getAmount('sword') < 1 || hqStorage.getAmount('shield') < 1) {
+        toastFail('Need sword and shield at HQ (not only in armory buffer)');
+        return false;
+      }
+      hqStorage.removeItem('sword', 1);
+      hqStorage.removeItem('shield', 1);
+      this.syncInventory();
+    }
+
+    const soldier = createMilitaryWorker(spawnTile.x, spawnTile.y, 1);
+    this.addEntity(soldier);
+    const movable = soldier.getComponent(Movable);
+    const w = soldier.getComponent(Worker);
+    if (movable && w) {
+      movable.setPath(path);
+      w.setState('walking');
+    }
+    this.workers.beginMilitaryDispatch(soldier.id, buildingEntity.id);
+    if (!silent) {
+      const hp = this.inputSystem.hoverGridPos;
+      if (hp) {
+        const sp = this.renderSystem.gridToScreen(hp.x, hp.y);
+        this.renderSystem.showToast('Soldier marching from HQ', sp.x, sp.y);
+      } else {
+        const canvasEl = (this.renderSystem as unknown as { canvas: HTMLCanvasElement }).canvas;
+        this.renderSystem.showToast('Soldier marching from HQ', canvasEl.clientWidth * 0.5, 96);
+      }
+    }
+    return true;
+  }
+
+  /**
+   * When a military post has empty slots, HQ holds a sword+shield pair, and a path exists,
+   * train one soldier (same rules as the popover). Runs on the production-input recheck timer.
+   */
+  private tryAutoTrainMilitaryGarrisons(): void {
+    if (!this.baseCampEntity) return;
+    for (let round = 0; round < 16; round++) {
+      let trainedThisRound = false;
+      for (const entity of this.entities) {
+        if (!entity.active) continue;
+        const building = entity.getComponent(Building);
+        const def = building ? dataManager.getBuilding(building.buildingType as BuildingType) : null;
+        const cap = def?.military?.soldierCapacity;
+        if (!building?.isComplete() || !building.isActive || typeof cap !== 'number' || cap <= 0) continue;
+        building.initMilitaryGarrison(cap);
+        if (building.findFreeMilitarySlotIndex() < 0) continue;
+        const emptySlots = building.militaryGarrison!.filter(s => s == null).length;
+        const pending = this.workers.countMilitaryDispatchToBuilding(entity.id);
+        if (pending >= emptySlots) continue;
+
+        if (this.trainMilitary(entity, { silent: true })) {
+          trainedThisRound = true;
+        }
+      }
+      if (!trainedThisRound) break;
+    }
   }
 
   /**
@@ -1339,6 +1663,55 @@ export class Game {
       this.rescueStuckMultiInputProductionStorage(entity);
       this.tryDispatchHqProductionInputsForBuilding(entity);
     }
+    this.tryDispatchMilitaryGoldPayroll();
+    this.tryAutoTrainMilitaryGarrisons();
+  }
+
+  /** One delivered `gold_coin` promotes one soldier one rank; coin is consumed (not stockpiled). */
+  private tryConsumeMilitaryGoldAfterDelivery(destEntity: Entity, destBuilding: Building): void {
+    const storage = destEntity.getComponent(Storage);
+    if (!storage || !destBuilding.militaryGarrison || !destBuilding.militaryWantsMoreGold()) return;
+    const idx = destBuilding.pickSlotIndexForGoldPromotion();
+    if (idx < 0) return;
+    if (storage.getAmount('gold_coin') < 1) return;
+    storage.removeItem('gold_coin', 1);
+    destBuilding.promoteMilitaryAtSlot(idx);
+    const slot = destBuilding.militaryGarrison[idx];
+    if (slot) {
+      const wEnt = this.entities.find(e => e.id === slot.workerEntityId && e.active);
+      const w = wEnt?.getComponent(Worker);
+      if (w) w.applyMilitaryAppearance(slot.rank);
+    }
+    eventBus.emit('resource:updated');
+  }
+
+  /** Send `gold_coin` from HQ to military posts that have garrison and room for promotions. */
+  private tryDispatchMilitaryGoldPayroll(): void {
+    if (!this.baseCampEntity) return;
+    const hqStorage = this.baseCampEntity.getComponent(Storage);
+    const spawnTile = this.workers.getBaseCampSpawnTile();
+    if (!hqStorage || !spawnTile) return;
+
+    for (const entity of this.entities) {
+      if (!entity.active) continue;
+      const building = entity.getComponent(Building);
+      const storage = entity.getComponent(Storage);
+      if (!building?.isComplete() || !building.isActive || !storage) continue;
+      if (!building.militaryGarrison || !building.militaryWantsMoreGold()) continue;
+      if (!storage.canAccept('gold_coin')) continue;
+
+      const inFlight = this.countInTransitToBuildingForResource(entity.id, 'gold_coin');
+      if (inFlight > 0) continue;
+
+      const free = storage.getFreeSpace();
+      if (free <= 0) continue;
+
+      if (hqStorage.getAmount('gold_coin') < 1) continue;
+
+      hqStorage.removeItem('gold_coin', 1);
+      transportManager.addJunctionItem(spawnTile.x, spawnTile.y, 'gold_coin', entity.id);
+      eventBus.emit('resource:updated');
+    }
   }
 
   private updateTransport(): void {
@@ -1669,7 +2042,10 @@ export class Game {
                     true
                   )
                 ) {
-                  destStorage.addItem(res, 1);
+                  const added = destStorage.addItem(res, 1);
+                  if (added > 0 && res === 'gold_coin' && destBuilding) {
+                    this.tryConsumeMilitaryGoldAfterDelivery(destEntity, destBuilding);
+                  }
                 } else {
                   transportManager.addJunctionItem(task.dropoffPos.x, task.dropoffPos.y, res, this.baseCampEntity?.id ?? null);
                 }
@@ -1937,11 +2313,6 @@ export class Game {
       this.renderSystem.insightHighlightWater = null;
     }
 
-    this.workers.tickReturnLegs();
-
-    // Update construction delivery (builder arrivals, material checks)
-    this.workers.updateConstructionDelivery();
-
     // Re-dispatch lost construction materials
     this.recheckConstructionMaterials();
 
@@ -1965,6 +2336,11 @@ export class Game {
 
     // Update all systems
     this.systems.forEach(system => system.update(deltaTime));
+
+    /** After movement so walkers that finish a path this frame see `isMoving === false` at goal tile. */
+    this.workers.tickReturnLegs();
+    this.workers.updateConstructionDelivery();
+    this.refreshTerritoryIfDirty();
 
     // Update transport relay chain
     this.updateTransport();
@@ -2014,6 +2390,15 @@ export class Game {
 
           const production = entity.getComponent(Production);
           if (production && production.hasInputs()) {
+            transportManager.computeRoutesToBuilding(roadSegmentManager.getSegments(), entity.id);
+          }
+
+          const soldierCap = buildingDef?.military?.soldierCapacity;
+          if (typeof soldierCap === 'number' && soldierCap > 0) {
+            building.initMilitaryGarrison(soldierCap);
+          }
+          const st = entity.getComponent(Storage);
+          if (st && !st.isProductionStorage && st.accepts?.includes('gold_coin')) {
             transportManager.computeRoutesToBuilding(roadSegmentManager.getSegments(), entity.id);
           }
 
@@ -2345,6 +2730,15 @@ export class Game {
         if (building && !building.hasOperator) {
           data.hasOperator = false;
         }
+        if (building?.assignedToolSpecialist) {
+          data.assignedToolSpecialist = building.assignedToolSpecialist;
+        }
+
+        if (building?.militaryGarrison && building.militaryGarrison.length > 0) {
+          data.militaryGarrison = building.militaryGarrison.map(s =>
+            s ? { rank: s.rank, workerEntityId: s.workerEntityId } : null
+          );
+        }
 
         if (production) {
           data.production = production.serialize();
@@ -2361,6 +2755,10 @@ export class Game {
       roadSegments: roadSegmentManager.serialize(),
       inventory: this.inventory,
       population: this.population,
+      specialistPools: {
+        tools: this.toolSpecialistsAtHq,
+        military: this.militarySpecialistsAtHq,
+      },
       camera: this.renderSystem.getCamera(),
       wildlife: this.wildlife.serialize(),
       timestamp: Date.now()
@@ -2387,6 +2785,8 @@ export class Game {
     this.dragPreviewPosition = null;
     this.inventory = {};
     this.population = { current: 0, max: 0 };
+    this.toolSpecialistsAtHq = {};
+    this.militarySpecialistsAtHq = 0;
     this.workers.resetState();
     this.surveys.reset();
     this.pendingBuildingPickups.clear();
@@ -2418,6 +2818,8 @@ export class Game {
       this.workers.resetState();
       this.surveys.reset();
       this.pendingBuildingPickups.clear();
+      this.toolSpecialistsAtHq = {};
+      this.militarySpecialistsAtHq = 0;
 
       if (saveData.wildlife) {
         this.wildlife.deserialize(saveData.wildlife);
@@ -2430,6 +2832,21 @@ export class Game {
         this.population.current = saveData.population.current;
       } else {
         this.population.current = dataManager.getStartingPopulation();
+      }
+      if (saveData.specialistPools) {
+        const tools = saveData.specialistPools.tools;
+        if (tools && typeof tools === 'object') {
+          this.toolSpecialistsAtHq = {};
+          for (const [tool, n] of Object.entries(tools)) {
+            if (typeof n === 'number' && n > 0) {
+              this.toolSpecialistsAtHq[tool] = Math.floor(n);
+            }
+          }
+        }
+        const military = saveData.specialistPools.military;
+        if (typeof military === 'number' && military > 0) {
+          this.militarySpecialistsAtHq = Math.floor(military);
+        }
       }
       this.baseCampEntity = null;
 
@@ -2465,6 +2882,27 @@ export class Game {
           if (buildingData.hasOperator === false) {
             building.hasOperator = false;
           }
+          if (typeof buildingData.assignedToolSpecialist === 'string' && buildingData.assignedToolSpecialist.length > 0) {
+            building.assignedToolSpecialist = buildingData.assignedToolSpecialist;
+          }
+
+          const capRestore = dataManager.getBuilding(buildingData.type as BuildingType)?.military?.soldierCapacity;
+          if (typeof capRestore === 'number' && capRestore > 0) {
+            building.initMilitaryGarrison(capRestore);
+            if (Array.isArray(buildingData.militaryGarrison) && building.militaryGarrison) {
+              for (let i = 0; i < building.militaryGarrison.length; i++) {
+                const entry = buildingData.militaryGarrison[i];
+                if (!entry || typeof entry.rank !== 'number' || typeof entry.workerEntityId !== 'number') {
+                  building.militaryGarrison[i] = null;
+                  continue;
+                }
+                building.militaryGarrison[i] = {
+                  rank: Math.min(3, Math.max(1, entry.rank)) as 1 | 2 | 3,
+                  workerEntityId: entry.workerEntityId,
+                };
+              }
+            }
+          }
 
           // Restore production state
           const production = entity.getComponent(Production);
@@ -2494,6 +2932,8 @@ export class Game {
       for (const ent of this.entities) {
         this.migrateLegacyProductionOutputsFromBuffer(ent);
       }
+
+      this.ensureMilitaryGarrisonWorkersPresent();
 
       // Restore transport queue
       if (saveData.transportQueue) {
@@ -2534,8 +2974,12 @@ export class Game {
           if (!entity.active) continue;
           const production = entity.getComponent(Production);
           const building = entity.getComponent(Building);
-          if (!production || !building || !production.hasInputs()) continue;
-          if (!building.isComplete()) continue;
+          const storage = entity.getComponent(Storage);
+          if (!building?.isComplete()) continue;
+          const needsRoute =
+            (production?.hasInputs() && !!production) ||
+            (!!storage && !storage.isProductionStorage && storage.accepts?.includes('gold_coin'));
+          if (!needsRoute) continue;
           transportManager.computeRoutesToBuilding(segments, entity.id);
         }
       }
@@ -2556,6 +3000,33 @@ export class Game {
     } catch (error) {
       console.error('Failed to load game:', error);
       return false;
+    }
+  }
+
+  /** Recreate hidden military entities for persisted garrison slots after loading saves. */
+  private ensureMilitaryGarrisonWorkersPresent(): void {
+    for (const ent of this.entities) {
+      if (!ent.active) continue;
+      const building = ent.getComponent(Building);
+      const pos = ent.getComponent(Position);
+      if (!building?.militaryGarrison || !pos) continue;
+
+      for (let i = 0; i < building.militaryGarrison.length; i++) {
+        const slot = building.militaryGarrison[i];
+        if (!slot) continue;
+        const existing = this.entities.find(e => e.id === slot.workerEntityId && e.active);
+        if (existing) continue;
+
+        const workerEntity = createMilitaryWorker(pos.x + 0.5, pos.y + 0.5, slot.rank);
+        const worker = workerEntity.getComponent(Worker);
+        if (worker) {
+          worker.concealedInBuildingId = ent.id;
+          worker.setState('idle');
+          worker.dropResource();
+        }
+        this.addEntity(workerEntity);
+        slot.workerEntityId = workerEntity.id;
+      }
     }
   }
 

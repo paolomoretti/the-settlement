@@ -182,7 +182,6 @@ export class RenderSystem extends System {
       '/assets/resources/coal.png',
       '/assets/resources/iron_ore.png',
       '/assets/resources/gold_ore.png',
-      '/assets/resources/granite.png',
       '/assets/resources/iron_bar.png',
       '/assets/resources/gold_coin.png',
       '/assets/resources/grain.png',

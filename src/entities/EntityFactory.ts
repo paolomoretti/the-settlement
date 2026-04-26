@@ -125,7 +125,8 @@ export function createBuilding(
         prod.inputs || {},
         prod.maxOutputBuffer || 10,
         prod.continuous,
-        inputsAny
+        inputsAny,
+        prod.outputMode ?? 'all'
       )
     );
   }

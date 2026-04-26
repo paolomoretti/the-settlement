@@ -16,7 +16,7 @@ import { Position } from '@/components/Position';
 import { Movable } from '@/components/Movable';
 import { Worker } from '@/components/Worker';
 import { Building } from '@/components/Building';
-import { Production } from '@/components/Production';
+import { Production, type ProductionPriorityState } from '@/components/Production';
 import { Storage } from '@/components/Storage';
 import { dataManager } from '@/data/DataManager';
 import { resourceManager } from '@/economics/ResourceManager';
@@ -70,6 +70,8 @@ export class Game {
     current: 0,
     max: 0
   };
+  private productionPriorities: ProductionPriorityState = {};
+  private buildingPriorities: Record<string, number> = {};
   /** Specialized workers idle at HQ and ready for reassignment. */
   private toolSpecialistsAtHq: Record<string, number> = {};
   /** Specialized military workers idle at HQ and ready for reassignment. */
@@ -113,7 +115,8 @@ export class Game {
     this.productionSystem = new ProductionSystem(
       () => this.tileMap,
       () => this.pathFinder,
-      () => this.wildlife
+      () => this.wildlife,
+      () => this.productionPriorities
     );
     this.inputSystem = new InputSystem(canvas, this.renderSystem);
     this.pathFinder = new PathFinder();
@@ -184,11 +187,153 @@ export class Game {
     eventBus.on('production:complete', (payload: { entityId: number; outputs: Record<string, number> }) =>
       this.onProductionComplete(payload)
     );
+    this.productionPriorities = this.createDefaultProductionPriorities();
+    this.buildingPriorities = this.createDefaultBuildingPriorities();
 
     // Initialize game world
     if (!skipInit) {
       this.initializeWorld();
     }
+  }
+
+  private createDefaultProductionPriorities(): ProductionPriorityState {
+    const priorities: ProductionPriorityState = {};
+    for (const building of dataManager.getAllBuildings()) {
+      if (building.production?.outputMode !== 'weighted_random') continue;
+      priorities[building.id] = {};
+      for (const [resource, amount] of Object.entries(building.production.outputs)) {
+        if ((amount ?? 0) > 0) {
+          priorities[building.id]![resource] = 5;
+        }
+      }
+    }
+    return priorities;
+  }
+
+  private normalizeProductionPriorities(raw?: unknown): ProductionPriorityState {
+    const defaults = this.createDefaultProductionPriorities();
+    if (!raw || typeof raw !== 'object') return defaults;
+
+    for (const [buildingType, resources] of Object.entries(defaults)) {
+      const rawResources = (raw as Record<string, unknown>)[buildingType];
+      if (!rawResources || typeof rawResources !== 'object') continue;
+      for (const resource of Object.keys(resources)) {
+        const value = (rawResources as Record<string, unknown>)[resource];
+        if (typeof value === 'number' && Number.isFinite(value)) {
+          resources[resource] = Math.min(10, Math.max(1, Math.round(value)));
+        }
+      }
+    }
+    return defaults;
+  }
+
+  private createDefaultBuildingPriorities(): Record<string, number> {
+    const priorities: Record<string, number> = {};
+    for (const building of dataManager.getAllBuildings()) {
+      if (building.id === 'road' || building.id === 'base_camp') continue;
+      priorities[building.id] = 50;
+    }
+    return priorities;
+  }
+
+  private normalizeBuildingPriorities(raw?: unknown): Record<string, number> {
+    const defaults = this.createDefaultBuildingPriorities();
+    if (!raw || typeof raw !== 'object') return defaults;
+    for (const buildingType of Object.keys(defaults)) {
+      const value = (raw as Record<string, unknown>)[buildingType];
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        defaults[buildingType] = Math.min(100, Math.max(1, Math.round(value)));
+      }
+    }
+    return defaults;
+  }
+
+  getProductionPriorities(): ProductionPriorityState {
+    return this.productionPriorities;
+  }
+
+  getBuildingPriority(buildingType: string): number {
+    return this.buildingPriorities[buildingType] ?? 50;
+  }
+
+  setBuildingPriority(buildingType: string, priority: number): void {
+    this.buildingPriorities[buildingType] = Math.min(100, Math.max(1, Math.round(priority)));
+  }
+
+  private getBuildingPriorityForEntity(entity: Entity): number {
+    const building = entity.getComponent(Building);
+    return building ? this.getBuildingPriority(building.buildingType) : 50;
+  }
+
+  private sortEntitiesByBuildingPriority(entities: Entity[]): Entity[] {
+    return [...entities].sort((a, b) => {
+      const delta = this.getBuildingPriorityForEntity(b) - this.getBuildingPriorityForEntity(a);
+      return delta !== 0 ? delta : a.id - b.id;
+    });
+  }
+
+  getProductionPriority(buildingType: string, resourceType: string): number {
+    return this.productionPriorities[buildingType]?.[resourceType] ?? 5;
+  }
+
+  setProductionPriority(buildingType: string, resourceType: string, priority: number): void {
+    if (!this.productionPriorities[buildingType]) {
+      this.productionPriorities[buildingType] = {};
+    }
+    this.productionPriorities[buildingType]![resourceType] = Math.min(10, Math.max(1, Math.round(priority)));
+  }
+
+  getBuildingOperationalSummary(): Array<{
+    buildingType: BuildingType;
+    name: string;
+    active: number;
+    total: number;
+  }> {
+    const counts = new Map<BuildingType, { active: number; total: number }>();
+
+    for (const entity of this.sortEntitiesByBuildingPriority(this.entities)) {
+      if (!entity.active) continue;
+      const building = entity.getComponent(Building);
+      if (!building || building.buildingType === 'road' || building.buildingType === 'base_camp') continue;
+
+      const buildingType = building.buildingType as BuildingType;
+      const count = counts.get(buildingType) ?? { active: 0, total: 0 };
+      count.total++;
+
+      const def = dataManager.getBuilding(buildingType);
+      const production = entity.getComponent(Production);
+      const productionStopped =
+        production != null &&
+        (production.status === 'stopped_full' ||
+          production.status === 'stopped_no_inputs' ||
+          production.status === 'stopped_no_road');
+      const hasRequiredStaff = !def?.requiredTool || building.hasOperator;
+      const hasRequiredGarrison =
+        !def?.military?.soldierCapacity || building.getMilitaryGarrisonFilledCount() > 0;
+      const isOperational =
+        building.isComplete() &&
+        (!building.requiresRoad || building.isActive) &&
+        hasRequiredStaff &&
+        hasRequiredGarrison &&
+        !productionStopped;
+
+      if (isOperational) count.active++;
+      counts.set(buildingType, count);
+    }
+
+    return dataManager
+      .getAllBuildings()
+      .filter(def => def.id !== 'road' && def.id !== 'base_camp')
+      .map(def => {
+        const count = counts.get(def.id);
+        return {
+          buildingType: def.id,
+          name: def.name,
+          active: count?.active ?? 0,
+          total: count?.total ?? 0,
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   private setupEventListeners(): void {
@@ -333,7 +478,7 @@ export class Game {
   }
 
   private hasAnyUnroutedProductionOutput(): boolean {
-    for (const entity of this.entities) {
+    for (const entity of this.sortEntitiesByBuildingPriority(this.entities)) {
       if (!entity.active) continue;
       const production = entity.getComponent(Production);
       const building = entity.getComponent(Building);
@@ -355,7 +500,7 @@ export class Game {
     const segments = roadSegmentManager.getSegments();
     transportManager.computeRoutes(segments, this.baseCampEntity.id);
     transportManager.clearBuildingRoutes();
-    for (const entity of this.entities) {
+    for (const entity of this.sortEntitiesByBuildingPriority(this.entities)) {
       if (!entity.active) continue;
       const building = entity.getComponent(Building);
       if (!building) continue;
@@ -1075,6 +1220,7 @@ export class Game {
   public getSpecializedWorkersSummary(): Array<{
     id: string;
     label: string;
+    employed: number;
     total: number;
     hqReady: number;
     iconResourceId: string;
@@ -1082,6 +1228,7 @@ export class Game {
     const rows: Array<{
       id: string;
       label: string;
+      employed: number;
       total: number;
       hqReady: number;
       iconResourceId: string;
@@ -1109,31 +1256,33 @@ export class Game {
       toolAssigned[b.assignedToolSpecialist] = (toolAssigned[b.assignedToolSpecialist] || 0) + 1;
     }
 
-    const toolIds = new Set<string>([
-      ...Object.keys(this.toolSpecialistsAtHq),
-      ...Object.keys(toolDispatch),
-      ...Object.keys(toolAssigned),
-    ]);
+    const toolIds = new Set<string>();
+    for (const building of dataManager.getAllBuildings()) {
+      if (building.requiredTool) toolIds.add(building.requiredTool);
+    }
+    for (const tool of Object.keys(this.toolSpecialistsAtHq)) toolIds.add(tool);
+    for (const tool of Object.keys(toolDispatch)) toolIds.add(tool);
+    for (const tool of Object.keys(toolAssigned)) toolIds.add(tool);
+
     for (const tool of toolIds) {
       const atHq = this.toolSpecialistsAtHq[tool] || 0;
-      const total = atHq + (toolDispatch[tool] || 0) + (toolAssigned[tool] || 0);
-      if (total <= 0) continue;
+      const employed = (toolDispatch[tool] || 0) + (toolAssigned[tool] || 0);
+      const total = atHq + employed;
       const resName = dataManager.getResource(tool as ResourceType)?.name || tool;
       const flavor = flavorByTool[tool];
       const label = flavor ? `${flavor} (${resName})` : `${resName} Specialist`;
-      rows.push({ id: `tool:${tool}`, label, total, hqReady: atHq, iconResourceId: tool });
+      rows.push({ id: `tool:${tool}`, label, employed, total, hqReady: atHq, iconResourceId: tool });
     }
 
     const militaryTotal = this.getTotalMilitarySpecialistsCount();
-    if (militaryTotal > 0) {
-      rows.push({
-        id: 'military',
-        label: 'Soldier (Sword + Shield)',
-        total: militaryTotal,
-        hqReady: this.militarySpecialistsAtHq,
-        iconResourceId: 'sword',
-      });
-    }
+    rows.push({
+      id: 'military',
+      label: 'Soldier (Sword + Shield)',
+      employed: Math.max(0, militaryTotal - this.militarySpecialistsAtHq),
+      total: militaryTotal,
+      hqReady: this.militarySpecialistsAtHq,
+      iconResourceId: 'sword',
+    });
 
     return rows.sort((a, b) => a.label.localeCompare(b.label));
   }
@@ -1305,7 +1454,7 @@ export class Game {
     const spawnTile = this.workers.getBaseCampSpawnTile();
     if (!spawnTile) return;
 
-    for (const entity of this.entities) {
+    for (const entity of this.sortEntitiesByBuildingPriority(this.entities)) {
       if (!entity.active) continue;
       const building = entity.getComponent(Building);
       if (!building || building.state !== 'awaiting_materials') continue;
@@ -1449,38 +1598,6 @@ export class Game {
     }
 
     return n;
-  }
-
-  /**
-   * For multi-input recipes, do not pull `res` from HQ unless every other input type either already
-   * satisfies its per-cycle amount in the building (plus in-flight to it) or HQ still holds enough
-   * of that type to cover the remainder. Prevents filling local storage with only grain when water
-   * is missing.
-   */
-  private canDispatchHqProductionInputForMultiRecipe(
-    entityId: number,
-    storage: Storage,
-    hqStorage: Storage,
-    inputs: Record<string, number>,
-    res: string
-  ): boolean {
-    const types = Object.keys(inputs).filter(k => (inputs[k] ?? 0) > 0);
-    if (types.length <= 1) return true;
-
-    const pipeline = (t: string) =>
-      storage.getAmount(t) + this.countInTransitToBuildingForResource(entityId, t);
-
-    for (const other of types) {
-      if (other === res) continue;
-      const need = inputs[other] ?? 0;
-      if (need <= 0) continue;
-      const shortfall = Math.max(0, need - pipeline(other));
-      if (shortfall <= 0) continue;
-      if (hqStorage.getAmount(other) < shortfall) {
-        return false;
-      }
-    }
-    return true;
   }
 
   /**
@@ -1641,21 +1758,56 @@ export class Game {
     const inputTypes = production.getAllInputResourceTypes();
     if (inputTypes.length === 0) return;
 
-    const stillNeedsInput = (res: string): boolean => {
+    const fixedInputTypes = Object.keys(production.inputs).filter(k => (production.inputs[k] ?? 0) > 0);
+    const totalFixedInputAmount = fixedInputTypes.reduce(
+      (sum, res) => sum + (production.inputs[res] ?? 0),
+      0
+    );
+    const baseFixedQuota: Record<string, number> = {};
+    let assignedFixedQuota = 0;
+    if (fixedInputTypes.length > 0 && totalFixedInputAmount > 0) {
+      for (const res of fixedInputTypes) {
+        const quota = Math.max(
+          production.inputs[res] ?? 0,
+          Math.floor(storage.capacity * ((production.inputs[res] ?? 0) / totalFixedInputAmount))
+        );
+        baseFixedQuota[res] = quota;
+        assignedFixedQuota += quota;
+      }
+      let remainder = Math.max(0, storage.capacity - assignedFixedQuota);
+      for (const res of fixedInputTypes) {
+        if (remainder <= 0) break;
+        baseFixedQuota[res]++;
+        remainder--;
+      }
+    }
+
+    const targetStoredOrInTransit = (res: string): number => {
       const needFixed = production.inputs[res] ?? 0;
       if (needFixed > 0) {
-        const pipeline =
-          storage.getAmount(res) + this.countInTransitToBuildingForResource(entity.id, res);
-        return pipeline < needFixed;
+        return fixedInputTypes.length <= 1 ? storage.capacity : baseFixedQuota[res] ?? needFixed;
       }
       for (const g of production.inputsAny) {
         if (!g.resourceTypes.includes(res as ResourceType)) continue;
-        const p = production.pipelineSumForInputsAnyGroup(g, storage, r =>
+        return Math.max(g.amount, Math.floor(storage.capacity / Math.max(1, g.resourceTypes.length)));
+      }
+      return 0;
+    };
+
+    const stillNeedsInput = (res: string): boolean => {
+      const target = targetStoredOrInTransit(res);
+      if (target <= 0) return false;
+      const pipeline =
+        storage.getAmount(res) + this.countInTransitToBuildingForResource(entity.id, res);
+      if (pipeline >= target) return false;
+      for (const g of production.inputsAny) {
+        if (!g.resourceTypes.includes(res as ResourceType)) continue;
+        const groupPipeline = production.pipelineSumForInputsAnyGroup(g, storage, r =>
           this.countInTransitToBuildingForResource(entity.id, r)
         );
-        if (p < g.amount) return true;
+        return groupPipeline < storage.capacity;
       }
-      return false;
+      return true;
     };
 
     let dispatchSlots = Math.max(
@@ -1670,17 +1822,6 @@ export class Game {
         if (!stillNeedsInput(res)) continue;
         if (hqStorage.getAmount(res) <= 0) continue;
         if (!storage.canAccept(res)) continue;
-        if (
-          !this.canDispatchHqProductionInputForMultiRecipe(
-            entity.id,
-            storage,
-            hqStorage,
-            production.inputs,
-            res
-          )
-        ) {
-          continue;
-        }
         if (!this.canAddProductionInputToLocalStorage(entity, storage, production, res, 1)) {
           continue;
         }
@@ -1703,7 +1844,7 @@ export class Game {
     if (!force && now - this.lastProductionInputCheckTime < 2000) return;
     this.lastProductionInputCheckTime = now;
 
-    for (const entity of this.entities) {
+    for (const entity of this.sortEntitiesByBuildingPriority(this.entities)) {
       if (!entity.active) continue;
       this.rescueStuckMultiInputProductionStorage(entity);
       this.tryDispatchHqProductionInputsForBuilding(entity);
@@ -2802,6 +2943,8 @@ export class Game {
       roadSegments: roadSegmentManager.serialize(),
       inventory: this.inventory,
       population: this.population,
+      productionPriorities: this.productionPriorities,
+      buildingPriorities: this.buildingPriorities,
       specialistPools: {
         tools: this.toolSpecialistsAtHq,
         military: this.militarySpecialistsAtHq,
@@ -2834,6 +2977,8 @@ export class Game {
     this.dragPreviewPosition = null;
     this.inventory = {};
     this.population = { current: 0, max: 0 };
+    this.productionPriorities = this.createDefaultProductionPriorities();
+    this.buildingPriorities = this.createDefaultBuildingPriorities();
     this.toolSpecialistsAtHq = {};
     this.militarySpecialistsAtHq = 0;
     this.workers.resetState();
@@ -2888,6 +3033,8 @@ export class Game {
       } else {
         this.population.current = dataManager.getStartingPopulation();
       }
+      this.productionPriorities = this.normalizeProductionPriorities(saveData.productionPriorities);
+      this.buildingPriorities = this.normalizeBuildingPriorities(saveData.buildingPriorities);
       if (saveData.specialistPools) {
         const tools = saveData.specialistPools.tools;
         if (tools && typeof tools === 'object') {

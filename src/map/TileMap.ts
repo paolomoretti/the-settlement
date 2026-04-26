@@ -796,7 +796,7 @@ export class TileMap {
 
         if (tile.cellMinerals && cellMineralTotal(tile.cellMinerals) > 0) {
           const m = tile.cellMinerals;
-          cellMinerals.push({ x, y, c: m.coal, i: m.iron_ore, g: m.gold_ore, r: m.granite });
+          cellMinerals.push({ x, y, c: m.coal, i: m.iron_ore, g: m.gold_ore, r: m.stone });
         }
 
         if (tile.cellWellWaterRemaining !== undefined) {
@@ -947,7 +947,7 @@ export class TileMap {
             coal: entry.c,
             iron_ore: entry.i,
             gold_ore: entry.g,
-            granite: entry.r,
+            stone: entry.r,
           };
         }
       }

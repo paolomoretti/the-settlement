@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Players probe **bare grass** tiles for underground ores. Minerals are **lazy-assigned** per tile (`Tile.cellMinerals`: coal, iron_ore, gold_ore, granite; **10 units total** per cell once rolled). A survey does **not** change amounts after assignment.
+Players probe **bare grass** tiles for underground deposits. Minerals are **lazy-assigned** per tile (`Tile.cellMinerals`: coal, iron_ore, gold_ore, stone; **10 units total** per cell once rolled). A survey does **not** change amounts after assignment.
 
 ## UI behaviour
 

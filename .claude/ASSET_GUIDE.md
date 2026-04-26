@@ -680,7 +680,7 @@ All three locations use the same path pattern `/assets/resources/{resourceId}.pn
 
 ### Resource id reference
 
-**Raw Materials:** `wood_log`, `stone`, `coal`, `iron_ore`, `gold_ore`, `granite`
+**Raw Materials:** `wood_log`, `stone`, `coal`, `iron_ore`, `gold_ore`
 
 **Refined Materials:** `wood_plank`, `iron_bar`, `gold_coin`
 

@@ -15,6 +15,7 @@ export interface ShortcutBinding {
 
 export const SHORTCUT_BINDINGS: ShortcutBinding[] = [
   { key: 'H', description: 'Center on base camp', category: 'navigation' },
+  { key: 'I', description: 'Open base camp details', category: 'general' },
   { key: 'R', description: 'Build road mode', category: 'building' },
   { key: 'E', description: 'Erase tool (roads, buildings, trees)', category: 'building' },
   { key: 'B', description: 'Open building menu', category: 'building' },
@@ -97,6 +98,13 @@ export function setupKeyboardShortcuts(game: Game): void {
       pos.x + building.width / 2,
       pos.y + building.height / 2,
     );
+  });
+
+  // I — Open base camp details
+  hotkeys('i', (e) => {
+    if (isModalOpen()) return;
+    e.preventDefault();
+    eventBus.emit('open:inventory');
   });
 
   // R — Build road mode

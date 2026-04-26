@@ -13,6 +13,7 @@ import type { PathFinder } from '@/pathfinding/AStar';
 import { fisherHasReachableFish } from '@/map/fisherFishProbe';
 import type { WildlifeCoordinator } from '@/wildlife/WildlifeCoordinator';
 import { BuildingType, ResourceType } from '@/types/GameData';
+import type { ProductionPriorityState } from '@/components/Production';
 
 /**
  * One full production tick: consume inputs, buffer outputs, emit events, re-check buffer full.
@@ -20,7 +21,7 @@ import { BuildingType, ResourceType } from '@/types/GameData';
  */
 export function applyProductionCycleOutputs(
   entity: Entity,
-  opts?: { getTileMap?: () => TileMap }
+  opts?: { getTileMap?: () => TileMap; getProductionPriorities?: () => ProductionPriorityState }
 ): void {
   const building = entity.getComponent(Building);
   const production = entity.getComponent(Production);
@@ -29,7 +30,10 @@ export function applyProductionCycleOutputs(
 
   const buildingType = building.buildingType as BuildingType;
   const useLocalStorage = storage?.isProductionStorage;
-  const effectiveOutputs = production.getEffectiveOutputs(buildingType);
+  const effectiveOutputs = production.getEffectiveOutputs(
+    buildingType,
+    opts?.getProductionPriorities?.()
+  );
 
   if (useLocalStorage) {
     for (const [res, amount] of Object.entries(production.inputs)) {
@@ -89,6 +93,7 @@ export function applyProductionCycleOutputs(
     entityId: entity.id,
     outputs: { ...effectiveOutputs },
   });
+  production.clearCycleOutputs();
 
   if (building.buildingType === 'well' && opts?.getTileMap) {
     const pos = entity.getComponent(Position);
@@ -140,7 +145,8 @@ export class ProductionSystem extends System {
   constructor(
     private readonly getTileMap: () => TileMap,
     private readonly getPathFinder: () => PathFinder,
-    private readonly getWildlife?: () => WildlifeCoordinator
+    private readonly getWildlife?: () => WildlifeCoordinator,
+    private readonly getProductionPriorities?: () => ProductionPriorityState
   ) {
     super();
   }
@@ -366,6 +372,15 @@ export class ProductionSystem extends System {
       }
 
       const wellAquiferBlocked = wellAquiferDry;
+      const mapGatherSourceBlocked =
+        mapLinkedGather && building.outOfMapResources;
+
+      if (!production.currentCycleOutputs && !mapGatherSourceBlocked && !wellAquiferBlocked) {
+        production.prepareCycleOutputs(
+          buildingType,
+          this.getProductionPriorities?.()
+        );
+      }
 
       // Forester / quarry & fisher depletion / underground mine: hold the production clock while the field worker is out
       const foresterPlanting =
@@ -373,8 +388,6 @@ export class ProductionSystem extends System {
       const fieldGatherPausing =
         building.animationWorkerId != null &&
         (resourceDepletionGather || mineSiteGather || wildHuntGather);
-      const mapGatherSourceBlocked =
-        mapLinkedGather && building.outOfMapResources;
       if (
         !foresterPlanting &&
         !fieldGatherPausing &&
@@ -391,7 +404,10 @@ export class ProductionSystem extends System {
         production.timer >= production.productionTime
       ) {
         production.timer -= production.productionTime;
-        applyProductionCycleOutputs(entity, { getTileMap: this.getTileMap });
+        applyProductionCycleOutputs(entity, {
+          getTileMap: this.getTileMap,
+          getProductionPriorities: this.getProductionPriorities,
+        });
       }
     }
   }

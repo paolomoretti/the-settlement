@@ -647,10 +647,24 @@
       "density": 2
     },
     "production": {
-      "outputs": { "hammer": 1 },
+      "outputs": {
+        "hammer": 1,
+        "axe": 1,
+        "pickaxe": 1,
+        "saw": 1,
+        "shovel": 1,
+        "fishing_rod": 1,
+        "scythe": 1,
+        "rolling_pin": 1,
+        "crucible": 1,
+        "tongs": 1,
+        "cleaver": 1,
+        "bow": 1
+      },
       "inputs": { "wood_plank": 1, "iron_bar": 1 },
       "productionTime": 90,
-      "continuous": true
+      "continuous": true,
+      "outputMode": "weighted_random"
     },
     "storage": { "capacity": 10 },
     "population": { "requires": 1 },

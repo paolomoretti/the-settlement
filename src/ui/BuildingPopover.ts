@@ -16,9 +16,13 @@ export class BuildingPopover {
   private progressBarFill: HTMLElement | null = null;
   private progressBarLabel: HTMLElement | null = null;
   private progressContainer: HTMLElement | null = null;
+  private currentOutputContainer: HTMLElement | null = null;
+  private currentOutputKey: string | null = null;
   private stoppedLabel: HTMLElement | null = null;
   private bufferContainer: HTMLElement | null = null;
+  private bufferDisplayKey: string | null = null;
   private storageContainer: HTMLElement | null = null;
+  private storageDisplayKey: string | null = null;
   private requirementsContainer: HTMLElement | null = null;
   private gatherWarningEl: HTMLElement | null = null;
   private militaryPanelEl: HTMLElement | null = null;
@@ -39,9 +43,13 @@ export class BuildingPopover {
       this.progressBarFill = null;
       this.progressBarLabel = null;
       this.progressContainer = null;
+      this.currentOutputContainer = null;
+      this.currentOutputKey = null;
       this.stoppedLabel = null;
       this.bufferContainer = null;
+      this.bufferDisplayKey = null;
       this.storageContainer = null;
+      this.storageDisplayKey = null;
       this.requirementsContainer = null;
       this.gatherWarningEl = null;
       this.militaryPanelEl = null;
@@ -70,6 +78,7 @@ export class BuildingPopover {
     const getAnchor = () => {
       this.popover.setTemporaryHidden(this.game.isDraggingEntity);
       this.updateProgressBar();
+      this.updateCurrentOutputDisplay();
       this.updateBufferDisplay();
       this.updateStorageDisplay();
       this.updateRequirements();
@@ -94,9 +103,13 @@ export class BuildingPopover {
     this.progressBarFill = null;
     this.progressBarLabel = null;
     this.progressContainer = null;
+    this.currentOutputContainer = null;
+    this.currentOutputKey = null;
     this.stoppedLabel = null;
     this.bufferContainer = null;
+    this.bufferDisplayKey = null;
     this.storageContainer = null;
+    this.storageDisplayKey = null;
     this.requirementsContainer = null;
     this.gatherWarningEl = null;
     this.militaryPanelEl = null;
@@ -275,6 +288,39 @@ export class BuildingPopover {
     }
   }
 
+  private updateCurrentOutputDisplay(): void {
+    if (!this.currentOutputContainer || !this.currentEntity) return;
+    const building = this.currentEntity.getComponent(Building);
+    const production = this.currentEntity.getComponent(Production);
+    if (!building || !production) return;
+    const isProducing = production.status === 'producing';
+    const outputs = isProducing
+      ? production.prepareCycleOutputs(
+          building.buildingType as BuildingType,
+          this.game.getProductionPriorities()
+        )
+      : production.currentCycleOutputs;
+    const entries = outputs
+      ? Object.entries(outputs).filter(([, amount]) => amount > 0)
+      : [];
+
+    if (!isProducing || entries.length === 0) {
+      this.currentOutputContainer.style.display = 'none';
+      this.currentOutputKey = null;
+      return;
+    }
+
+    const key = entries.map(([id, amount]) => `${id}:${amount}`).join('|');
+    this.currentOutputContainer.style.display = '';
+    if (key === this.currentOutputKey) return;
+
+    this.currentOutputKey = key;
+    const chips = entries.map(([id, amount]) => this.renderResourceChip(id, amount)).join('');
+    this.currentOutputContainer.innerHTML =
+      `<span class="popover-label">Producing:</span>` +
+      `<span class="popover-current-output-chips">${chips}</span>`;
+  }
+
   private updateBufferDisplay(): void {
     if (!this.bufferContainer || !this.currentEntity) return;
     const production = this.currentEntity.getComponent(Production);
@@ -283,11 +329,20 @@ export class BuildingPopover {
     const totalBuffered = production.getTotalBuffered();
     if (totalBuffered === 0) {
       this.bufferContainer.style.display = 'none';
+      this.bufferDisplayKey = null;
       return;
     }
 
     this.bufferContainer.style.display = '';
     const isFull = production.status === 'stopped_full';
+    const bufferKey = JSON.stringify({
+      totalBuffered,
+      maxOutputBuffer: production.maxOutputBuffer,
+      isFull,
+      outputBuffer: Object.entries(production.outputBuffer).sort(([a], [b]) => a.localeCompare(b)),
+    });
+    if (bufferKey === this.bufferDisplayKey) return;
+    this.bufferDisplayKey = bufferKey;
 
     const items = Object.entries(production.outputBuffer)
       .filter(([, amt]) => amt > 0)
@@ -308,6 +363,7 @@ export class BuildingPopover {
     const storage = this.currentEntity.getComponent(Storage);
     if (!storage) {
       this.storageContainer.style.display = 'none';
+      this.storageDisplayKey = null;
       return;
     }
 
@@ -315,6 +371,18 @@ export class BuildingPopover {
     const capacity = storage.capacity;
     const isFull = storage.isFull();
     const slotCount = capacity <= 20 ? capacity : Math.min(10, capacity);
+    const storageKey = JSON.stringify({
+      items: Object.entries(storage.items).sort(([a], [b]) => a.localeCompare(b)),
+      capacity,
+      totalStored,
+      isFull,
+      slotCount,
+      accepts: storage.accepts ?? null,
+    });
+    this.storageContainer.style.display = '';
+    if (storageKey === this.storageDisplayKey) return;
+    this.storageDisplayKey = storageKey;
+
     const expandedItems: string[] = [];
     for (const [id, amount] of Object.entries(storage.items)) {
       for (let i = 0; i < amount && expandedItems.length < slotCount; i++) {
@@ -329,7 +397,7 @@ export class BuildingPopover {
       const title = this.escapeHtml(this.getResourceName(id));
       return (
         `<span class="popover-storage-cell popover-storage-cell--filled" title="${title}">` +
-        this.renderResourceIcon(id, 'popover-resource-icon--slot') +
+        this.renderResourceIcon(id, 'popover-resource-icon--slot popover-resource-icon--storage-slot') +
         `</span>`
       );
     }).join('');
@@ -343,7 +411,6 @@ export class BuildingPopover {
       ? `<span class="popover-empty-note">showing first ${slotCount}</span>`
       : '';
 
-    this.storageContainer.style.display = '';
     this.storageContainer.innerHTML =
       `<div class="popover-section-title">Storage</div>` +
       `<div class="popover-storage-meta">` +
@@ -468,6 +535,12 @@ export class BuildingPopover {
         `<div class="popover-cycle-note">Cycle: ${def.production.productionTime}s</div>`;
 
       if (building.state === 'complete') {
+        const currentOutput = document.createElement('div');
+        currentOutput.className = 'popover-current-output';
+        currentOutput.style.display = 'none';
+        this.currentOutputContainer = currentOutput;
+        prod.appendChild(currentOutput);
+
         const barContainer = document.createElement('div');
         barContainer.className = 'popover-progress';
         this.progressContainer = barContainer;

@@ -15,7 +15,6 @@ export type ResourceType =
   | 'coal'
   | 'iron_ore'
   | 'gold_ore'
-  | 'granite'
   /** Forester / terrain: not stockpiled; applied to the map instead. */
   | 'planted_tree'
 
@@ -142,6 +141,11 @@ export interface ProductionRule {
   productionTime: number;
   // Can it produce continuously or one-time?
   continuous: boolean;
+  /**
+   * `all` buffers every listed output each cycle.
+   * `weighted_random` picks one listed output per cycle using settlement priorities.
+   */
+  outputMode?: 'all' | 'weighted_random';
   // Max items the building can buffer before pickup (default 10)
   maxOutputBuffer?: number;
   /** Max Manhattan distance from building entrance to search for gather sources (trees, rock, water). */

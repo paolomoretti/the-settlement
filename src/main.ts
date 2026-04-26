@@ -18,7 +18,7 @@ let buildingPopover: BuildingPopover | null = null;
 let cellSurveyPopover: GamePopover | null = null;
 let canvasHoverTooltip: CanvasHoverTooltip | null = null;
 let unregisterHoverFrameHook: (() => void) | null = null;
-let inventoryActiveTab: 'resources' | 'workers' = 'resources';
+let inventoryActiveTab: 'resources' | 'workers' | 'production' | 'buildings' = 'resources';
 
 const OPTIONS_KEY = 'settler_options';
 
@@ -392,6 +392,12 @@ function setupGameUI(game: Game): void {
   document.getElementById('inventory-tab-workers')?.addEventListener('click', () => {
     setInventoryTab('workers');
   });
+  document.getElementById('inventory-tab-production')?.addEventListener('click', () => {
+    setInventoryTab('production');
+  });
+  document.getElementById('inventory-tab-buildings')?.addEventListener('click', () => {
+    setInventoryTab('buildings');
+  });
 
   const inventoryOverlay = document.getElementById('inventory-overlay');
   inventoryOverlay?.addEventListener('click', (e) => {
@@ -499,6 +505,264 @@ function setupOptionsPanel(game: Game): void {
   });
 }
 
+function makeResourceIconHtml(resourceId: string, className = 'resource-icon'): string {
+  const resource = dataManager.getResource(resourceId as any);
+  const src = resource?.icon || `/assets/resources/${resourceId}.png`;
+  const fallback = `/assets/resources/${resourceId}.png`;
+  const fallbackAttr = src === fallback ? '' : ` data-fallback="${fallback}"`;
+  return `<img src="${src}" class="${className}"${fallbackAttr} onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;delete this.dataset.fallback;}else{this.style.display='none'}">`;
+}
+
+function updateProductionPriorityList(game: Game): void {
+  const list = document.getElementById('production-priority-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  const configurable = dataManager
+    .getAllBuildings()
+    .filter(building => building.production?.outputMode === 'weighted_random');
+  const requiredTools = new Set(
+    dataManager
+      .getAllBuildings()
+      .map(building => building.requiredTool)
+      .filter((tool): tool is NonNullable<typeof tool> => Boolean(tool))
+  );
+
+  if (configurable.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'inventory-item inventory-item--zero';
+    empty.textContent = 'No production priorities available yet.';
+    list.appendChild(empty);
+    return;
+  }
+
+  for (const building of configurable) {
+    const section = document.createElement('div');
+    section.className = 'production-priority-building';
+
+    const title = document.createElement('div');
+    title.className = 'production-priority-building-title';
+    title.textContent = building.id === 'metalworks' ? 'Tools' : building.name;
+    section.appendChild(title);
+
+    const hint = document.createElement('div');
+    hint.className = 'production-priority-hint';
+    hint.textContent = 'Each completed cycle picks one item at random using these weights.';
+    section.appendChild(hint);
+
+    const outputs = Object.entries(building.production!.outputs)
+      .filter(([resourceId, amount]) => (amount ?? 0) > 0 && requiredTools.has(resourceId as any));
+    const priorityRows: Array<{
+      resourceId: string;
+      quantityEl: HTMLSpanElement;
+      meterEl: HTMLDivElement;
+      meterFillEl: HTMLSpanElement;
+      meterLabelEl: HTMLSpanElement;
+      minusBtn: HTMLButtonElement;
+      plusBtn: HTMLButtonElement;
+    }> = [];
+
+    const refreshPriorities = () => {
+      const totalPriority = outputs.reduce(
+        (sum, [resourceId]) => sum + game.getProductionPriority(building.id, resourceId),
+        0
+      );
+      for (const row of priorityRows) {
+        const priority = game.getProductionPriority(building.id, row.resourceId);
+        const percent = totalPriority > 0 ? Math.round((priority / totalPriority) * 100) : 0;
+        row.quantityEl.textContent = `${priority}/10`;
+        row.meterEl.setAttribute('aria-label', `${percent}% chance`);
+        row.meterFillEl.style.width = `${priority * 10}%`;
+        row.meterLabelEl.textContent = `${percent}%`;
+        row.minusBtn.disabled = priority <= 1;
+        row.plusBtn.disabled = priority >= 10;
+      }
+    };
+
+    for (const [resourceId] of outputs) {
+      const resource = dataManager.getResource(resourceId as any);
+
+      const row = document.createElement('div');
+      row.className = 'production-priority-row';
+
+      const minus = document.createElement('button');
+      minus.type = 'button';
+      minus.className = 'production-priority-step';
+      minus.textContent = '-';
+      minus.addEventListener('click', () => {
+        const priority = game.getProductionPriority(building.id, resourceId);
+        game.setProductionPriority(building.id, resourceId, priority - 1);
+        refreshPriorities();
+      });
+
+      const plus = document.createElement('button');
+      plus.type = 'button';
+      plus.className = 'production-priority-step';
+      plus.textContent = '+';
+      plus.addEventListener('click', () => {
+        const priority = game.getProductionPriority(building.id, resourceId);
+        game.setProductionPriority(building.id, resourceId, priority + 1);
+        refreshPriorities();
+      });
+
+      const quantity = document.createElement('span');
+      quantity.className = 'production-priority-quantity';
+
+      const meter = document.createElement('div');
+      meter.className = 'production-priority-meter';
+      const meterFill = document.createElement('span');
+      meterFill.className = 'production-priority-meter-fill';
+      const meterLabel = document.createElement('span');
+      meterLabel.className = 'production-priority-meter-label';
+      meter.appendChild(meterFill);
+      meter.appendChild(meterLabel);
+
+      row.innerHTML =
+        `<div class="production-priority-name">` +
+        `${makeResourceIconHtml(resourceId, 'resource-icon production-priority-icon')}` +
+        `<span>${resource?.name || resourceId}</span>` +
+        `</div>`;
+      row.appendChild(quantity);
+      row.appendChild(minus);
+      row.appendChild(meter);
+      row.appendChild(plus);
+      section.appendChild(row);
+      priorityRows.push({
+        resourceId,
+        quantityEl: quantity,
+        meterEl: meter,
+        meterFillEl: meterFill,
+        meterLabelEl: meterLabel,
+        minusBtn: minus,
+        plusBtn: plus,
+      });
+    }
+
+    refreshPriorities();
+    list.appendChild(section);
+  }
+
+  const buildingSection = document.createElement('div');
+  buildingSection.className = 'production-priority-building';
+
+  const buildingTitle = document.createElement('div');
+  buildingTitle.className = 'production-priority-building-title';
+  buildingTitle.textContent = 'Buildings';
+  buildingSection.appendChild(buildingTitle);
+
+  const buildingHint = document.createElement('div');
+  buildingHint.className = 'production-priority-hint';
+  buildingHint.textContent = 'Higher priority buildings receive construction materials and production inputs first when resources are scarce.';
+  buildingSection.appendChild(buildingHint);
+
+  const buildingPriorityRows: Array<{
+    buildingType: string;
+    quantityEl: HTMLSpanElement;
+    meterEl: HTMLDivElement;
+    meterFillEl: HTMLSpanElement;
+    meterLabelEl: HTMLSpanElement;
+    minusBtn: HTMLButtonElement;
+    plusBtn: HTMLButtonElement;
+  }> = [];
+
+  const refreshBuildingPriorities = () => {
+    for (const row of buildingPriorityRows) {
+      const priority = game.getBuildingPriority(row.buildingType);
+      row.quantityEl.textContent = `${priority}%`;
+      row.meterEl.setAttribute('aria-label', `Building priority ${priority}%`);
+      row.meterFillEl.style.width = `${priority}%`;
+      row.meterLabelEl.textContent = `${priority}%`;
+      row.minusBtn.disabled = priority <= 1;
+      row.plusBtn.disabled = priority >= 100;
+    }
+  };
+
+  const buildingRows = dataManager
+    .getAllBuildings()
+    .filter(building => building.id !== 'road' && building.id !== 'base_camp')
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  for (const building of buildingRows) {
+    const row = document.createElement('div');
+    row.className = 'production-priority-row';
+
+    const minus = document.createElement('button');
+    minus.type = 'button';
+    minus.className = 'production-priority-step';
+    minus.textContent = '-';
+    minus.addEventListener('click', () => {
+      game.setBuildingPriority(building.id, game.getBuildingPriority(building.id) - 5);
+      refreshBuildingPriorities();
+    });
+
+    const plus = document.createElement('button');
+    plus.type = 'button';
+    plus.className = 'production-priority-step';
+    plus.textContent = '+';
+    plus.addEventListener('click', () => {
+      game.setBuildingPriority(building.id, game.getBuildingPriority(building.id) + 5);
+      refreshBuildingPriorities();
+    });
+
+    const quantity = document.createElement('span');
+    quantity.className = 'production-priority-quantity';
+
+    const meter = document.createElement('div');
+    meter.className = 'production-priority-meter';
+    const meterFill = document.createElement('span');
+    meterFill.className = 'production-priority-meter-fill';
+    const meterLabel = document.createElement('span');
+    meterLabel.className = 'production-priority-meter-label';
+    meter.appendChild(meterFill);
+    meter.appendChild(meterLabel);
+
+    row.innerHTML =
+      `<div class="production-priority-name">` +
+      `<span>${building.name}</span>` +
+      `</div>`;
+    row.appendChild(quantity);
+    row.appendChild(minus);
+    row.appendChild(meter);
+    row.appendChild(plus);
+    buildingSection.appendChild(row);
+    buildingPriorityRows.push({
+      buildingType: building.id,
+      quantityEl: quantity,
+      meterEl: meter,
+      meterFillEl: meterFill,
+      meterLabelEl: meterLabel,
+      minusBtn: minus,
+      plusBtn: plus,
+    });
+  }
+
+  refreshBuildingPriorities();
+  list.appendChild(buildingSection);
+}
+
+function updateBuildingSummaryList(game: Game): void {
+  const list = document.getElementById('building-summary-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  const note = document.createElement('div');
+  note.className = 'basecamp-tab-note';
+  note.textContent = 'Shown as active / built. A building is active when it is complete, connected if needed, staffed if needed, and not stopped.';
+  list.appendChild(note);
+
+  const rows = game.getBuildingOperationalSummary();
+  for (const row of rows) {
+    const item = document.createElement('div');
+    const allActive = row.active === row.total;
+    const hasAny = row.total > 0;
+    item.className = 'building-summary-item' + (allActive ? '' : ' building-summary-item--warning');
+    item.innerHTML =
+      `<span class="building-summary-name${hasAny ? '' : ' building-summary-name--zero'}">${row.name}</span>` +
+      `<span class="building-summary-count">${row.active}/${row.total}</span>`;
+    list.appendChild(item);
+  }
+}
+
 function showInventoryPanel(game: Game): void {
   const overlay = document.getElementById('inventory-overlay');
   if (!overlay) return;
@@ -534,26 +798,28 @@ function showInventoryPanel(game: Game): void {
   const workersList = document.getElementById('workers-list');
   if (workersList) {
     workersList.innerHTML = '';
+    const note = document.createElement('div');
+    note.className = 'basecamp-tab-note';
+    note.textContent = 'Shown as employed / total. HQ-ready specialists count in total, but not employed.';
+    workersList.appendChild(note);
+
     const specialistRows = game.getSpecializedWorkersSummary();
-    if (specialistRows.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'inventory-item inventory-item--zero';
-      empty.innerHTML = `<span class="inventory-item-name">No specialists yet</span><span class="inventory-item-count">0</span>`;
-      workersList.appendChild(empty);
-    } else {
-      specialistRows.forEach(row => {
-        const item = document.createElement('div');
-        item.className = 'inventory-item';
-        const icon = row.iconResourceId
-          ? `<img src="/assets/resources/${row.iconResourceId}.png" class="resource-icon" style="width:16px;height:16px" onerror="this.style.display='none'">`
-          : '';
-        item.innerHTML =
-          `<span class="inventory-item-name">${icon}${row.label}</span>` +
-          `<span class="inventory-item-count">${row.total} <span style="color:#9ab791;font-weight:normal">(HQ ready ${row.hqReady})</span></span>`;
-        workersList.appendChild(item);
-      });
-    }
+    specialistRows.forEach(row => {
+      const item = document.createElement('div');
+      const allEmployed = row.employed === row.total;
+      item.className = 'worker-summary-item' + (allEmployed ? '' : ' worker-summary-item--idle');
+      const icon = row.iconResourceId
+        ? makeResourceIconHtml(row.iconResourceId, 'resource-icon worker-summary-icon')
+        : '';
+      item.innerHTML =
+        `<span class="worker-summary-name">${icon}${row.label}</span>` +
+        `<span class="worker-summary-count">${row.employed}/${row.total}</span>`;
+      workersList.appendChild(item);
+    });
   }
+
+  updateProductionPriorityList(game);
+  updateBuildingSummaryList(game);
 
   setInventoryTab(inventoryActiveTab);
 
@@ -568,16 +834,24 @@ function hideInventoryPanel(): void {
   overlay.setAttribute('aria-hidden', 'true');
 }
 
-function setInventoryTab(tab: 'resources' | 'workers'): void {
+function setInventoryTab(tab: 'resources' | 'workers' | 'production' | 'buildings'): void {
   inventoryActiveTab = tab;
   const resBtn = document.getElementById('inventory-tab-resources');
   const workersBtn = document.getElementById('inventory-tab-workers');
+  const productionBtn = document.getElementById('inventory-tab-production');
+  const buildingsBtn = document.getElementById('inventory-tab-buildings');
   const resSection = document.getElementById('inventory-section-resources');
   const workersSection = document.getElementById('inventory-section-workers');
+  const productionSection = document.getElementById('inventory-section-production');
+  const buildingsSection = document.getElementById('inventory-section-buildings');
   resBtn?.classList.toggle('active', tab === 'resources');
   workersBtn?.classList.toggle('active', tab === 'workers');
+  productionBtn?.classList.toggle('active', tab === 'production');
+  buildingsBtn?.classList.toggle('active', tab === 'buildings');
   resSection?.classList.toggle('active', tab === 'resources');
   workersSection?.classList.toggle('active', tab === 'workers');
+  productionSection?.classList.toggle('active', tab === 'production');
+  buildingsSection?.classList.toggle('active', tab === 'buildings');
 }
 
 function updateButtonStates(activeButtonId: string | null): void {

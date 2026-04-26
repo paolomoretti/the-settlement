@@ -4,22 +4,22 @@
 
 import type { ResourceType } from '@/types/GameData';
 
-export type OreVeinKey = 'coal' | 'iron_ore' | 'gold_ore' | 'granite';
+export type OreVeinKey = 'coal' | 'iron_ore' | 'gold_ore' | 'stone';
 
 export interface CellMinerals {
   coal: number;
   iron_ore: number;
   gold_ore: number;
-  granite: number;
+  stone: number;
 }
 
-const ORE_KEYS: OreVeinKey[] = ['coal', 'iron_ore', 'gold_ore', 'granite'];
+const ORE_KEYS: OreVeinKey[] = ['coal', 'iron_ore', 'gold_ore', 'stone'];
 
 /** Tie-break order for dominant icon (first wins on equal count). */
-const DOMINANT_PRIORITY: OreVeinKey[] = ['gold_ore', 'iron_ore', 'coal', 'granite'];
+const DOMINANT_PRIORITY: OreVeinKey[] = ['gold_ore', 'iron_ore', 'coal', 'stone'];
 
 export function emptyCellMinerals(): CellMinerals {
-  return { coal: 0, iron_ore: 0, gold_ore: 0, granite: 0 };
+  return { coal: 0, iron_ore: 0, gold_ore: 0, stone: 0 };
 }
 
 function mulberry32(seed: number): () => number {
@@ -45,7 +45,7 @@ export function rollCellMinerals(seed: number): CellMinerals {
 }
 
 export function cellMineralTotal(m: CellMinerals): number {
-  return m.coal + m.iron_ore + m.gold_ore + m.granite;
+  return m.coal + m.iron_ore + m.gold_ore + m.stone;
 }
 
 export function dominantOreKey(m: CellMinerals): OreVeinKey {

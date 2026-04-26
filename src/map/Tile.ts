@@ -23,7 +23,7 @@ export class Tile {
   public waterFishRemaining?: number;
   /** Orthogonal water body this tile belongs to for shared fish stock (assigned lazily). */
   public waterClusterId?: number;
-  /** Lazy-assigned underground ores (10 units total across coal / iron_ore / gold_ore / granite). */
+  /** Lazy-assigned underground deposits (10 units total across coal / iron_ore / gold_ore / stone). */
   public cellMinerals?: CellMinerals;
   /**
    * Lazy underground water for a well on this cell: set when a well completes construction;

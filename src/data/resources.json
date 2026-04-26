@@ -61,15 +61,7 @@
     "category": "refined",
     "description": "Minted gold coins for military upgrades",
     "stackSize": 50,
-    "icon": "/assets/ui/icons/gold_coin.png"
-  },
-  "granite": {
-    "id": "granite",
-    "name": "Granite",
-    "category": "raw",
-    "description": "High-quality building stone from terrain",
-    "stackSize": 50,
-    "icon": "/assets/ui/icons/granite.png"
+    "icon": "/assets/resources/gold_coin.png"
   },
   "planted_tree": {
     "id": "planted_tree",

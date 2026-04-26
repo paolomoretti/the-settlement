@@ -5,6 +5,8 @@ export type ProductionStatus = 'idle' | 'producing' | 'stopped_full' | 'stopped_
 
 /** Consume `amount` total per cycle from any of `resourceTypes` (e.g. miner food). */
 export type ProductionInputAnyGroup = { resourceTypes: ResourceType[]; amount: number };
+export type ProductionOutputMode = 'all' | 'weighted_random';
+export type ProductionPriorityState = Record<string, Record<string, number>>;
 
 export class Production extends Component {
   public status: ProductionStatus = 'idle';
@@ -17,6 +19,8 @@ export class Production extends Component {
   public outputBuffer: Record<string, number> = {};
   public maxOutputBuffer: number;
   public continuous: boolean;
+  public outputMode: ProductionOutputMode;
+  public currentCycleOutputs: Record<string, number> | null = null;
   /** Armory alternates sword / shield each completed cycle (starts with sword). */
   public armoryNextOutput: 'sword' | 'shield' = 'sword';
 
@@ -26,7 +30,8 @@ export class Production extends Component {
     inputs: Record<string, number> = {},
     maxOutputBuffer: number = 10,
     continuous: boolean = true,
-    inputsAny: ProductionInputAnyGroup[] = []
+    inputsAny: ProductionInputAnyGroup[] = [],
+    outputMode: ProductionOutputMode = 'all'
   ) {
     super();
     this.productionTime = productionTime;
@@ -38,6 +43,7 @@ export class Production extends Component {
     }));
     this.maxOutputBuffer = maxOutputBuffer;
     this.continuous = continuous;
+    this.outputMode = outputMode;
   }
 
   getTotalBuffered(): number {
@@ -48,18 +54,72 @@ export class Production extends Component {
     return total;
   }
 
-  /** Per-cycle outputs; armory produces one weapon per tick, alternating. */
-  getEffectiveOutputs(buildingType: BuildingType): Record<string, number> {
+  private getWeightedRandomOutput(
+    buildingType: BuildingType,
+    priorities?: ProductionPriorityState
+  ): Record<string, number> {
+    const candidates = Object.entries(this.outputs).filter(([, amount]) => amount > 0);
+    if (candidates.length === 0) return {};
+
+    const weights = priorities?.[buildingType] ?? {};
+    const weighted = candidates.map(([resource, amount]) => ({
+      resource,
+      amount,
+      weight: Math.min(10, Math.max(1, Math.floor(weights[resource] ?? 5))),
+    }));
+    const totalWeight = weighted.reduce((sum, item) => sum + item.weight, 0);
+    let roll = Math.random() * totalWeight;
+    for (const item of weighted) {
+      roll -= item.weight;
+      if (roll < 0) {
+        return { [item.resource]: item.amount };
+      }
+    }
+
+    const fallback = weighted[weighted.length - 1]!;
+    return { [fallback.resource]: fallback.amount };
+  }
+
+  private getOutputAmountForCapacity(buildingType: BuildingType): number {
+    if (buildingType === 'armory') return 1;
+    const amounts = Object.values(this.outputs).filter(amount => amount > 0);
+    if (this.outputMode === 'weighted_random') {
+      return amounts.length > 0 ? Math.max(...amounts) : 0;
+    }
+    return amounts.reduce((sum, n) => sum + n, 0);
+  }
+
+  /** Per-cycle outputs; weighted producers pick one output, armory alternates. */
+  getEffectiveOutputs(
+    buildingType: BuildingType,
+    priorities?: ProductionPriorityState
+  ): Record<string, number> {
+    if (this.currentCycleOutputs) {
+      return this.currentCycleOutputs;
+    }
     if (buildingType === 'armory') {
       return { [this.armoryNextOutput]: 1 };
+    }
+    if (this.outputMode === 'weighted_random') {
+      return this.getWeightedRandomOutput(buildingType, priorities);
     }
     return this.outputs;
   }
 
+  prepareCycleOutputs(buildingType: BuildingType, priorities?: ProductionPriorityState): Record<string, number> {
+    if (!this.currentCycleOutputs) {
+      this.currentCycleOutputs = this.getEffectiveOutputs(buildingType, priorities);
+    }
+    return this.currentCycleOutputs;
+  }
+
+  clearCycleOutputs(): void {
+    this.currentCycleOutputs = null;
+  }
+
   hasBufferSpaceForBuilding(buildingType: BuildingType): boolean {
-    const outs = this.getEffectiveOutputs(buildingType);
     const totalAfterProduction =
-      this.getTotalBuffered() + Object.values(outs).reduce((sum, n) => sum + n, 0);
+      this.getTotalBuffered() + this.getOutputAmountForCapacity(buildingType);
     return totalAfterProduction <= this.maxOutputBuffer;
   }
 
@@ -123,6 +183,7 @@ export class Production extends Component {
       timer: this.timer,
       outputBuffer: { ...this.outputBuffer },
       armoryNextOutput: this.armoryNextOutput,
+      currentCycleOutputs: this.currentCycleOutputs ? { ...this.currentCycleOutputs } : null,
     };
   }
 
@@ -132,6 +193,9 @@ export class Production extends Component {
     if (data.outputBuffer) this.outputBuffer = { ...data.outputBuffer };
     if (data.armoryNextOutput === 'sword' || data.armoryNextOutput === 'shield') {
       this.armoryNextOutput = data.armoryNextOutput;
+    }
+    if (data.currentCycleOutputs && typeof data.currentCycleOutputs === 'object') {
+      this.currentCycleOutputs = { ...data.currentCycleOutputs };
     }
   }
 }

@@ -27,7 +27,7 @@ All resources are defined in `src/data/resources.json`.
 
 ### Resource Categories
 
-1. **Raw Materials**: `wood_log`, `stone`, `coal`, `iron_ore`, `gold_ore`, `granite`
+1. **Raw Materials**: `wood_log`, `stone`, `coal`, `iron_ore`, `gold_ore`
 2. **Refined Materials**: `wood_plank`, `iron_bar`, `gold_coin`
 3. **Food**: `grain`, `flour`, `bread`, `water`, `fish`, `meat`
 4. **Tools**: `hammer`, `axe`, `saw`, `pickaxe`, `shovel`, `fishing_rod`, `scythe`, `bow`

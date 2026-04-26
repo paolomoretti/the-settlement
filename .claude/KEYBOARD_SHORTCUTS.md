@@ -16,6 +16,7 @@ All keyboard shortcuts are defined and registered in `src/input/KeyboardShortcut
 | Key | Condition | Action |
 |-----|-----------|--------|
 | **H** | view mode, no modal dialog | Center camera on base camp |
+| **I** | no modal dialog | Open Base Camp details |
 | **R** | no modal dialog | Enter build road mode |
 | **E** | no modal dialog | Erase tool (roads, buildings, trees); drag to strip tiles like roads |
 | **B** | no modal dialog | Toggle building menu |

@@ -84,6 +84,7 @@ Not yet implemented: tool requirements for workers, mine food system (bread/fish
 - [Wild rabbits & Hunter](.claude/WILDLIFE_RABBITS.md) - **WildlifeCoordinator**, spawn/wander/save, `gatherMode: wild_hunt`, ham output on return
 - [Territory & cordon vision](.claude/TERRITORY_VISION.md) - **TerritoryCoordinator**, HQ + military disks, preview band, cordon render, build/road rules, save fog
 - [Military & garrison](.claude/MILITARY.md) - **HQ soldier assembly**, march to fort, `gold_coin` promotions, armory weapon alternation, territory vs garrison
+- [Production priorities](.claude/METALWORKS_PRIORITIES.md) - **Tools + building routing priorities** — weighted-random Metalworks tools, building priority weights for construction/input dispatch, save/load normalization
 - [Production Animation](.claude/PRODUCTION_ANIMATION.md) - **Worker animation during production** — woodcutter leaves building, chops tree, terrain changes, returns
 - [Demolition Fire](.claude/DEMOLITION_FIRE.md) - **Building deletion aftermath** — 30s blocking fire, 60s cosmetic scorch, save/load behavior
 - [Worker spawn rules](.claude/WORKER_SPAWN.md) - **HQ-assigned workers** — spawn at base camp road, walk in; never appear at the job site without travel

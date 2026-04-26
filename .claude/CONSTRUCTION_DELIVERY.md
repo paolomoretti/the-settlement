@@ -9,7 +9,7 @@ How buildings are constructed: resources are physically delivered from base camp
 
 ## Overview
 
-When a building is placed, resources are deducted from base camp storage and dispatched as junction items at the base camp entrance. A builder worker (carrying a hammer) walks from base camp to the construction site. When both materials and builder arrive, construction begins. When complete, the builder walks back to base camp.
+When a building is placed, it immediately becomes a construction site even if headquarters cannot currently afford its materials. Available resources are deducted later by the periodic construction-material pass, highest building priority first, and dispatched as junction items at the base camp entrance. A builder worker (carrying a hammer) walks from base camp only after all materials for that site have arrived. When both materials and builder arrive, construction begins. When complete, the builder walks back to base camp.
 
 ---
 
@@ -17,31 +17,35 @@ When a building is placed, resources are deducted from base camp storage and dis
 
 ```
 1. Player places building
-   → Resources deducted from base camp storage
    → Building enters 'awaiting_materials' state (shows first construction sprite)
-   → Materials dispatched as junction items at base camp entrance
-   → Builder worker spawned at base camp, walks to site
+   → Materials are requested, but not necessarily available yet
 
-2. Road workers relay materials through road network to construction site
+2. Material recheck pays for and dispatches resources when HQ has them
+   → Sites are scanned by building priority
+   → Materials dispatched as junction items at base camp entrance
+   → Road workers relay materials through road network to construction site
    → Each material arrival calls building.deliverMaterial()
    → Tracked in building.materialsDelivered
 
-3. When ALL materials delivered AND builder arrived at site:
+3. When ALL materials are delivered:
+   → Builder worker spawned at base camp, walks to site
+
+4. When builder arrived at site:
    → building.beginConstruction() starts the build timer
    → State transitions to 'under_construction'
 
-4. Build timer completes:
+5. Build timer completes:
    → State transitions to 'complete'
    → Builder walks back to base camp and is removed
    → Production routes computed if building has inputs
 ```
 
 ### Example: Sawmill (cost: 2 boards)
-1. Player places sawmill → 2 wood_plank deducted from base camp
-2. 2 junction items created at base camp entrance (destination = sawmill entity)
-3. Builder spawns at base camp, walks to sawmill's adjacent road tile
-4. Road workers carry the 2 wood_plank to sawmill's entrance
-5. Both items delivered + builder arrived → construction timer starts (30 sec)
+1. Player places sawmill → site appears even if boards are not currently available
+2. When HQ has boards, up to 2 wood_plank are deducted by priority and queued at base camp (destination = sawmill entity)
+3. Road workers carry the 2 wood_plank to sawmill's entrance
+4. Builder spawns at base camp, walks to sawmill's adjacent road tile
+5. Builder arrived → construction timer starts (30 sec)
 6. Timer completes → sawmill operational, builder walks back
 
 ---
@@ -52,7 +56,7 @@ When a building is placed, resources are deducted from base camp storage and dis
 'awaiting_materials' → 'under_construction' → 'complete'
 ```
 
-- **awaiting_materials**: Building placed, first construction sprite shown (progress 0). Waiting for materials + builder.
+- **awaiting_materials**: Building placed, first construction sprite shown (progress 0). Waiting for materials; once materials are delivered, waiting for builder.
 - **under_construction**: Builder and materials present. Wall-clock timer running. Construction overlay with progress bar plus centered pulsed smoke (15s on, 3–5s off) for all building sizes.
 - **complete**: Building operational. Builder returned to base camp.
 
@@ -85,7 +89,8 @@ All cleared when `beginConstruction()` is called.
 ## Builder Worker
 
 - Regular worker entity with `carryingResource = 'hammer'` for visual
-- Spawned at base camp spawn tile, pathfinds to construction site's adjacent road tile
+- Spawned at base camp spawn tile after all materials are delivered, pathfinds to construction site's adjacent road tile
+- If a higher-priority fully supplied site needs a builder, a builder assigned to a lower-priority waiting site can be retargeted before construction starts
 - Tracked in `Game.builderWorkers` map (builderEntityId → buildingEntityId)
 - Position verified on arrival (must be at the target tile)
 - When construction completes, builder keeps hammer and walks back to base camp (`Game.returningBuilders`)
@@ -112,7 +117,7 @@ Buildings without `requiredTool` (huts, storehouses, etc.) have `hasOperator = t
 ## Cancellation / Deletion
 
 When a building in `awaiting_materials` is deleted:
-1. **Undispatched materials** (required - sent) refunded to base camp storage
+1. **Unpaid materials** remain unowned and are not refunded
 2. **Delivered materials** (materialsDelivered) refunded to base camp storage
 3. **In-transit materials** (junction items) are orphaned — workers reroute them back to base camp automatically
 4. Builder entity removed immediately

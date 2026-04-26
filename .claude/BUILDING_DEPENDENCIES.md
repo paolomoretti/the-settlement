@@ -83,7 +83,7 @@ When a building has `isProductionStorage`, the `ProductionSystem` switches to lo
 
 If `production.inputs` lists **more than one** resource type (e.g. pig farm: grain + water), the building **does not advance the production timer** until **every** type is present in local `Storage` in at least the configured amount for one cycle (same check as step 2 — no “half batch” while waiting for the second input).
 
-**HQ →building dispatch (`Game.tryDispatchHqProductionInputsForBuilding`)** uses the same rule for **what may leave headquarters**: for each unit considered for shipment, `Game.canDispatchHqProductionInputForMultiRecipe` blocks pulling resource `R` from HQ if some *other* input `T` still has a shortfall (required amount minus what is already in the building’s storage **plus** units already **in transit** to that building) and HQ does not hold enough `T` to cover that shortfall. That way the pipe is not flooded with only grain when there is no water to pair it with. Single-input buildings are unchanged (`inputTypes.length <= 1` bypasses the gate).
+**HQ → building dispatch (`Game.tryDispatchHqProductionInputsForBuilding`)** fills the local ingredient store toward per-resource targets instead of only sending one cycle’s worth. Single-input buildings can fill the full ingredient capacity. Multi-input fixed recipes split the capacity by recipe ratio (e.g. a 10-slot `wood_plank + iron_bar` store targets 5 boards and 5 iron bars). If HQ only has one ingredient, that ingredient can still be delivered up to its target; production still waits until every required input is present for a cycle.
 
 Related helpers: `Game.countInTransitToBuildingForResource`, `ResourceManager.hasAvailableInputsForProduction` (global / output-buffer buildings).
 

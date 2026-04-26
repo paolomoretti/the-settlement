@@ -243,13 +243,10 @@ export class BuildingMenu {
     // Build button
     const buildBtn = document.createElement('button');
     buildBtn.className = 'build-button';
-    buildBtn.textContent = canAfford ? 'Build' : 'Cannot Afford';
-    buildBtn.disabled = !canAfford;
+    buildBtn.textContent = canAfford ? 'Build' : 'Place Site';
 
     buildBtn.addEventListener('click', () => {
-      if (canAfford) {
-        this.startBuilding(building.id);
-      }
+      this.startBuilding(building.id);
     });
 
     // Assemble card

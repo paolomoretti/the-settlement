@@ -149,6 +149,7 @@ export class Game {
       getRenderSystem: () => this.renderSystem,
       getBaseCampConnectedRoads: () => this.getBaseCampConnectedRoads(),
       getAvailablePeasantSlotCount: () => this.getAvailablePopulation(),
+      getConstructionPriority: e => this.getBuildingPriorityForEntity(e),
       getWildlife: () => this.wildlife,
       claimToolSpecialistForDispatch: (tool: string) => this.claimToolSpecialistForDispatch(tool),
       returnToolSpecialistToHq: (tool: string) => this.addToolSpecialistToHqPool(tool, 1),
@@ -759,10 +760,7 @@ export class Game {
     if (building.state === 'awaiting_materials' && building.constructionMaterials) {
       const baseCampStorage = this.baseCampEntity?.getComponent(Storage);
       if (baseCampStorage) {
-        for (const [res, required] of Object.entries(building.constructionMaterials)) {
-          const sent = building.materialsSent[res] || 0;
-          const undispatched = required - sent;
-          if (undispatched > 0) baseCampStorage.addItem(res, undispatched);
+        for (const [res] of Object.entries(building.constructionMaterials)) {
           const delivered = building.materialsDelivered[res] || 0;
           if (delivered > 0) baseCampStorage.addItem(res, delivered);
         }
@@ -1066,13 +1064,6 @@ export class Game {
       return;
     }
 
-    // Check affordability
-    if (!resourceManager.canAfford(buildingDef.buildCost)) {
-      console.warn(`Cannot afford ${buildingDef.name}`);
-      eventBus.emit('build:failed', { reason: `Cannot afford ${buildingDef.name}` });
-      return;
-    }
-
     // Fog + settlement placement (interior or military cordon-touch rule)
     if (!this.isAreaExplored(x, y, buildingDef.size.width, buildingDef.size.height)) {
       eventBus.emit('build:failed', { reason: 'Cannot build in unexplored area' });
@@ -1093,20 +1084,15 @@ export class Game {
       return;
     }
 
-    // Deduct resources from storage buildings
-    resourceManager.deductResources(buildingDef.buildCost);
-    this.syncInventory();
-
     // Create building entity
     const entity = createBuilding(buildingType, x, y);
     const building = entity.getComponent(Building);
 
     if (!building) return;
 
-    // Military garrison posts consume build costs instantly but still require a builder walk-in.
     const isMilitaryPost = typeof buildingDef.military?.soldierCapacity === 'number' && buildingDef.military.soldierCapacity > 0;
     // Set construction state based on whether building has deliverable material costs.
-    const hasCosts = Object.values(buildingDef.buildCost).some(v => v > 0) && !isMilitaryPost;
+    const hasCosts = Object.values(buildingDef.buildCost).some(v => v > 0);
     if (building.buildTimeSec > 0) {
       if (hasCosts) {
         building.startAwaitingMaterials(building.buildTimeSec, buildingDef.buildCost);
@@ -1120,22 +1106,6 @@ export class Game {
 
     this.addEntity(entity);
     this.occupyBuildingTiles(entity.id, x, y, building.width, building.height, building);
-
-    // Dispatch construction materials as junction items at base camp entrance
-    if (building.state === 'awaiting_materials' && building.constructionMaterials) {
-      const spawnTile = this.workers.getBaseCampSpawnTile();
-      if (spawnTile) {
-        for (const [res, amount] of Object.entries(building.constructionMaterials)) {
-          for (let i = 0; i < amount; i++) {
-            transportManager.addJunctionItem(spawnTile.x, spawnTile.y, res, entity.id);
-          }
-          building.materialsSent[res] = amount;
-        }
-      }
-
-      // Spawn builder worker
-      this.workers.spawnBuilderForPlacedBuilding(entity);
-    }
 
     if (building.isComplete()) {
       this.recomputePopulationMaxCapacity();

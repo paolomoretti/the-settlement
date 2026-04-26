@@ -70,7 +70,7 @@ Example: A lumberjack produces 1 wood_log every 20 seconds. After 200 seconds wi
 
 Buildings with **local ingredient storage** (`isProductionStorage`, e.g. sawmill, bakery, iron smelter) consume inputs from that building's `Storage` when a cycle completes. Buildings that have production inputs but **no** local storage (if any exist) would use the **global inventory** instead.
 
-**Multi-input buildings** (e.g. iron smelter, bakery, pig farm with local storage): production **starts** (timer advances) only when **every** required input is available on site (and under HQ pairing rules for dispatch); see [Building Dependencies — Multi-input recipes](BUILDING_DEPENDENCIES.md#multi-input-recipes-all-types-before-production) for HQ dispatch pairing.
+**Multi-input buildings** (e.g. iron smelter, bakery, pig farm with local storage): production **starts** (timer advances) only when **every** required input is available on site. HQ dispatch may still pre-fill available ingredients up to their storage targets even while another ingredient is missing; see [Building Dependencies — Multi-input recipes](BUILDING_DEPENDENCIES.md#multi-input-recipes-all-types-before-production).
 
 If inputs become unavailable mid-cycle, the cycle pauses at completion time and the building enters `stopped_no_inputs`. `applyProductionCycleOutputs` also re-checks `hasAvailableInputsForProduction` before deducting for buildings that consume from the **global** inventory.
 

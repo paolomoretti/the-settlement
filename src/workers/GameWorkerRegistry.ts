@@ -91,6 +91,8 @@ export interface WorkerWorldAccess {
   getBaseCampConnectedRoads(): Set<string>;
   /** Peasant slots not yet assigned to road segments or any worker tracked by this registry. */
   getAvailablePeasantSlotCount(): number;
+  /** Higher priority construction sites receive builders first once materials are ready. */
+  getConstructionPriority(entity: Entity): number;
   /** Wild rabbits for hunter gather + render hooks. */
   getWildlife(): WildlifeCoordinator;
   /** Reserve one tool specialist for dispatch (from HQ pool first, else consume peasant + tool resource). */
@@ -380,13 +382,41 @@ export class GameWorkerRegistry {
       }
     }
 
-    for (const entity of entities) {
+    const constructionSites = entities
+      .filter(entity => {
+        if (!entity.active) return false;
+        const building = entity.getComponent(Building);
+        return building?.state === 'awaiting_materials';
+      })
+      .sort((a, b) => {
+        const delta = this.world.getConstructionPriority(b) - this.world.getConstructionPriority(a);
+        return delta !== 0 ? delta : a.id - b.id;
+      });
+
+    for (const entity of constructionSites) {
       if (!entity.active) continue;
       const building = entity.getComponent(Building);
       if (!building || building.state !== 'awaiting_materials') continue;
 
       if (building.canStartConstruction()) {
         const builderEntityId = building.builderEntityId;
+        const priority = this.world.getConstructionPriority(entity);
+        const higherPriorityReadySite = constructionSites.some(other => {
+          if (other.id === entity.id) return false;
+          const otherBuilding = other.getComponent(Building);
+          return Boolean(
+            otherBuilding &&
+            otherBuilding.state === 'awaiting_materials' &&
+            otherBuilding.builderEntityId === null &&
+            otherBuilding.isActive &&
+            otherBuilding.areMaterialsDelivered() &&
+            this.world.getConstructionPriority(other) > priority
+          );
+        });
+        if (higherPriorityReadySite) {
+          continue;
+        }
+
         building.beginConstruction();
         if (builderEntityId != null) {
           const builderEntity = entities.find(e => e.id === builderEntityId && e.active);
@@ -400,8 +430,10 @@ export class GameWorkerRegistry {
         continue;
       }
 
-      if (building.builderEntityId === null && building.isActive) {
-        this.spawnBuilder(entity);
+      if (building.builderEntityId === null && building.isActive && building.areMaterialsDelivered()) {
+        if (!this.tryReassignBuilderToSite(entity, constructionSites)) {
+          this.spawnBuilder(entity);
+        }
       }
     }
 
@@ -1731,6 +1763,57 @@ export class GameWorkerRegistry {
     this.builderWorkers.set(builder.id, buildingEntity.id);
 
     this.queueHqStreetEntry(builder, path);
+  }
+
+  private tryReassignBuilderToSite(targetEntity: Entity, constructionSites: Entity[]): boolean {
+    const targetBuilding = targetEntity.getComponent(Building);
+    const targetPriority = this.world.getConstructionPriority(targetEntity);
+    if (!targetBuilding || targetBuilding.builderEntityId != null) return false;
+
+    const donorEntity = [...constructionSites].reverse().find(entity => {
+      if (entity.id === targetEntity.id) return false;
+      const building = entity.getComponent(Building);
+      return Boolean(
+        building &&
+        building.state === 'awaiting_materials' &&
+        building.builderEntityId != null &&
+        this.world.getConstructionPriority(entity) < targetPriority
+      );
+    });
+    if (!donorEntity) return false;
+
+    const donorBuilding = donorEntity.getComponent(Building);
+    if (!donorBuilding || donorBuilding.builderEntityId == null) return false;
+
+    const builderEntity = this.world.getEntities().find(e => e.id === donorBuilding.builderEntityId && e.active);
+    const builderPos = builderEntity?.getComponent(Position);
+    const movable = builderEntity?.getComponent(Movable);
+    const worker = builderEntity?.getComponent(Worker);
+    const targetTile = this.findBuildingAdjacentRoadTile(targetEntity);
+    if (!builderEntity || !builderPos || !movable || !worker || !targetTile) return false;
+
+    const path = this.world.getPathFinder().findPath(
+      new Position(Math.floor(builderPos.x), Math.floor(builderPos.y)),
+      new Position(targetTile.x, targetTile.y),
+      this.world.getTileMap()
+    );
+    if (path.length === 0) return false;
+
+    donorBuilding.builderEntityId = null;
+    donorBuilding.builderArrived = false;
+    targetBuilding.builderEntityId = builderEntity.id;
+    targetBuilding.builderArrived = false;
+    this.builderWorkers.set(builderEntity.id, targetEntity.id);
+    this.returningBuilders.delete(builderEntity.id);
+
+    movable.speed = 1.8;
+    movable.setPath(path);
+    worker.setState('walking');
+    worker.visualActivity = 'construct';
+    worker.hammerConstructionEnabled = false;
+    worker.buildIdleUntil = 0;
+
+    return true;
   }
 
   private spawnToolWorker(buildingEntity: Entity, tool: string): void {

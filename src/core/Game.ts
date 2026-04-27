@@ -18,6 +18,8 @@ import { Worker } from '@/components/Worker';
 import { Building } from '@/components/Building';
 import { Production, type ProductionPriorityState } from '@/components/Production';
 import { Storage } from '@/components/Storage';
+import type { FactionId } from '@/components/Owner';
+import { FIRST_ENEMY_FACTION, PLAYER_FACTION, getEntityFaction, isPlayerOwned, setEntityFaction } from '@/components/ownerUtils';
 import { dataManager } from '@/data/DataManager';
 import { resourceManager } from '@/economics/ResourceManager';
 import { roadSegmentManager, RoadSegment } from '@/economics/RoadSegmentManager';
@@ -34,6 +36,7 @@ import { SurveyCoordinator } from '@/survey/SurveyCoordinator';
 import { ensureWellAquiferInitialized } from '@/map/wellAquifer';
 import { WildlifeCoordinator } from '@/wildlife/WildlifeCoordinator';
 import { TerritoryCoordinator } from '@/map/TerritoryCoordinator';
+import { planInitialEnemyVillage, type EnemyVillagePlan, type EnemyVillageBuildingPlan } from '@/world/EnemyVillageGenerator';
 
 const DEMOLITION_FIRE_DURATION_MS = 30_000;
 const DEMOLITION_SCORCH_DURATION_MS = 60_000;
@@ -101,6 +104,7 @@ export class Game {
   /** Recently demolished building footprints: 30s blocking fire, then 60s cosmetic scorch. */
   private demolitionSites: DemolitionSiteVisual[] = [];
   private nextDemolitionSiteId = 1;
+  private enemyRealms: EnemyVillagePlan[] = [];
 
   private readonly frameHooks: Array<() => void> = [];
 
@@ -128,9 +132,27 @@ export class Game {
     };
     this.renderSystem.getTerritoryCordonOverlay = () => {
       this.refreshTerritoryIfDirty();
-      const frontier = this.territory.getFrontier();
-      if (frontier.size === 0) return null;
-      return { frontier, unionU: this.territory.getUnionU() };
+      const layers = [];
+      const playerLayer = this.territory.getLayer(PLAYER_FACTION);
+      if (playerLayer.frontier.size > 0) {
+        layers.push({ frontier: playerLayer.frontier, unionU: playerLayer.unionU });
+      }
+      const enemyLayer = this.territory.getLayer(FIRST_ENEMY_FACTION);
+      if (enemyLayer.frontier.size > 0) {
+        layers.push({
+          frontier: enemyLayer.frontier,
+          unionU: enemyLayer.unionU,
+          style: {
+            stickDark: 'rgba(80, 18, 18, 0.98)',
+            stickLight: 'rgba(155, 42, 42, 0.82)',
+            rope: 'rgba(190, 34, 42, 0.94)',
+            ropeHighlight: 'rgba(255, 135, 125, 0.58)',
+            offsetX: 2.5,
+            offsetY: -1.5,
+          },
+        });
+      }
+      return layers.length > 0 ? { layers } : null;
     };
 
     // Production runs before movement, movement before render
@@ -267,7 +289,7 @@ export class Game {
   }
 
   private sortEntitiesByBuildingPriority(entities: Entity[]): Entity[] {
-    return [...entities].sort((a, b) => {
+    return entities.filter(e => isPlayerOwned(e)).sort((a, b) => {
       const delta = this.getBuildingPriorityForEntity(b) - this.getBuildingPriorityForEntity(a);
       return delta !== 0 ? delta : a.id - b.id;
     });
@@ -404,6 +426,8 @@ export class Game {
     this.markTerritoryDirty();
     this.refreshTerritoryIfDirty();
 
+    this.seedInitialEnemyVillage(centerX + 3, centerY + 3);
+
     this.wildlife.seedInitialRabbits(this.tileMap, centerX, centerY);
 
     console.log(`World initialized at (${centerX}, ${centerY}) - Map size: ${this.tileMap.width}x${this.tileMap.height}`);
@@ -444,14 +468,14 @@ export class Game {
     if (!this.canPlaceBuilding(gx, gy, w, h, ignoreEntityId)) return false;
     if (!this.isAreaExplored(gx, gy, w, h)) return false;
     this.refreshTerritoryIfDirty();
-    return this.territory.isInteriorFootprint(gx, gy, w, h);
+    return this.territory.isInteriorFootprint(gx, gy, w, h, PLAYER_FACTION);
   }
 
   /** Road preview / placement: fog lifted and strictly inside the cordon (not on rope cells). */
   public canPreviewPlaceRoadCell(gx: number, gy: number): boolean {
     if (this.isDemolitionFireBlockingCell(gx, gy)) return false;
     this.refreshTerritoryIfDirty();
-    return this.territory.isInteriorCell(gx, gy);
+    return this.territory.isInteriorCell(gx, gy, PLAYER_FACTION);
   }
 
   private segmentRecalcTimer: ReturnType<typeof setTimeout> | null = null;
@@ -667,7 +691,7 @@ export class Game {
       return;
     }
     this.refreshTerritoryIfDirty();
-    if (!this.territory.isInteriorCell(x, y)) {
+    if (!this.territory.isInteriorCell(x, y, PLAYER_FACTION)) {
       return;
     }
 
@@ -774,13 +798,20 @@ export class Game {
         garrisonWorkerIds.push(slot.workerEntityId);
       }
       if (garrisonWorkerIds.length > 0) {
-        this.workers.returnMilitaryGarrisonWorkers(entity, garrisonWorkerIds);
+        if (isPlayerOwned(entity)) {
+          this.workers.returnMilitaryGarrisonWorkers(entity, garrisonWorkerIds);
+        } else {
+          for (const workerId of garrisonWorkerIds) {
+            const workerEntity = this.entities.find(e => e.id === workerId && e.active);
+            if (workerEntity) this.removeEntity(workerEntity);
+          }
+        }
       }
       building.militaryGarrison = null;
     }
 
     if (building.assignedToolSpecialist) {
-      this.addToolSpecialistToHqPool(building.assignedToolSpecialist, 1);
+      if (isPlayerOwned(entity)) this.addToolSpecialistToHqPool(building.assignedToolSpecialist, 1);
       building.assignedToolSpecialist = null;
     }
 
@@ -906,6 +937,17 @@ export class Game {
     return false;
   }
 
+  private hasBuildingAdjacentRoad(pos: Position, building: Building): boolean {
+    const entrance = building.getEntranceOffset();
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    const baseX = entrance ? pos.x + entrance.dx : pos.x;
+    const baseY = entrance ? pos.y + entrance.dy : pos.y;
+    for (const [dx, dy] of dirs) {
+      if (this.tileMap.getTile(baseX + dx, baseY + dy)?.hasRoad) return true;
+    }
+    return false;
+  }
+
   public updateBuildingRoadConnections(): void {
     const connectedRoads = this.getBaseCampConnectedRoads();
 
@@ -915,7 +957,9 @@ export class Game {
       const pos = entity.getComponent(Position);
       if (!building || !pos || !building.requiresRoad) continue;
 
-      building.isActive = this.hasBuildingConnectedRoad(pos, building, connectedRoads);
+      building.isActive = isPlayerOwned(entity)
+        ? this.hasBuildingConnectedRoad(pos, building, connectedRoads)
+        : this.hasBuildingAdjacentRoad(pos, building);
     }
 
     this.recheckProductionInputDeliveries(true);
@@ -1040,12 +1084,203 @@ export class Game {
     console.log(`Population: ${this.population.current}/${this.population.max} (peasants / housing cap)`);
   }
 
+  private seedInitialEnemyVillage(playerCenterX: number, playerCenterY: number): void {
+    const plan = planInitialEnemyVillage(this.tileMap, { x: playerCenterX, y: playerCenterY });
+    if (!plan) {
+      console.warn('Enemy village generation skipped: no valid nearby site.');
+      return;
+    }
+
+    this.flattenEnemyVillagePatch(plan.bounds);
+    this.applyEnemyVillageWater(plan.waterCells);
+    this.placeEnemyBuilding(plan.headquarters, plan.factionId, true);
+    for (const buildingPlan of plan.buildings) {
+      this.placeEnemyBuilding(buildingPlan, plan.factionId, false);
+    }
+    for (const road of plan.roads) {
+      if (this.tileMap.buildRoad(road.x, road.y)) {
+        roadSegmentManager.addRoad(road.x, road.y);
+      }
+    }
+    this.revealCells(plan.revealCells);
+    roadSegmentManager.recalculate(this.tileMap);
+    this.updateBuildingRoadConnections();
+    this.seedEnemyStreetWorkers(plan);
+    this.enemyRealms = [plan];
+    this.markTerritoryDirty();
+    this.refreshTerritoryIfDirty();
+    console.log(`Enemy village generated at (${plan.bounds.x}, ${plan.bounds.y})`);
+  }
+
+  private flattenEnemyVillagePatch(bounds: { x: number; y: number; width: number; height: number }): void {
+    for (let y = bounds.y; y < bounds.y + bounds.height; y++) {
+      for (let x = bounds.x; x < bounds.x + bounds.width; x++) {
+        const tile = this.tileMap.getTile(x, y);
+        if (!tile || tile.isOccupied()) continue;
+        if (tile.terrain === 'grass') continue;
+        this.tileMap.setTerrain(x, y, 'grass');
+      }
+    }
+  }
+
+  private applyEnemyVillageWater(cells: { x: number; y: number }[]): void {
+    for (const cell of cells) {
+      const tile = this.tileMap.getTile(cell.x, cell.y);
+      if (!tile || tile.isOccupied()) continue;
+      this.tileMap.setTerrain(cell.x, cell.y, 'water');
+      tile.hasRoad = false;
+    }
+  }
+
+  private revealCells(cells: { x: number; y: number }[]): void {
+    const newly: { x: number; y: number }[] = [];
+    for (const cell of cells) {
+      const tile = this.tileMap.getTile(cell.x, cell.y);
+      if (!tile || tile.isExplored()) continue;
+      tile.explore();
+      newly.push(cell);
+    }
+    if (newly.length > 0) this.renderSystem.updateMinimapTiles(newly);
+  }
+
+  private placeEnemyBuilding(plan: EnemyVillageBuildingPlan, factionId: FactionId, isHeadquarters: boolean): Entity | null {
+    const entity = createBuilding(plan.type, plan.x, plan.y);
+    setEntityFaction(entity, factionId);
+    const building = entity.getComponent(Building);
+    if (!building) return null;
+    building.state = 'complete';
+    building.constructionStartedAt = null;
+    building.constructionProgress = 1;
+    building.completedAt = Date.now();
+    building.hasOperator = true;
+
+    this.addEntity(entity);
+    this.occupyBuildingTiles(entity.id, plan.x, plan.y, building.width, building.height, building);
+    if (plan.type === 'farm') {
+      this.seedEnemyFarmWorker(entity, factionId);
+    }
+
+    if (isHeadquarters) {
+      const storage = entity.getComponent(Storage);
+      if (storage) {
+        const stock: Partial<Record<ResourceType, number>> = {
+          wood_log: 20,
+          wood_plank: 30,
+          stone: 24,
+          iron_bar: 8,
+          gold_coin: 8,
+          sword: 8,
+          shield: 8,
+          bread: 16,
+          fish: 12,
+          ham: 10,
+          axe: 3,
+          saw: 2,
+          pickaxe: 2,
+          hammer: 3,
+        };
+        for (const [resource, amount] of Object.entries(stock)) {
+          storage.addItem(resource, amount ?? 0);
+        }
+      }
+    }
+
+    if (plan.seedGarrison) {
+      const cap = dataManager.getBuilding(plan.type)?.military?.soldierCapacity;
+      if (typeof cap === 'number' && cap > 0) {
+        building.initMilitaryGarrison(cap);
+        const fillCount = Math.min(cap, Math.max(1, Math.ceil(cap / 2)));
+        for (let i = 0; i < fillCount; i++) {
+          const soldier = createMilitaryWorker(plan.x + 0.5, plan.y + 0.5, 1);
+          setEntityFaction(soldier, factionId);
+          const worker = soldier.getComponent(Worker);
+          if (worker) {
+            worker.concealedInBuildingId = entity.id;
+            worker.setState('idle');
+          }
+          this.addEntity(soldier);
+          building.assignMilitarySlot(i, soldier.id);
+        }
+      }
+    }
+
+    return entity;
+  }
+
+  private seedEnemyFarmWorker(farmEntity: Entity, factionId: FactionId): void {
+    const pos = farmEntity.getComponent(Position);
+    const building = farmEntity.getComponent(Building);
+    if (!pos || !building) return;
+    const candidates = [
+      { x: pos.x - 1, y: pos.y + building.height },
+      { x: pos.x, y: pos.y + building.height },
+      { x: pos.x + building.width, y: pos.y + 1 },
+      { x: pos.x + building.width, y: pos.y + building.height },
+    ];
+    const spot = candidates.find(c => {
+      const tile = this.tileMap.getTile(c.x, c.y);
+      return tile && tile.walkable && !tile.isOccupied() && !tile.hasRoad;
+    });
+    if (!spot) return;
+    const workerEntity = createWorker(spot.x, spot.y);
+    setEntityFaction(workerEntity, factionId);
+    const worker = workerEntity.getComponent(Worker);
+    if (worker) {
+      worker.pickUpResource('scythe');
+      worker.visualActivity = 'production_gather';
+      worker.setState('working');
+    }
+    this.addEntity(workerEntity);
+  }
+
+  private seedEnemyStreetWorkers(plan: EnemyVillagePlan): void {
+    const roadCells = plan.roads.filter(cell => {
+      const tile = this.tileMap.getTile(cell.x, cell.y);
+      return tile?.hasRoad && !tile.isOccupied();
+    });
+    if (roadCells.length === 0) return;
+
+    const count = Math.min(5, Math.max(2, Math.floor(roadCells.length / 8)));
+    for (let i = 0; i < count; i++) {
+      const start = roadCells[Math.floor((i / count) * roadCells.length)]!;
+      const end = roadCells[Math.floor(((i + 0.5) / count) * roadCells.length) % roadCells.length]!;
+      const workerEntity = createWorker(start.x, start.y);
+      setEntityFaction(workerEntity, plan.factionId);
+      const worker = workerEntity.getComponent(Worker);
+      const movable = workerEntity.getComponent(Movable);
+      if (worker) worker.setState('idle');
+      if (movable && (start.x !== end.x || start.y !== end.y)) {
+        const path = this.pathFinder.findPath(new Position(start.x, start.y), new Position(end.x, end.y), this.tileMap);
+        if (path.length > 0) {
+          movable.speed = 1.2;
+          movable.setPath(path);
+          if (worker) worker.setState('walking');
+        }
+      }
+      this.addEntity(workerEntity);
+    }
+  }
+
+  private seedLoadedEnemyDecorations(): void {
+    for (const entity of this.entities) {
+      if (!entity.active || getEntityFaction(entity) === PLAYER_FACTION) continue;
+      const building = entity.getComponent(Building);
+      if (building?.buildingType === 'farm') {
+        this.seedEnemyFarmWorker(entity, getEntityFaction(entity));
+      }
+    }
+    for (const realm of this.enemyRealms) {
+      this.seedEnemyStreetWorkers(realm);
+    }
+  }
+
   /** Housing cap = starting population baseline + completed residential `provides` (hut, house, …). */
   private recomputePopulationMaxCapacity(): void {
     const baseline = dataManager.getStartingPopulation();
     let extra = 0;
     for (const entity of this.entities) {
       if (!entity.active) continue;
+      if (!isPlayerOwned(entity)) continue;
       const b = entity.getComponent(Building);
       if (!b?.isComplete()) continue;
       if (b.buildingType === 'base_camp') continue;
@@ -1071,9 +1306,9 @@ export class Game {
     }
 
     this.refreshTerritoryIfDirty();
-    if (!this.territory.isInteriorFootprint(x, y, buildingDef.size.width, buildingDef.size.height)) {
+    if (!this.territory.isInteriorFootprint(x, y, buildingDef.size.width, buildingDef.size.height, PLAYER_FACTION)) {
       eventBus.emit('build:failed', {
-        reason: 'Build only inside the settlement, not on the cordon or in the preview ring.',
+        reason: 'Build only inside your settlement, not on the cordon, contested cells, or enemy land.',
       });
       return;
     }
@@ -1272,6 +1507,7 @@ export class Game {
     let n = 0;
     for (const e of this.entities) {
       if (!e.active) continue;
+      if (!isPlayerOwned(e)) continue;
       const b = e.getComponent(Building);
       if (b?.militaryGarrison) n += b.getMilitaryGarrisonFilledCount();
     }
@@ -2485,6 +2721,7 @@ export class Game {
 
     // Update building construction progress
     this.updateConstruction();
+    this.updateEnemyRealmDefeat();
 
     this.refreshTerritoryIfDirty();
 
@@ -2567,6 +2804,36 @@ export class Game {
             this.markTerritoryDirty();
           }
         }
+      }
+    }
+  }
+
+  private updateEnemyRealmDefeat(): void {
+    for (const realm of this.enemyRealms) {
+      const headquarters = this.entities.find(entity => {
+        if (!entity.active || getEntityFaction(entity) !== realm.factionId) return false;
+        const building = entity.getComponent(Building);
+        const pos = entity.getComponent(Position);
+        return (
+          building?.buildingType === realm.headquarters.type &&
+          pos?.x === realm.headquarters.x &&
+          pos.y === realm.headquarters.y
+        );
+      });
+      if (!headquarters) continue;
+
+      const hasDefendingMilitary = this.entities.some(entity => {
+        if (!entity.active || getEntityFaction(entity) !== realm.factionId) return false;
+        const building = entity.getComponent(Building);
+        if (!building || building.buildingType === 'base_camp' || !building.isComplete()) return false;
+        const def = dataManager.getBuilding(building.buildingType);
+        const cap = def?.military?.soldierCapacity;
+        return typeof cap === 'number' && cap > 0 && building.hasMilitaryTerritoryContributor();
+      });
+
+      if (!hasDefendingMilitary) {
+        this.destroyBuildingEntity(headquarters);
+        this.markTerritoryDirty();
       }
     }
   }
@@ -2862,11 +3129,13 @@ export class Game {
         const building = e.getComponent(Building);
         const production = e.getComponent(Production);
         const storage = e.getComponent(Storage);
+        const factionId = getEntityFaction(e);
 
         const data: any = {
           type: building?.buildingType,
           x: pos?.x,
-          y: pos?.y
+          y: pos?.y,
+          factionId,
         };
 
         if (building?.state === 'awaiting_materials') {
@@ -2923,6 +3192,7 @@ export class Game {
       wildlife: this.wildlife.serialize(),
       demolitionSites: this.demolitionSites,
       nextDemolitionSiteId: this.nextDemolitionSiteId,
+      enemyRealms: this.enemyRealms,
       timestamp: Date.now()
     };
   }
@@ -2956,6 +3226,7 @@ export class Game {
     this.pendingBuildingPickups.clear();
     this.demolitionSites = [];
     this.nextDemolitionSiteId = 1;
+    this.enemyRealms = [];
     this.syncDemolitionSitesToRender();
 
     this.wildlife.reset();
@@ -2989,6 +3260,7 @@ export class Game {
       this.militarySpecialistsAtHq = 0;
       this.demolitionSites = [];
       this.nextDemolitionSiteId = 1;
+      this.enemyRealms = Array.isArray(saveData.enemyRealms) ? saveData.enemyRealms : [];
       this.syncDemolitionSitesToRender();
 
       if (saveData.wildlife) {
@@ -3026,8 +3298,11 @@ export class Game {
         if (!buildingData.type || buildingData.x === undefined || buildingData.y === undefined) continue;
 
         const entity = createBuilding(buildingData.type, buildingData.x, buildingData.y);
+        const savedFaction: FactionId =
+          buildingData.factionId === FIRST_ENEMY_FACTION ? FIRST_ENEMY_FACTION : PLAYER_FACTION;
+        setEntityFaction(entity, savedFaction);
 
-        if (buildingData.type === 'base_camp') {
+        if (buildingData.type === 'base_camp' && savedFaction === PLAYER_FACTION) {
           this.baseCampEntity = entity;
         }
 
@@ -3138,6 +3413,7 @@ export class Game {
       }
 
       this.updateBuildingRoadConnections();
+      this.seedLoadedEnemyDecorations();
 
       if (this.baseCampEntity) {
         const segments = roadSegmentManager.getSegments();
@@ -3209,6 +3485,7 @@ export class Game {
       const building = ent.getComponent(Building);
       const pos = ent.getComponent(Position);
       if (!building?.militaryGarrison || !pos) continue;
+      const factionId = getEntityFaction(ent);
 
       for (let i = 0; i < building.militaryGarrison.length; i++) {
         const slot = building.militaryGarrison[i];
@@ -3217,6 +3494,7 @@ export class Game {
         if (existing) continue;
 
         const workerEntity = createMilitaryWorker(pos.x + 0.5, pos.y + 0.5, slot.rank);
+        setEntityFaction(workerEntity, factionId);
         const worker = workerEntity.getComponent(Worker);
         if (worker) {
           worker.concealedInBuildingId = ent.id;

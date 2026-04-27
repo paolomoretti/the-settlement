@@ -4,6 +4,7 @@ import { Position } from '@/components/Position';
 import { Building } from '@/components/Building';
 import { Storage } from '@/components/Storage';
 import { Production } from '@/components/Production';
+import { isPlayerOwned } from '@/components/ownerUtils';
 import { TransportQueue, TransportRequest } from './TransportRequest';
 import { Inventory } from '@/types/GameData';
 
@@ -31,6 +32,7 @@ export class ResourceManager {
     const inventory: Inventory = {};
     for (const entity of this.getEntities()) {
       if (!entity.active) continue;
+      if (!isPlayerOwned(entity)) continue;
       const storage = entity.getComponent(Storage);
       if (!storage || storage.isProductionStorage) continue;
       for (const [resource, amount] of Object.entries(storage.items)) {
@@ -44,6 +46,7 @@ export class ResourceManager {
     let total = 0;
     for (const entity of this.getEntities()) {
       if (!entity.active) continue;
+      if (!isPlayerOwned(entity)) continue;
       const storage = entity.getComponent(Storage);
       if (!storage || storage.isProductionStorage) continue;
       total += storage.getAmount(resourceType);
@@ -85,6 +88,7 @@ export class ResourceManager {
       for (const entity of this.getEntities()) {
         if (remaining <= 0) break;
         if (!entity.active) continue;
+        if (!isPlayerOwned(entity)) continue;
         const storage = entity.getComponent(Storage);
         if (!storage) continue;
         remaining -= storage.removeItem(resource, remaining);
@@ -159,6 +163,7 @@ export class ResourceManager {
   findHeadquarters(): Entity | null {
     for (const entity of this.getEntities()) {
       if (!entity.active) continue;
+      if (!isPlayerOwned(entity)) continue;
       const storage = entity.getComponent(Storage);
       if (storage?.isHeadquarters) return entity;
     }
@@ -168,6 +173,7 @@ export class ResourceManager {
   getStorageBuildings(): Entity[] {
     return this.getEntities().filter(entity => {
       if (!entity.active) return false;
+      if (!isPlayerOwned(entity)) return false;
       const storage = entity.getComponent(Storage);
       const building = entity.getComponent(Building);
       return storage && building && building.isComplete();
@@ -198,6 +204,7 @@ export class ResourceManager {
   getProductionBuildings(): Entity[] {
     return this.getEntities().filter(entity => {
       if (!entity.active) return false;
+      if (!isPlayerOwned(entity)) return false;
       return entity.hasComponent(Production) && entity.hasComponent(Building);
     });
   }

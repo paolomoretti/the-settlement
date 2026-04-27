@@ -10,6 +10,7 @@ import { Worker, WorkerRole, WORKER_DEFS } from '@/components/Worker';
 import { Building, BuildingType } from '@/components/Building';
 import { Production } from '@/components/Production';
 import { Storage } from '@/components/Storage';
+import { Owner } from '@/components/Owner';
 import { dataManager } from '@/data/DataManager';
 import { ResourceType } from '@/types/GameData';
 import { BUILDING_FINAL_SPRITES } from '@/catalog/buildingSprites';
@@ -19,6 +20,7 @@ export function createWorker(x: number, y: number, role: WorkerRole = 'peasant')
   const def = WORKER_DEFS[role];
 
   entity.addComponent(new Position(x, y));
+  entity.addComponent(new Owner('player'));
   entity.addComponent(new Renderable(
     'worker',
     '#8b7355',
@@ -50,6 +52,7 @@ export function createBuilding(
   const entity = new Entity();
 
   entity.addComponent(new Position(x, y));
+  entity.addComponent(new Owner('player'));
 
   // Get building definition from data manager
   const buildingDef = dataManager.getBuilding(buildingType);
@@ -159,6 +162,7 @@ export function createRoad(x: number, y: number): Entity {
   const entity = new Entity();
 
   entity.addComponent(new Position(x, y));
+  entity.addComponent(new Owner('player'));
   entity.addComponent(new Building('road', 1, 1, 0, true));
 
   return entity;

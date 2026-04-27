@@ -23,6 +23,7 @@ import { roadSegmentManager, RoadSegment } from '@/economics/RoadSegmentManager'
 import { transportManager } from '@/economics/TransportManager';
 import { createWorker } from '@/entities/EntityFactory';
 import { applyProductionCycleOutputs } from '@/systems/ProductionSystem';
+import { getEntityFaction, isPlayerOwned, setEntityFaction } from '@/components/ownerUtils';
 import type { ResourceType, BuildingDefinition, AnimationConfig, BuildingType } from '@/types/GameData';
 import type { WildlifeCoordinator } from '@/wildlife/WildlifeCoordinator';
 
@@ -1231,7 +1232,7 @@ export class GameWorkerRegistry {
             if (building) building.animationWorkerId = null;
             if (gather.rockGather || gather.waterGather || gather.mineGather || gather.wildHunt) {
               const prod = buildingEntity.getComponent(Production);
-              applyProductionCycleOutputs(buildingEntity);
+              applyProductionCycleOutputs(buildingEntity, { suppressPickup: !isPlayerOwned(buildingEntity) });
               if (prod && prod.continuous) {
                 prod.timer = 0;
               }
@@ -2121,7 +2122,7 @@ export class GameWorkerRegistry {
     const production = buildingEntity.getComponent(Production);
     if (!building || !pos) return;
     if (building.animationWorkerId != null) return;
-    if (this.world.getAvailablePeasantSlotCount() <= 0) return;
+    if (isPlayerOwned(buildingEntity) && this.world.getAvailablePeasantSlotCount() <= 0) return;
 
     const buildingDef = dataManager.getBuilding(building.buildingType);
     if (!buildingDef?.animation || buildingDef.animation.type !== 'gather') return;
@@ -2284,6 +2285,7 @@ export class GameWorkerRegistry {
     }
 
     const worker = createWorker(entranceX, entranceY);
+    setEntityFaction(worker, getEntityFaction(buildingEntity));
     this.world.addEntity(worker);
 
     const workerComp = worker.getComponent(Worker);
@@ -2411,7 +2413,7 @@ export class GameWorkerRegistry {
     const production = buildingEntity.getComponent(Production);
     if (!building || !pos || !production) return;
     if (building.animationWorkerId != null) return;
-    if (this.world.getAvailablePeasantSlotCount() <= 0) return;
+    if (isPlayerOwned(buildingEntity) && this.world.getAvailablePeasantSlotCount() <= 0) return;
 
     const buildingDef = dataManager.getBuilding(building.buildingType);
     const anim = buildingDef?.animation;
@@ -2465,6 +2467,7 @@ export class GameWorkerRegistry {
     this.reservedTreeTiles.add(`${plantSpot.x},${plantSpot.y}`);
 
     const worker = createWorker(entranceX, entranceY);
+    setEntityFaction(worker, getEntityFaction(buildingEntity));
     this.world.addEntity(worker);
 
     const workerComp = worker.getComponent(Worker);

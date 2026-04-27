@@ -5,6 +5,7 @@ import { Building } from '@/components/Building';
 import { Production } from '@/components/Production';
 import { Position } from '@/components/Position';
 import { Storage } from '@/components/Storage';
+import { isPlayerOwned } from '@/components/ownerUtils';
 import { resourceManager } from '@/economics/ResourceManager';
 import { dataManager } from '@/data/DataManager';
 import { rollWellAquiferCapacity } from '@/map/wellAquifer';
@@ -21,7 +22,11 @@ import type { ProductionPriorityState } from '@/components/Production';
  */
 export function applyProductionCycleOutputs(
   entity: Entity,
-  opts?: { getTileMap?: () => TileMap; getProductionPriorities?: () => ProductionPriorityState }
+  opts?: {
+    getTileMap?: () => TileMap;
+    getProductionPriorities?: () => ProductionPriorityState;
+    suppressPickup?: boolean;
+  }
 ): void {
   const building = entity.getComponent(Building);
   const production = entity.getComponent(Production);
@@ -54,7 +59,7 @@ export function applyProductionCycleOutputs(
       if (amount <= 0) continue;
       if (dataManager.getResource(res as ResourceType)?.virtualOutput) continue;
       production.addToBuffer(res, amount);
-      resourceManager.requestPickup(entity.id, res, amount);
+      if (!opts?.suppressPickup) resourceManager.requestPickup(entity.id, res, amount);
     }
     if (buildingType === 'armory') {
       production.armoryNextOutput = production.armoryNextOutput === 'sword' ? 'shield' : 'sword';
@@ -85,7 +90,7 @@ export function applyProductionCycleOutputs(
       if (amount <= 0) continue;
       if (dataManager.getResource(resource as ResourceType)?.virtualOutput) continue;
       production.addToBuffer(resource, amount);
-      resourceManager.requestPickup(entity.id, resource, amount);
+      if (!opts?.suppressPickup) resourceManager.requestPickup(entity.id, resource, amount);
     }
   }
 
@@ -158,6 +163,7 @@ export class ProductionSystem extends System {
   update(deltaTime: number): void {
     for (const entity of this.entities) {
       if (!entity.active) continue;
+      const playerOwned = isPlayerOwned(entity);
 
       const building = entity.getComponent(Building);
       const production = entity.getComponent(Production);
@@ -258,7 +264,7 @@ export class ProductionSystem extends System {
         }
       } else if (
         production.hasInputs() &&
-        !resourceManager.hasAvailableInputsForProduction(production.inputs)
+        (!playerOwned || !resourceManager.hasAvailableInputsForProduction(production.inputs))
       ) {
         if (production.status !== 'stopped_no_inputs') {
           production.status = 'stopped_no_inputs';
@@ -407,6 +413,7 @@ export class ProductionSystem extends System {
         applyProductionCycleOutputs(entity, {
           getTileMap: this.getTileMap,
           getProductionPriorities: this.getProductionPriorities,
+          suppressPickup: !playerOwned,
         });
       }
     }

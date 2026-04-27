@@ -28,7 +28,7 @@ import {
   paintWorkerFloorNap,
 } from '@/rendering/WorkerSpritePainter';
 import { RABBIT_JUMP_DURATION_MS, type WildRabbit } from '@/wildlife/WildlifeCoordinator';
-import { CORDON_POLE_STRIDE_CELLS, territoryKey } from '@/map/TerritoryCoordinator';
+import { territoryKey } from '@/map/TerritoryCoordinator';
 import { createChimneySmoke, type ChimneySmoke } from '@/rendering/chimneySmoke';
 import { createLoFiFire, type LoFiFire } from '@/rendering/loFiFire';
 
@@ -70,6 +70,25 @@ export interface DemolitionSiteVisual {
   startedAt: number;
 }
 
+export type CordonRenderStyle = {
+  stickDark: string;
+  stickLight: string;
+  rope: string;
+  ropeHighlight?: string;
+  offsetX?: number;
+  offsetY?: number;
+};
+
+export type TerritoryCordonLayer = {
+  frontier: ReadonlySet<string>;
+  unionU: ReadonlySet<string>;
+  style?: CordonRenderStyle;
+};
+
+export type TerritoryCordonOverlay = {
+  layers: TerritoryCordonLayer[];
+};
+
 export class RenderSystem extends System {
   private ctx: CanvasRenderingContext2D;
   private canvas: HTMLCanvasElement;
@@ -82,10 +101,7 @@ export class RenderSystem extends System {
   } = {};
 
   /** Supplier for cordon overlay (frontier tiles + union), owned by `Game`. */
-  public getTerritoryCordonOverlay?: () => {
-    frontier: ReadonlySet<string>;
-    unionU: ReadonlySet<string>;
-  } | null;
+  public getTerritoryCordonOverlay?: () => TerritoryCordonOverlay | null;
 
   public buildPreview: {
     mode: string;
@@ -1533,31 +1549,57 @@ export class RenderSystem extends System {
     }
   }
 
-  private cordonStickFootAndTop(gx: number, gy: number): {
+  private cordonStickFootAndTop(
+    gx: number,
+    gy: number,
+    offset: { x: number; y: number } = { x: 0, y: 0 },
+    style?: CordonRenderStyle
+  ): {
     foot: { x: number; y: number };
     top: { x: number; y: number };
   } {
-    const h = this.iso.tileHeight * 0.56;
+    const h = this.iso.tileHeight * 0.68;
     const foot = this.iso.gridToScreen(gx, gy);
+    foot.x += offset.x + (style?.offsetX ?? 0);
+    foot.y += offset.y + (style?.offsetY ?? 0);
     return { foot, top: { x: foot.x, y: foot.y - h } };
   }
 
-  private renderCordonStickAt(gx: number, gy: number): void {
+  private renderCordonStickAt(
+    gx: number,
+    gy: number,
+    offset: { x: number; y: number },
+    style?: CordonRenderStyle
+  ): void {
     const zoom = Math.max(0.35, this.camera.zoom);
-    const { foot, top } = this.cordonStickFootAndTop(gx, gy);
+    const { foot, top } = this.cordonStickFootAndTop(gx, gy, offset, style);
     this.ctx.save();
     this.ctx.lineCap = 'round';
-    this.ctx.strokeStyle = 'rgba(48, 30, 14, 0.96)';
-    this.ctx.lineWidth = 3.2 / zoom;
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+    this.ctx.beginPath();
+    this.ctx.ellipse(foot.x, foot.y + 1.5 / zoom, 4.5 / zoom, 2.2 / zoom, 0, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    this.ctx.strokeStyle = style?.stickDark ?? 'rgba(48, 30, 14, 0.96)';
+    this.ctx.lineWidth = 5 / zoom;
     this.ctx.beginPath();
     this.ctx.moveTo(foot.x, foot.y);
     this.ctx.lineTo(top.x, top.y);
     this.ctx.stroke();
-    this.ctx.strokeStyle = 'rgba(110, 72, 38, 0.75)';
-    this.ctx.lineWidth = 1.25 / zoom;
+
+    this.ctx.strokeStyle = style?.stickLight ?? 'rgba(110, 72, 38, 0.75)';
+    this.ctx.lineWidth = 1.8 / zoom;
     this.ctx.beginPath();
-    this.ctx.moveTo(foot.x, foot.y);
-    this.ctx.lineTo(top.x, top.y);
+    this.ctx.moveTo(foot.x - 1.1 / zoom, foot.y - 1 / zoom);
+    this.ctx.lineTo(top.x - 1.1 / zoom, top.y + 1 / zoom);
+    this.ctx.stroke();
+
+    this.ctx.fillStyle = style?.stickLight ?? 'rgba(110, 72, 38, 0.85)';
+    this.ctx.strokeStyle = style?.stickDark ?? 'rgba(48, 30, 14, 0.96)';
+    this.ctx.lineWidth = 1 / zoom;
+    this.ctx.beginPath();
+    this.ctx.ellipse(top.x, top.y - 1.2 / zoom, 3.8 / zoom, 2.5 / zoom, 0, 0, Math.PI * 2);
+    this.ctx.fill();
     this.ctx.stroke();
     this.ctx.restore();
   }
@@ -1567,56 +1609,167 @@ export class RenderSystem extends System {
     ax: number,
     ay: number,
     bx: number,
-    by: number
+    by: number,
+    aOffset: { x: number; y: number },
+    bOffset: { x: number; y: number },
+    style?: CordonRenderStyle
   ): void {
     const zoom = Math.max(0.35, this.camera.zoom);
-    const a = this.cordonStickFootAndTop(ax, ay).top;
-    const b = this.cordonStickFootAndTop(bx, by).top;
-    const midX = (a.x + b.x) * 0.5;
-    const midY = (a.y + b.y) * 0.5;
-    const dist = Math.hypot(b.x - a.x, b.y - a.y);
-    const sag = Math.min(16, 5 + dist * 0.2);
+    const a = this.cordonStickFootAndTop(ax, ay, aOffset, style).top;
+    const b = this.cordonStickFootAndTop(bx, by, bOffset, style).top;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const dist = Math.max(1, Math.hypot(dx, dy));
+    const nx = -dy / dist;
+    const ny = dx / dist;
     this.ctx.save();
     this.ctx.lineCap = 'round';
     this.ctx.lineJoin = 'round';
-    this.ctx.strokeStyle = 'rgba(101, 67, 33, 0.92)';
-    this.ctx.lineWidth = 2.35 / zoom;
+    this.ctx.strokeStyle = 'rgba(28, 18, 10, 0.35)';
+    this.ctx.lineWidth = 4.6 / zoom;
+    this.ctx.beginPath();
+    this.ctx.moveTo(a.x, a.y + 1 / zoom);
+    this.ctx.lineTo(b.x, b.y + 1 / zoom);
+    this.ctx.stroke();
+
+    this.ctx.strokeStyle = style?.rope ?? 'rgba(101, 67, 33, 0.92)';
+    this.ctx.lineWidth = 3.2 / zoom;
     this.ctx.beginPath();
     this.ctx.moveTo(a.x, a.y);
-    this.ctx.quadraticCurveTo(midX, midY + sag, b.x, b.y);
+    this.ctx.lineTo(b.x, b.y);
     this.ctx.stroke();
+
+    this.ctx.strokeStyle = style?.ropeHighlight ?? 'rgba(205, 155, 92, 0.55)';
+    this.ctx.lineWidth = 1.1 / zoom;
+    this.ctx.beginPath();
+    this.ctx.moveTo(a.x + nx * 1.1 / zoom, a.y + ny * 1.1 / zoom);
+    this.ctx.lineTo(b.x + nx * 1.1 / zoom, b.y + ny * 1.1 / zoom);
+    this.ctx.stroke();
+
+    const tickCount = Math.max(1, Math.floor(dist / (9 / zoom)));
+    this.ctx.strokeStyle = 'rgba(48, 30, 14, 0.42)';
+    this.ctx.lineWidth = 0.85 / zoom;
+    for (let i = 1; i < tickCount; i++) {
+      const t = i / tickCount;
+      const cx = a.x + dx * t;
+      const cy = a.y + dy * t;
+      const twist = i % 2 === 0 ? 1 : -1;
+      this.ctx.beginPath();
+      this.ctx.moveTo(cx - nx * 2.3 / zoom, cy - ny * 2.3 / zoom);
+      this.ctx.lineTo(cx + nx * 2.3 / zoom + (dx / dist) * twist * 1.2 / zoom, cy + ny * 2.3 / zoom + (dy / dist) * twist * 1.2 / zoom);
+      this.ctx.stroke();
+    }
     this.ctx.restore();
   }
 
   /**
-   * Pole cells (sparse sticks) + rope segments along the full cordon graph:
-   * every cardinal and diagonal link between two frontier cells gets one sagging arc
-   * (so bends and diagonals are closed; not only straight pole-to-pole rays).
+   * Cordon poles sit on the single visible boundary row. Contested/shared cells are already
+   * a boundary row, so adjacent owned frontier cells should not also render a second inner row.
    */
-  private buildCordonGeometry(frontier: ReadonlySet<string>): {
-    poleKeys: Set<string>;
-    ropes: Array<{ ax: number; ay: number; bx: number; by: number; dBack: number }>;
-  } {
-    const stride = CORDON_POLE_STRIDE_CELLS;
-    const poleKeys = new Set<string>();
-    for (const k of frontier) {
-      const [xs, ys] = k.split(',');
-      const x = Number(xs);
-      const y = Number(ys);
-      if (((x + y) % stride + stride) % stride === 0) {
-        poleKeys.add(k);
-      }
-    }
+  private isRenderableCordonCell(
+    key: string,
+    frontier: ReadonlySet<string>,
+    unionU: ReadonlySet<string>,
+    suppressKeys: ReadonlySet<string>
+  ): boolean {
+    if (suppressKeys.has(key)) return false;
+    if (!unionU.has(key)) return true;
 
-    const directions: readonly [number, number][] = [
+    const [xs, ys] = key.split(',');
+    const x = Number(xs);
+    const y = Number(ys);
+    const cardinals: readonly [number, number][] = [
       [-1, 0],
       [1, 0],
       [0, -1],
       [0, 1],
-      [-1, -1],
-      [-1, 1],
-      [1, -1],
+    ];
+    for (const [dx, dy] of cardinals) {
+      const neighborKey = territoryKey(x + dx, y + dy);
+      if (frontier.has(neighborKey) && !unionU.has(neighborKey)) return false;
+    }
+    return true;
+  }
+
+  private getCordonExposedMask(x: number, y: number, ownedCells: ReadonlySet<string>): number {
+    let mask = 0;
+    const dirs: readonly { dx: number; dy: number; bit: number }[] = [
+      { dx: -1, dy: 0, bit: 1 },
+      { dx: 1, dy: 0, bit: 2 },
+      { dx: 0, dy: -1, bit: 4 },
+      { dx: 0, dy: 1, bit: 8 },
+    ];
+    for (const { dx, dy, bit } of dirs) {
+      if (!ownedCells.has(territoryKey(x + dx, y + dy))) mask |= bit;
+    }
+    return mask;
+  }
+
+  private getCordonPostOffset(
+    x: number,
+    y: number,
+    exposedMask: number
+  ): { x: number; y: number } {
+    let vx = 0;
+    let vy = 0;
+    const dirs: readonly { dx: number; dy: number; bit: number }[] = [
+      { dx: -1, dy: 0, bit: 1 },
+      { dx: 1, dy: 0, bit: 2 },
+      { dx: 0, dy: -1, bit: 4 },
+      { dx: 0, dy: 1, bit: 8 },
+    ];
+    for (const { dx, dy, bit } of dirs) {
+      if ((exposedMask & bit) !== 0) {
+        vx -= dx;
+        vy -= dy;
+      }
+    }
+    const len = Math.hypot(vx, vy);
+    if (len <= 0.0001) return { x: 0, y: 0 };
+    const here = this.iso.gridToScreen(x, y);
+    const toward = this.iso.gridToScreen(x + vx / len, y + vy / len);
+    const sx = toward.x - here.x;
+    const sy = toward.y - here.y;
+    const screenLen = Math.hypot(sx, sy);
+    if (screenLen <= 0.0001) return { x: 0, y: 0 };
+    const amount = 7;
+    return { x: (sx / screenLen) * amount, y: (sy / screenLen) * amount };
+  }
+
+  private buildCordonGeometry(
+    frontier: ReadonlySet<string>,
+    unionU: ReadonlySet<string>,
+    suppressKeys: ReadonlySet<string> = new Set<string>()
+  ): {
+    poleOffsets: Map<string, { x: number; y: number }>;
+    ropes: Array<{ ax: number; ay: number; bx: number; by: number; dBack: number }>;
+  } {
+    const poleOffsets = new Map<string, { x: number; y: number }>();
+    const renderableFrontier = new Set<string>();
+    for (const k of frontier) {
+      if (!this.isRenderableCordonCell(k, frontier, unionU, suppressKeys)) continue;
+      renderableFrontier.add(k);
+    }
+
+    const ownedCells = new Set<string>(unionU);
+    for (const k of renderableFrontier) ownedCells.add(k);
+
+    const exposedMasks = new Map<string, number>();
+    for (const k of renderableFrontier) {
+      const [xs, ys] = k.split(',');
+      const x = Number(xs);
+      const y = Number(ys);
+      const exposedMask = this.getCordonExposedMask(x, y, ownedCells);
+      if (exposedMask === 0) continue;
+      exposedMasks.set(k, exposedMask);
+      poleOffsets.set(k, this.getCordonPostOffset(x, y, exposedMask));
+    }
+
+    const directions: readonly [number, number][] = [
+      [1, 0],
+      [0, 1],
       [1, 1],
+      [1, -1],
     ];
     const ropes: Array<{ ax: number; ay: number; bx: number; by: number; dBack: number }> = [];
     const seenEdge = new Set<string>();
@@ -1625,15 +1778,86 @@ export class RenderSystem extends System {
       const b = territoryKey(x1, y1);
       return a < b ? `${a}|${b}` : `${b}|${a}`;
     };
+    const sideBit = (dx: number, dy: number): number => {
+      if (dx < 0) return 1;
+      if (dx > 0) return 2;
+      if (dy < 0) return 4;
+      if (dy > 0) return 8;
+      return 0;
+    };
+    const hasDiagonalCornerBridge = (mask: number, neighborMask: number, dx: number, dy: number): boolean => {
+      const xSide = sideBit(dx, 0);
+      const ySide = sideBit(0, dy);
+      const neighborOppositeX = sideBit(-dx, 0);
+      const neighborOppositeY = sideBit(0, -dy);
+      return (
+        ((mask & xSide) !== 0 && (neighborMask & neighborOppositeY) !== 0) ||
+        ((mask & ySide) !== 0 && (neighborMask & neighborOppositeX) !== 0)
+      );
+    };
+    const canConnectMasks = (mask: number, neighborMask: number, dx: number, dy: number): boolean => {
+      if ((mask & neighborMask) !== 0) return true;
+      if (Math.abs(dx) + Math.abs(dy) !== 2) return false;
+      return hasDiagonalCornerBridge(mask, neighborMask, dx, dy);
+    };
 
+    const gapDirections: readonly [number, number][] = [
+      [1, 0],
+      [0, 1],
+      [1, 1],
+      [1, -1],
+    ];
     for (const k of frontier) {
+      if (poleOffsets.has(k) || suppressKeys.has(k)) continue;
       const [xs, ys] = k.split(',');
       const x = Number(xs);
       const y = Number(ys);
+      let bridgeMask = 0;
+      for (const [dx, dy] of gapDirections) {
+        const aKey = territoryKey(x - dx, y - dy);
+        const bKey = territoryKey(x + dx, y + dy);
+        if (!poleOffsets.has(aKey) || !poleOffsets.has(bKey)) continue;
+        const aMask = exposedMasks.get(aKey) ?? 0;
+        const bMask = exposedMasks.get(bKey) ?? 0;
+        const sharedMask = aMask & bMask;
+        if (sharedMask !== 0) {
+          bridgeMask = sharedMask;
+          break;
+        }
+      }
+      if (bridgeMask === 0) continue;
+      exposedMasks.set(k, bridgeMask);
+      poleOffsets.set(k, this.getCordonPostOffset(x, y, bridgeMask));
+    }
+
+    for (const k of frontier) {
+      if (!poleOffsets.has(k)) continue;
+      const [xs, ys] = k.split(',');
+      const x = Number(xs);
+      const y = Number(ys);
+      const mask = exposedMasks.get(k) ?? 0;
       for (const [dx, dy] of directions) {
         const nx = x + dx;
         const ny = y + dy;
-        if (!frontier.has(territoryKey(nx, ny))) continue;
+        const neighborKey = territoryKey(nx, ny);
+        if (!poleOffsets.has(neighborKey)) continue;
+        const neighborMask = exposedMasks.get(neighborKey) ?? 0;
+        if (!canConnectMasks(mask, neighborMask, dx, dy)) continue;
+        if (Math.abs(dx) + Math.abs(dy) === 2) {
+          const viaA = territoryKey(x + dx, y);
+          const viaB = territoryKey(x, y + dy);
+          const viaAMask = poleOffsets.has(viaA) ? (exposedMasks.get(viaA) ?? 0) : 0;
+          const viaBMask = poleOffsets.has(viaB) ? (exposedMasks.get(viaB) ?? 0) : 0;
+          const viaAConnects =
+            viaAMask !== 0 &&
+            canConnectMasks(mask, viaAMask, dx, 0) &&
+            canConnectMasks(viaAMask, neighborMask, 0, dy);
+          const viaBConnects =
+            viaBMask !== 0 &&
+            canConnectMasks(mask, viaBMask, 0, dy) &&
+            canConnectMasks(viaBMask, neighborMask, dx, 0);
+          if (viaAConnects || viaBConnects) continue;
+        }
         const ek = edgeKey(x, y, nx, ny);
         if (seenEdge.has(ek)) continue;
         seenEdge.add(ek);
@@ -1642,7 +1866,7 @@ export class RenderSystem extends System {
       }
     }
 
-    return { poleKeys, ropes };
+    return { poleOffsets, ropes };
   }
 
   private tileHash(x: number, y: number, salt: number = 0): number {
@@ -1964,15 +2188,50 @@ export class RenderSystem extends System {
   private renderDepthSorted(
     sortedEntities: Entity[],
     viewportBounds: { minX: number; maxX: number; minY: number; maxY: number },
-    cordonPack: { frontier: ReadonlySet<string>; unionU: ReadonlySet<string> } | null
+    cordonPack: TerritoryCordonOverlay | null
   ): void {
     const minDepth = viewportBounds.minX + viewportBounds.minY;
     const maxDepth = viewportBounds.maxX + viewportBounds.maxY;
 
-    const cordonGeo =
-      cordonPack && cordonPack.frontier.size > 0
-        ? this.buildCordonGeometry(cordonPack.frontier)
-        : null;
+    const cordonLayers = cordonPack?.layers ?? [];
+    const primaryLayer = cordonLayers.find(layer => !layer.style && layer.frontier.size > 0) ?? cordonLayers[0];
+    const suppressedByLayer = new Map<number, Set<string>>();
+    const findNearbyPrimaryFrontier = (key: string): string | null => {
+      if (!primaryLayer) return null;
+      const [xs, ys] = key.split(',');
+      const x = Number(xs);
+      const y = Number(ys);
+      for (let radius = 0; radius <= 1; radius++) {
+        for (let dy = -radius; dy <= radius; dy++) {
+          for (let dx = -radius; dx <= radius; dx++) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
+            const candidate = territoryKey(x + dx, y + dy);
+            if (primaryLayer.frontier.has(candidate)) return candidate;
+          }
+        }
+      }
+      return null;
+    };
+
+    cordonLayers.forEach((layer, index) => {
+      if (!layer.style || !primaryLayer || layer === primaryLayer) return;
+      const suppressed = new Set<string>();
+      for (const key of layer.frontier) {
+        const primaryKey = findNearbyPrimaryFrontier(key);
+        if (!primaryKey) continue;
+        suppressed.add(key);
+      }
+      if (suppressed.size > 0) suppressedByLayer.set(index, suppressed);
+    });
+
+    const cordonGeos = cordonLayers
+      .map((layer, index) => ({ layer, index }))
+      .filter(({ layer }) => layer.frontier.size > 0)
+      .map(({ layer, index }) => ({
+        ...this.buildCordonGeometry(layer.frontier, layer.unionU, suppressedByLayer.get(index)),
+        style: layer.style,
+        layer,
+      }));
 
     const { blocks: mountainBlocks, covered: mountainCovered } = this.findMountainBlocks(viewportBounds);
 
@@ -2044,14 +2303,17 @@ export class RenderSystem extends System {
       }
 
       // Cordon sticks at this depth (behind trees/rocks on the same tile)
-      if (cordonGeo) {
+      if (cordonGeos.length > 0) {
         for (let x = xMin; x <= xMax; x++) {
           const y = d - x;
           const k = territoryKey(x, y);
-          if (!cordonGeo.poleKeys.has(k)) continue;
           const t = this.tileMap.getTile(x, y);
           if (!t?.isExplored()) continue;
-          this.renderCordonStickAt(x, y);
+          for (const cordonGeo of cordonGeos) {
+            const offset = cordonGeo.poleOffsets.get(k);
+            if (!offset) continue;
+            this.renderCordonStickAt(x, y, offset, cordonGeo.style);
+          }
         }
       }
 
@@ -2076,10 +2338,22 @@ export class RenderSystem extends System {
       }
 
       // Cordon ropes: one arc per pole-to-pole chain; draw after the rear (min depth) tile's trees
-      if (cordonGeo) {
-        for (const seg of cordonGeo.ropes) {
-          if (seg.dBack !== d) continue;
-          this.renderCordonRopeBetweenCellTops(seg.ax, seg.ay, seg.bx, seg.by);
+      if (cordonGeos.length > 0) {
+        for (const cordonGeo of cordonGeos) {
+          for (const seg of cordonGeo.ropes) {
+            if (seg.dBack !== d) continue;
+            const aOffset = cordonGeo.poleOffsets.get(territoryKey(seg.ax, seg.ay)) ?? { x: 0, y: 0 };
+            const bOffset = cordonGeo.poleOffsets.get(territoryKey(seg.bx, seg.by)) ?? { x: 0, y: 0 };
+            this.renderCordonRopeBetweenCellTops(
+              seg.ax,
+              seg.ay,
+              seg.bx,
+              seg.by,
+              aOffset,
+              bOffset,
+              cordonGeo.style
+            );
+          }
         }
       }
 

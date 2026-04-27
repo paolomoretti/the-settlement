@@ -613,7 +613,7 @@
     "name": "Mint",
     "description": "Mints gold coins from gold ore and coal for military upgrades.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 65, "color": "#ffd700" },
+    "visual": { "buildingHeight": 65, "color": "#ffd700", "spriteScale": 1.4, "offsetX": -3, "offsetY": 2 },
     "buildCost": { "wood_plank": 2, "stone": 2 },
     "buildTime": 35,
     "requiresRoad": true,
@@ -642,9 +642,9 @@
     "requiresRoad": true,
     "requiredTool": "tongs",
     "chimneySmoke": {
-      "offsetX": 28,
-      "offsetY": 14,
-      "density": 2
+      "offsetX": 61,
+      "offsetY": -18,
+      "density": 2.5
     },
     "production": {
       "outputs": {

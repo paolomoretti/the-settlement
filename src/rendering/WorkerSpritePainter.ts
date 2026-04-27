@@ -2,16 +2,52 @@
  * Procedural worker body drawing (shared by RenderSystem and debug catalogue).
  */
 
-import type { Worker, IdleAnim } from '@/components/Worker';
+import type { Worker, IdleAnim, WorkerAppearance } from '@/components/Worker';
 
 const RESOURCE_ICON_DRAW_SCALE = 1.25;
 
-function darkenColor(color: string, factor: number): string {
+function clampColorChannel(v: number): number {
+  return v < 0 ? 0 : v > 255 ? 255 : v;
+}
+
+function parseCssColor(color: string): { r: number; g: number; b: number } {
+  const rgb = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if (rgb) {
+    return {
+      r: Number(rgb[1]),
+      g: Number(rgb[2]),
+      b: Number(rgb[3]),
+    };
+  }
   const hex = color.replace('#', '');
-  const r = Math.floor(parseInt(hex.slice(0, 2), 16) * factor);
-  const g = Math.floor(parseInt(hex.slice(2, 4), 16) * factor);
-  const b = Math.floor(parseInt(hex.slice(4, 6), 16) * factor);
-  return `rgb(${r}, ${g}, ${b})`;
+  return {
+    r: parseInt(hex.slice(0, 2), 16),
+    g: parseInt(hex.slice(2, 4), 16),
+    b: parseInt(hex.slice(4, 6), 16),
+  };
+}
+
+function darkenColor(color: string, factor: number): string {
+  const { r, g, b } = parseCssColor(color);
+  return `rgb(${Math.floor(r * factor)}, ${Math.floor(g * factor)}, ${Math.floor(b * factor)})`;
+}
+
+function tintClothEnemyRed(color: string): string {
+  const { r, g, b } = parseCssColor(color);
+  const lum = r * 0.3 + g * 0.59 + b * 0.11;
+  const rr = Math.floor(55 + lum * 0.72);
+  const gg = Math.floor(10 + lum * 0.18);
+  const bb = Math.floor(14 + lum * 0.16);
+  return `rgb(${clampColorChannel(rr)}, ${clampColorChannel(gg)}, ${clampColorChannel(bb)})`;
+}
+
+function enemyTintAppearance(appearance: WorkerAppearance): WorkerAppearance {
+  return {
+    ...appearance,
+    tunic: tintClothEnemyRed(appearance.tunic),
+    pants: tintClothEnemyRed(appearance.pants),
+    boots: tintClothEnemyRed(appearance.boots),
+  };
 }
 
 function paintMilitaryWarrior(
@@ -21,9 +57,10 @@ function paintMilitaryWarrior(
   facing: number,
   isMoving: boolean,
   frame: number,
-  worker: Worker
+  worker: Worker,
+  enemyTint: boolean = false
 ): void {
-  const a = worker.appearance;
+  const a = enemyTint ? enemyTintAppearance(worker.appearance) : worker.appearance;
   const rank = worker.militaryRank;
   const mirror = facing === 1 || facing === 2;
   const showBack = facing === 2 || facing === 3;
@@ -140,6 +177,7 @@ export interface WorkerBodyPaintInput {
   armAnim: IdleAnim;
   drawRoundFootShadow: boolean;
   napPillowArms: boolean;
+  enemyTint?: boolean;
 }
 
 export function paintWorkerSpriteBody(
@@ -166,13 +204,14 @@ export function paintWorkerSpriteBody(
     armAnim,
     drawRoundFootShadow,
     napPillowArms,
+    enemyTint = false,
   } = p;
-  const a = worker.appearance;
+  const a = enemyTint ? enemyTintAppearance(worker.appearance) : worker.appearance;
 
   ctx.save();
 
   if (worker.role === 'military') {
-    paintMilitaryWarrior(ctx, loadSprite, s, facing, isMoving, frame, worker);
+    paintMilitaryWarrior(ctx, loadSprite, s, facing, isMoving, frame, worker, enemyTint);
     ctx.restore();
     return;
   }
@@ -515,7 +554,8 @@ export function paintWorkerFloorNap(
   worker: Worker,
   now: number,
   s: number,
-  facing: number
+  facing: number,
+  enemyTint: boolean = false
 ): void {
   ctx.save();
   ctx.globalAlpha = 0.22;
@@ -549,6 +589,7 @@ export function paintWorkerFloorNap(
     armAnim: 'none',
     drawRoundFootShadow: false,
     napPillowArms: true,
+    enemyTint,
   });
 
   ctx.restore();

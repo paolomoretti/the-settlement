@@ -31,6 +31,7 @@ import { RABBIT_JUMP_DURATION_MS, type WildRabbit } from '@/wildlife/WildlifeCoo
 import { territoryKey } from '@/map/TerritoryCoordinator';
 import { createChimneySmoke, type ChimneySmoke } from '@/rendering/chimneySmoke';
 import { createLoFiFire, type LoFiFire } from '@/rendering/loFiFire';
+import { isPlayerOwned } from '@/components/ownerUtils';
 
 /** World-space half-plane clip for long straight iso shores (same screen row / column of tile centers). */
 type FlatShoreCut =
@@ -314,6 +315,28 @@ export class RenderSystem extends System {
     return entity.hasComponent(Position) && entity.hasComponent(Renderable);
   }
 
+  private hasExploredBuildingFootprint(pos: Position, building: Building): boolean {
+    for (let dy = 0; dy < building.height; dy++) {
+      for (let dx = 0; dx < building.width; dx++) {
+        const tile = this.tileMap.getTile(pos.x + dx, pos.y + dy);
+        if (tile?.isExplored()) return true;
+      }
+    }
+    return false;
+  }
+
+  private isEntityVisibleByExploration(entity: Entity): boolean {
+    const pos = entity.getComponent(Position);
+    if (!pos) return false;
+
+    const building = entity.getComponent(Building);
+    if (building) return this.hasExploredBuildingFootprint(pos, building);
+
+    const x = Math.floor(pos.x);
+    const y = Math.floor(pos.y);
+    return !!this.tileMap.getTile(x, y)?.isExplored();
+  }
+
   /** Advance chimney particles; drive emitters from production or optional schedule override. */
   private updateChimneySmokes(dt: number): void {
     const validIds = new Set<number>();
@@ -400,6 +423,7 @@ export class RenderSystem extends System {
     const visibleEntities = this.entities.filter(entity => {
       const pos = entity.getComponent(Position);
       if (!pos) return false;
+      if (!this.isEntityVisibleByExploration(entity)) return false;
 
       const building = entity.getComponent(Building);
       const width = building ? building.width : 1;
@@ -463,6 +487,7 @@ export class RenderSystem extends System {
 
     this.renderSurveyOverlays();
     this.renderSurveyorWorkersOnTop();
+    this.renderFogOcclusion(viewportBounds);
 
     this.ctx.restore();
 
@@ -884,7 +909,7 @@ export class RenderSystem extends System {
     });
     for (const id of ids) {
       const ent = this.entities.find(e => e.id === id && e.active);
-      if (ent) this.renderEntity(ent);
+      if (ent && this.isEntityVisibleByExploration(ent)) this.renderEntity(ent);
     }
   }
 
@@ -1549,6 +1574,26 @@ export class RenderSystem extends System {
     }
   }
 
+  private renderFogOcclusion(viewportBounds: { minX: number; maxX: number; minY: number; maxY: number }): void {
+    this.ctx.save();
+    this.ctx.fillStyle = '#050607';
+    for (let y = viewportBounds.minY; y <= viewportBounds.maxY; y++) {
+      for (let x = viewportBounds.minX; x <= viewportBounds.maxX; x++) {
+        const tile = this.tileMap.getTile(x, y);
+        if (!tile || tile.isExplored()) continue;
+        const corners = this.iso.getTileCorners(x, y);
+        this.ctx.beginPath();
+        this.ctx.moveTo(corners[0].x, corners[0].y);
+        for (let i = 1; i < corners.length; i++) {
+          this.ctx.lineTo(corners[i].x, corners[i].y);
+        }
+        this.ctx.closePath();
+        this.ctx.fill();
+      }
+    }
+    this.ctx.restore();
+  }
+
   private cordonStickFootAndTop(
     gx: number,
     gy: number,
@@ -1863,6 +1908,30 @@ export class RenderSystem extends System {
         seenEdge.add(ek);
         const dBack = Math.min(x + y, nx + ny);
         ropes.push({ ax: x, ay: y, bx: nx, by: ny, dBack });
+      }
+    }
+
+    // Rarely the derived frontier leaves a one-cell hole between two compatible boundary poles.
+    // Bridge only that short span with rope; do not add poles or alter the normal boundary graph.
+    for (const [k, mask] of exposedMasks) {
+      if (!poleOffsets.has(k)) continue;
+      const [xs, ys] = k.split(',');
+      const x = Number(xs);
+      const y = Number(ys);
+      for (const [dx, dy] of directions) {
+        const midX = x + dx;
+        const midY = y + dy;
+        const endX = x + dx * 2;
+        const endY = y + dy * 2;
+        const midKey = territoryKey(midX, midY);
+        const endKey = territoryKey(endX, endY);
+        if (poleOffsets.has(midKey) || !poleOffsets.has(endKey)) continue;
+        const endMask = exposedMasks.get(endKey) ?? 0;
+        if ((mask & endMask) === 0) continue;
+        const ek = edgeKey(x, y, endX, endY);
+        if (seenEdge.has(ek)) continue;
+        seenEdge.add(ek);
+        ropes.push({ ax: x, ay: y, bx: endX, by: endY, dBack: Math.min(x + y, endX + endY) });
       }
     }
 
@@ -2194,41 +2263,10 @@ export class RenderSystem extends System {
     const maxDepth = viewportBounds.maxX + viewportBounds.maxY;
 
     const cordonLayers = cordonPack?.layers ?? [];
-    const primaryLayer = cordonLayers.find(layer => !layer.style && layer.frontier.size > 0) ?? cordonLayers[0];
-    const suppressedByLayer = new Map<number, Set<string>>();
-    const findNearbyPrimaryFrontier = (key: string): string | null => {
-      if (!primaryLayer) return null;
-      const [xs, ys] = key.split(',');
-      const x = Number(xs);
-      const y = Number(ys);
-      for (let radius = 0; radius <= 1; radius++) {
-        for (let dy = -radius; dy <= radius; dy++) {
-          for (let dx = -radius; dx <= radius; dx++) {
-            if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
-            const candidate = territoryKey(x + dx, y + dy);
-            if (primaryLayer.frontier.has(candidate)) return candidate;
-          }
-        }
-      }
-      return null;
-    };
-
-    cordonLayers.forEach((layer, index) => {
-      if (!layer.style || !primaryLayer || layer === primaryLayer) return;
-      const suppressed = new Set<string>();
-      for (const key of layer.frontier) {
-        const primaryKey = findNearbyPrimaryFrontier(key);
-        if (!primaryKey) continue;
-        suppressed.add(key);
-      }
-      if (suppressed.size > 0) suppressedByLayer.set(index, suppressed);
-    });
-
     const cordonGeos = cordonLayers
-      .map((layer, index) => ({ layer, index }))
-      .filter(({ layer }) => layer.frontier.size > 0)
-      .map(({ layer, index }) => ({
-        ...this.buildCordonGeometry(layer.frontier, layer.unionU, suppressedByLayer.get(index)),
+      .filter(layer => layer.frontier.size > 0)
+      .map(layer => ({
+        ...this.buildCordonGeometry(layer.frontier, layer.unionU),
         style: layer.style,
         layer,
       }));
@@ -3120,6 +3158,9 @@ export class RenderSystem extends System {
       } else {
         this.renderIsometricBuilding(building, renderable, isSelected, insightHighlight);
       }
+      if (!isPlayerOwned(entity)) {
+        this.renderEnemyBuildingEntranceFlag(building);
+      }
 
       const chimneyCfg = dataManager.getBuilding(building.buildingType)?.chimneySmoke;
       if (chimneyCfg && building.isComplete() && building.state === 'complete') {
@@ -3154,7 +3195,7 @@ export class RenderSystem extends System {
           const k = 0.26;
           this.ctx.translate((pWater.x - pStand.x) * k, (pWater.y - pStand.y) * k);
         }
-        this.renderWorkerSprite(movable, worker);
+        this.renderWorkerSprite(movable, worker, !isPlayerOwned(entity));
       }
     } else {
       switch (renderable.type) {
@@ -3218,6 +3259,63 @@ export class RenderSystem extends System {
       }
     }
 
+    this.ctx.restore();
+  }
+
+  private renderEnemyBuildingEntranceFlag(building: Building): void {
+    const entrance = building.getEntranceOffset();
+    if (!entrance) return;
+
+    const tileW = this.iso.tileWidth;
+    const tileH = this.iso.tileHeight;
+    const entranceCenterX = entrance.dx * tileW / 2 - entrance.dy * tileW / 2;
+    const entranceCenterY = entrance.dx * tileH / 2 + entrance.dy * tileH / 2 + tileH / 2;
+    const footX = entranceCenterX + tileW / 4;
+    const footY = entranceCenterY + tileH / 4;
+    const s = 0.8;
+    const poleH = Math.max(18, Math.min(27, building.buildingHeight * 0.44));
+    const topY = footY - poleH;
+    const t = performance.now() * 0.004 + (building.width * 1.7 + building.height * 2.3);
+    const wave = Math.sin(t) * 2.2 * s;
+
+    this.ctx.save();
+    this.ctx.lineCap = 'round';
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+    this.ctx.beginPath();
+    this.ctx.ellipse(footX, footY + 1.4 * s, 4.2 * s, 2 * s, 0, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    this.ctx.strokeStyle = 'rgba(70, 22, 16, 0.96)';
+    this.ctx.lineWidth = 4 * s;
+    this.ctx.beginPath();
+    this.ctx.moveTo(footX, footY);
+    this.ctx.lineTo(footX, topY);
+    this.ctx.stroke();
+
+    this.ctx.strokeStyle = 'rgba(165, 58, 42, 0.78)';
+    this.ctx.lineWidth = 1.4 * s;
+    this.ctx.beginPath();
+    this.ctx.moveTo(footX - 0.9 * s, footY - 1 * s);
+    this.ctx.lineTo(footX - 0.9 * s, topY + 1 * s);
+    this.ctx.stroke();
+
+    this.ctx.fillStyle = 'rgba(155, 24, 31, 0.96)';
+    this.ctx.strokeStyle = 'rgba(80, 12, 16, 0.9)';
+    this.ctx.lineWidth = 1.1 * s;
+    this.ctx.beginPath();
+    this.ctx.moveTo(footX + 1.5 * s, topY + 3 * s);
+    this.ctx.quadraticCurveTo(footX + 13 * s, topY + 1 * s + wave, footX + 23 * s, topY + 6 * s);
+    this.ctx.quadraticCurveTo(footX + 13 * s, topY + 10 * s - wave * 0.45, footX + 1.5 * s, topY + 12 * s);
+    this.ctx.closePath();
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    this.ctx.strokeStyle = 'rgba(255, 120, 110, 0.45)';
+    this.ctx.lineWidth = 1 * s;
+    this.ctx.beginPath();
+    this.ctx.moveTo(footX + 4 * s, topY + 5 * s);
+    this.ctx.quadraticCurveTo(footX + 13 * s, topY + 4 * s + wave * 0.7, footX + 20 * s, topY + 7 * s);
+    this.ctx.stroke();
     this.ctx.restore();
   }
 
@@ -3914,11 +4012,12 @@ export class RenderSystem extends System {
     armAnim: IdleAnim;
     drawRoundFootShadow: boolean;
     napPillowArms: boolean;
+    enemyTint?: boolean;
   }): void {
     paintWorkerBodyToCanvas(this.ctx, (path) => this.loadSprite(path), p);
   }
 
-  private renderWorkerSprite(movable: Movable | null, worker: Worker): void {
+  private renderWorkerSprite(movable: Movable | null, worker: Worker, enemyTint: boolean = false): void {
     let dirX = 0;
     let dirY = 1;
     let isMoving = false;
@@ -4015,6 +4114,7 @@ export class RenderSystem extends System {
       isSideCarryTool,
       isOverheadCarry,
       armAnim,
+      enemyTint,
     };
 
     if (
@@ -4023,7 +4123,7 @@ export class RenderSystem extends System {
       worker.floorSleepUntilMs != null &&
       now < worker.floorSleepUntilMs
     ) {
-      paintWorkerFloorNap(this.ctx, (path) => this.loadSprite(path), worker, now, s, facing);
+      paintWorkerFloorNap(this.ctx, (path) => this.loadSprite(path), worker, now, s, facing, enemyTint);
       return;
     }
 

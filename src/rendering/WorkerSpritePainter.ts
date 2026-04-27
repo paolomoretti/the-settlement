@@ -64,11 +64,18 @@ function paintMilitaryWarrior(
   const rank = worker.militaryRank;
   const mirror = facing === 1 || facing === 2;
   const showBack = facing === 2 || facing === 3;
+  const isCombatDuel = worker.visualActivity === 'combat_duel';
   if (mirror) ctx.scale(-1, 1);
 
   const legOffsets = [[0, 0], [-1, 1], [0, 0], [1, -1]] as const;
-  const [leftLeg, rightLeg] = legOffsets[frame];
-  const walkArmSwing = isMoving ? (frame === 1 ? 1 : frame === 3 ? -1 : 0) : 0;
+  const [leftLeg, rightLeg] = isCombatDuel ? [0, 0] : legOffsets[frame];
+  const duelT = isCombatDuel ? Date.now() / 145 : 0;
+  const duelSwing = isCombatDuel ? Math.sin(duelT) * 2.2 + Math.sin(duelT * 0.47) * 0.9 : 0;
+  const shieldBrace = isCombatDuel ? Math.cos(duelT * 0.85) * 1.15 : 0;
+  const walkArmSwing = isCombatDuel ? duelSwing : isMoving ? (frame === 1 ? 1 : frame === 3 ? -1 : 0) : 0;
+  if (isCombatDuel) {
+    ctx.translate(0, Math.sin(duelT * 0.7) * 0.35 * s);
+  }
 
   const px = (x: number, y: number, w: number, h: number, color: string) => {
     ctx.fillStyle = color;
@@ -119,9 +126,17 @@ function paintMilitaryWarrior(
   const shieldSprite = loadSprite('/assets/resources/shield.png');
   const itemPx = 9 * RESOURCE_ICON_DRAW_SCALE;
   if (!showBack) {
-    const sx = walkArmSwing * 0.3;
+    const sx = isCombatDuel ? walkArmSwing : walkArmSwing * 0.3;
     if (swordSprite) {
-      ctx.drawImage(swordSprite, (1.1 + sx) * s, (-12.5) * s, itemPx * s, itemPx * s);
+      ctx.save();
+      if (isCombatDuel) {
+        ctx.translate((5.8 + sx * 0.35) * s, (-8.5 + Math.abs(sx) * -0.15) * s);
+        ctx.rotate((0.18 + Math.sin(duelT) * 0.42) * (mirror ? -1 : 1));
+        ctx.drawImage(swordSprite, -4.7 * s, -4.7 * s, itemPx * s, itemPx * s);
+      } else {
+        ctx.drawImage(swordSprite, (1.1 + sx) * s, (-12.5) * s, itemPx * s, itemPx * s);
+      }
+      ctx.restore();
     } else {
       // Fallback sword if sprite fails to load.
       px(2 + sx, -12, 1, 9, goldTrim ? '#f0d060' : '#d9dde2');
@@ -129,20 +144,20 @@ function paintMilitaryWarrior(
       px(1 + sx, -4, 4, 1, goldTrim ? '#d4af37' : '#9ea5ad');
     }
     // Keep the explicit hand marker at the grip for readability.
-    px(2 + sx, -1, 2, 2, '#b64040');
+    px(2 + sx * 0.35, -1, 2, 2, '#b64040');
 
     if (shieldSprite) {
-      ctx.drawImage(shieldSprite, (-7.8 - sx) * s, (-10.3) * s, itemPx * s, itemPx * s);
+      ctx.drawImage(shieldSprite, (-7.8 - shieldBrace) * s, (-10.3 + Math.abs(shieldBrace) * 0.18) * s, itemPx * s, itemPx * s);
     } else {
       // Fallback shield if sprite fails to load.
-      px(-6 - sx, -9, 4, 6, '#5a3e2a');
-      px(-5 - sx, -8, 2, 4, '#6c4a33');
-      px(-4 - sx, -7, 2, 2, '#7a5539');
+      px(-6 - shieldBrace, -9, 4, 6, '#5a3e2a');
+      px(-5 - shieldBrace, -8, 2, 4, '#6c4a33');
+      px(-4 - shieldBrace, -7, 2, 2, '#7a5539');
     }
     // Removed old rank-3 gold rectangle accent.
   } else {
     // Back-facing sprites: still show actual sword + shield when available.
-    const sx = walkArmSwing * 0.2;
+    const sx = isCombatDuel ? walkArmSwing * 0.45 : walkArmSwing * 0.2;
     if (swordSprite) {
       ctx.drawImage(swordSprite, (1.3 + sx) * s, (-12.2) * s, itemPx * s, itemPx * s);
     } else {

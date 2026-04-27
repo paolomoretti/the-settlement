@@ -20,6 +20,7 @@ export const TERRITORY_PREVIEW_BAND_CELLS = 5;
 /** Sample a pole every N cells on the cordon (stride 2 avoids long diagonals with no poles). */
 export const CORDON_POLE_STRIDE_CELLS = 2;
 const ENEMY_MILITARY_TERRITORY_RADIUS = 5;
+const MILITARY_CLAIM_STRENGTH_BONUS = 20;
 
 export function territoryKey(x: number, y: number): string {
   return `${x},${y}`;
@@ -126,8 +127,7 @@ export class TerritoryCoordinator {
       for (const claim of claims) {
         const layer = this.layersByFaction.get(claim.factionId);
         if (!layer) continue;
-        if (claims.length === 1) layer.unionU.add(cellKey);
-        else layer.frontier.add(cellKey);
+        layer.unionU.add(cellKey);
       }
     }
 
@@ -137,7 +137,7 @@ export class TerritoryCoordinator {
   private getSourceStrengthAt(x: number, y: number, source: DiskSource): number | null {
     const dist = chebyshevDist(x, y, source.cx, source.cy);
     if (dist > source.r) return null;
-    return source.r - dist;
+    return source.r - dist + (source.kind === 'military' ? MILITARY_CLAIM_STRENGTH_BONUS : 0);
   }
 
   private computeExclusiveOwnership(): Map<string, CellClaim[]> {
@@ -175,11 +175,17 @@ export class TerritoryCoordinator {
         }
 
         if (bestStrength === -Infinity) continue;
-        const claims: CellClaim[] = [];
+        let winningClaim: CellClaim | null = null;
         for (const [factionId, strength] of strengthByFaction) {
-          if (strength === bestStrength) claims.push({ factionId, strength });
+          if (strength !== bestStrength) continue;
+          if (
+            !winningClaim ||
+            (factionId === PLAYER_FACTION && winningClaim.factionId !== PLAYER_FACTION)
+          ) {
+            winningClaim = { factionId, strength };
+          }
         }
-        ownership.set(territoryKey(x, y), claims);
+        if (winningClaim) ownership.set(territoryKey(x, y), [winningClaim]);
       }
     }
 

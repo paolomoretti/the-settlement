@@ -10,9 +10,9 @@ Player economy systems filter to player-owned entities. Enemy buildings are curr
 
 ## Territory and cordons
 
-`TerritoryCoordinator` computes exclusive territory layers per faction. A cell is owned by the faction with the strongest HQ/military push, remains unassigned when no source reaches it, and becomes a boundary-only contested cell when player and enemy pressure tie exactly. Contested cells are not interior for either faction, so roads/buildings cannot be placed there.
+`TerritoryCoordinator` computes exclusive territory layers per faction. A cell is owned by exactly one faction: the faction with the strongest HQ/military push. It remains unassigned when no source reaches it. Exact ties resolve to the player in this prototype so old shared frontier cells do not leave stale enemy cordons inside player land.
 
-The render system accepts multiple cordon layers. Player cordons keep the existing brown poles and ropes; enemy frontiers reuse the same geometry with red rope and red-tinted poles. When both factions tie on a boundary cell, both frontier layers include that same cell and both ropes render there, with a tiny visual offset so both colors remain visible.
+The render system accepts multiple cordon layers. Player cordons keep the existing brown poles and ropes; enemy frontiers reuse the same geometry with red rope and red-tinted poles. Because ownership is exclusive, cordons move as territory is recalculated instead of preserving the old line after conquest.
 
 ## Initial village
 
@@ -26,9 +26,9 @@ On new games, one compact enemy village is placed just outside the initial playe
 
 Enemy production buildings with no global input dependency are allowed to animate. Enemy production buffers do not request player transport pickup, so they do not leak goods into the player economy. The generated farm also gets a visible field worker, and the realm seeds a few enemy-owned workers on its internal streets for life in the village.
 
-## Defeat rule
+## Defeat and attacks
 
-The first defeat rule is intentionally simple: when an enemy realm has no active garrisoned military buildings, its HQ is destroyed through the existing demolition fire path. Combat and attacks against the military buildings are future work.
+Enemy realm defeat is now player-driven through the attack loop in [`MILITARY_ATTACKS.md`](MILITARY_ATTACKS.md). Enemy military buildings and enemy HQ can be attacked directly; capturing the HQ burns non-military enemy buildings, while surviving enemy military buildings keep ownership and territory until separately conquered.
 
 ## Save/load
 

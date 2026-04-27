@@ -8,6 +8,7 @@ import { Entity } from '@/core/Entity';
 import { dataManager } from '@/data/DataManager';
 import { eventBus } from '@/core/EventBus';
 import { BuildingType, BuildingDefinition } from '@/types/GameData';
+import type { AttackRankSelection } from '@/core/Game';
 
 export class BuildingPopover {
   private game: Game;
@@ -72,8 +73,11 @@ export class BuildingPopover {
     this.currentEntity = entity;
     const def = dataManager.getBuilding(building.buildingType as BuildingType);
     this.productionTimeSec = def?.production?.productionTime || 0;
-    const content = this.buildContent(building, def);
-    const name = def?.name || building.buildingType;
+    const isEnemyAttackTarget = this.game.isEnemyAttackTarget(entity);
+    const content = isEnemyAttackTarget
+      ? this.buildEnemyAttackContent(entity, building)
+      : this.buildContent(building, def);
+    const name = isEnemyAttackTarget ? `Enemy ${def?.name || building.buildingType}` : def?.name || building.buildingType;
 
     const getAnchor = () => {
       this.popover.setTemporaryHidden(this.game.isDraggingEntity);
@@ -466,6 +470,120 @@ export class BuildingPopover {
     this.requirementsContainer.innerHTML =
       `<span class="popover-label">Needs:</span><br>` +
       lines.map(l => `&nbsp;&nbsp;${l}`).join('<br>');
+  }
+
+  private buildEnemyAttackContent(entity: Entity, building: Building): HTMLElement {
+    const el = document.createElement('div');
+    const options = this.game.getEnemyAttackOptions(entity);
+    const selected: AttackRankSelection = { 1: 0, 2: 0, 3: 0 };
+
+    const desc = document.createElement('div');
+    desc.className = 'popover-desc';
+    desc.textContent = building.buildingType === 'base_camp'
+      ? 'Attack this enemy headquarters to loot its stores and burn the civilian village.'
+      : 'Attack this enemy military building to capture its garrison and expand your border.';
+    el.appendChild(desc);
+
+    const range = document.createElement('div');
+    range.className = 'popover-row';
+    range.innerHTML = `<span class="popover-label">Range:</span> Soldiers from player military buildings within 40 cells`;
+    el.appendChild(range);
+
+    const panel = document.createElement('div');
+    panel.className = 'popover-detail-card';
+    panel.innerHTML = `<div class="popover-section-title">Attacking Force</div>`;
+    el.appendChild(panel);
+
+    const totalEl = document.createElement('div');
+    totalEl.className = 'popover-row';
+    totalEl.style.marginTop = '8px';
+
+    const attackBtn = document.createElement('button');
+    attackBtn.className = 'popover-delete-btn';
+    attackBtn.textContent = 'Attack';
+    attackBtn.style.marginTop = '10px';
+    attackBtn.style.background = 'linear-gradient(180deg, #9f2e2e, #6d1717)';
+    attackBtn.style.borderColor = '#d26b5f';
+
+    const update = () => {
+      const total = selected[1] + selected[2] + selected[3];
+      totalEl.innerHTML = total > 0
+        ? `<span class="popover-label">Selected:</span> ${total} soldier${total === 1 ? '' : 's'}`
+        : `<span class="popover-label">Selected:</span> <span style="color:#ffb74d">Choose at least one soldier</span>`;
+      attackBtn.disabled = total <= 0;
+      attackBtn.style.opacity = total <= 0 ? '0.55' : '1';
+      attackBtn.style.cursor = total <= 0 ? 'not-allowed' : 'pointer';
+    };
+
+    ([1, 2, 3] as const).forEach(rank => {
+      const row = document.createElement('div');
+      row.className = 'popover-staff-row';
+      row.style.gap = '8px';
+      row.style.marginTop = '6px';
+
+      const label = document.createElement('span');
+      label.className = 'popover-worker-name';
+      label.textContent = `Rank ${rank}`;
+
+      const controls = document.createElement('span');
+      controls.style.display = 'inline-flex';
+      controls.style.alignItems = 'center';
+      controls.style.gap = '6px';
+
+      const minus = document.createElement('button');
+      minus.className = 'production-priority-step';
+      minus.textContent = '-';
+      const count = document.createElement('span');
+      count.className = 'production-priority-quantity';
+      count.style.minWidth = '52px';
+      count.style.marginRight = '0';
+      const plus = document.createElement('button');
+      plus.className = 'production-priority-step';
+      plus.textContent = '+';
+
+      const refreshRank = () => {
+        count.textContent = `${selected[rank]}/${options.availableByRank[rank]}`;
+        minus.disabled = selected[rank] <= 0;
+        plus.disabled = selected[rank] >= options.availableByRank[rank];
+        update();
+      };
+      minus.addEventListener('click', e => {
+        e.stopPropagation();
+        selected[rank] = Math.max(0, selected[rank] - 1);
+        refreshRank();
+      });
+      plus.addEventListener('click', e => {
+        e.stopPropagation();
+        selected[rank] = Math.min(options.availableByRank[rank], selected[rank] + 1);
+        refreshRank();
+      });
+      controls.append(minus, count, plus);
+      row.append(label, controls);
+      panel.appendChild(row);
+      refreshRank();
+    });
+
+    panel.appendChild(totalEl);
+    if (!options.canAttack) {
+      const warning = document.createElement('div');
+      warning.className = 'popover-row';
+      warning.style.color = '#ffb74d';
+      warning.style.fontSize = '11px';
+      warning.textContent = options.reason || 'No available soldiers.';
+      panel.appendChild(warning);
+    }
+
+    attackBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (selected[1] + selected[2] + selected[3] <= 0) return;
+      if (this.game.startEnemyAttack(entity, selected)) {
+        this.hide();
+      }
+    });
+    el.appendChild(attackBtn);
+    update();
+
+    return el;
   }
 
   private buildContent(building: Building, def?: BuildingDefinition): HTMLElement {

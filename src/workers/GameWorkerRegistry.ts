@@ -1425,17 +1425,24 @@ export class GameWorkerRegistry {
     if (!building) return;
 
     const entities = [...this.world.getEntities()];
+    const retreatFaction = !isPlayerOwned(entity) ? getEntityFaction(entity) : null;
 
     if (building.builderEntityId != null) {
       const builderEntity = entities.find(e => e.id === building.builderEntityId && e.active);
-      if (builderEntity) this.world.removeEntity(builderEntity);
+      if (builderEntity) {
+        if (retreatFaction) this.retreatWorkerToFactionHeadquarters(builderEntity, retreatFaction, entity);
+        else this.world.removeEntity(builderEntity);
+      }
       this.builderWorkers.delete(building.builderEntityId);
       this.returningBuilders.delete(building.builderEntityId);
     }
 
     if (building.animationWorkerId != null) {
       const animWorker = entities.find(e => e.id === building.animationWorkerId && e.active);
-      if (animWorker) this.world.removeEntity(animWorker);
+      if (animWorker) {
+        if (retreatFaction) this.retreatWorkerToFactionHeadquarters(animWorker, retreatFaction, entity);
+        else this.world.removeEntity(animWorker);
+      }
       const animState = this.animationWorkers.get(building.animationWorkerId);
       if (animState) {
         if (animState.kind === 'gather') {
@@ -1454,7 +1461,10 @@ export class GameWorkerRegistry {
     for (const [workerId, payload] of this.toolWorkers) {
       if (payload.buildingId === entity.id) {
         const workerEntity = entities.find(e => e.id === workerId && e.active);
-        if (workerEntity) this.world.removeEntity(workerEntity);
+        if (workerEntity) {
+          if (retreatFaction) this.retreatWorkerToFactionHeadquarters(workerEntity, retreatFaction, entity);
+          else this.world.removeEntity(workerEntity);
+        }
         this.world.returnToolSpecialistToHq(payload.tool);
         this.toolWorkers.delete(workerId);
         break;
@@ -1464,10 +1474,68 @@ export class GameWorkerRegistry {
     for (const [workerId, buildingId] of this.militaryDispatchWorkers) {
       if (buildingId === entity.id) {
         const workerEntity = entities.find(e => e.id === workerId && e.active);
-        if (workerEntity) this.world.removeEntity(workerEntity);
+        if (workerEntity) {
+          if (retreatFaction) this.retreatWorkerToFactionHeadquarters(workerEntity, retreatFaction, entity);
+          else this.world.removeEntity(workerEntity);
+        }
         this.militaryDispatchWorkers.delete(workerId);
       }
     }
+  }
+
+  private retreatWorkerToFactionHeadquarters(workerEntity: Entity, factionId: string, sourceBuildingEntity: Entity): void {
+    const entities = [...this.world.getEntities()];
+    const hq = entities.find(e => {
+      if (!e.active || getEntityFaction(e) !== factionId) return false;
+      return e.getComponent(Building)?.buildingType === 'base_camp';
+    });
+    if (!hq || hq.id === sourceBuildingEntity.id) {
+      this.world.removeEntity(workerEntity);
+      return;
+    }
+
+    const target = this.findBuildingAdjacentRoadTile(hq) ?? (() => {
+      const hqPos = hq.getComponent(Position);
+      const hqBuilding = hq.getComponent(Building);
+      return hqPos && hqBuilding
+        ? { x: hqPos.x + Math.floor(hqBuilding.width / 2), y: hqPos.y + Math.floor(hqBuilding.height / 2) }
+        : null;
+    })();
+    if (!target) {
+      this.world.removeEntity(workerEntity);
+      return;
+    }
+
+    const worker = workerEntity.getComponent(Worker);
+    const pos = workerEntity.getComponent(Position);
+    const movable = workerEntity.getComponent(Movable);
+    if (!worker || !pos || !movable) {
+      this.world.removeEntity(workerEntity);
+      return;
+    }
+
+    if (worker.concealedInBuildingId != null) {
+      const sourceRoad = this.findBuildingAdjacentRoadTile(sourceBuildingEntity);
+      if (sourceRoad) pos.set(sourceRoad.x, sourceRoad.y);
+    }
+    worker.concealedInBuildingId = null;
+    worker.visualActivity = 'general';
+    worker.dropResource();
+    worker.setState('walking');
+
+    const tileMap = this.world.getTileMap();
+    const pathFinder = this.world.getPathFinder();
+    const path = pathFinder.findOffRoadPath(
+      new Position(Math.floor(pos.x), Math.floor(pos.y)),
+      new Position(target.x, target.y),
+      tileMap
+    );
+    if (path.length === 0) {
+      this.world.removeEntity(workerEntity);
+      return;
+    }
+    movable.speed = 1.4;
+    movable.setPath(path);
   }
 
   spawnBuilderForPlacedBuilding(buildingEntity: Entity): void {

@@ -28,8 +28,8 @@
         "tongs": 2,
         "cleaver": 2,
         "bow": 2,
-        "sword": 4,
-        "shield": 4
+        "sword": 5,
+        "shield": 5
       },
       "startingPopulation": 100
     },

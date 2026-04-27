@@ -106,7 +106,7 @@ export function showToast(message: string, options: ToastOptions = {}): void {
 }
 
 export function setupToastListener(): void {
-  eventBus.on('toast', (data: { message: string }) => {
-    showToast(data.message);
+  eventBus.on('toast', (data: { message: string } & ToastOptions) => {
+    showToast(data.message, data);
   });
 }

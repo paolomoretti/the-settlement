@@ -44,6 +44,8 @@ export class Building extends Component {
 
   /** Length = `military.soldierCapacity` when set; entries `null` = empty slot. */
   public militaryGarrison: (MilitaryGarrisonSlot | null)[] | null = null;
+  /** Once a soldier first enters a military post, its territory remains established even if soldiers march out. */
+  public militaryTerritoryEstablished: boolean = false;
 
   constructor(
     public buildingType: BuildingType,
@@ -158,7 +160,7 @@ export class Building extends Component {
 
   /** At least one soldier garrisoned — used for settlement vision from soldier posts. */
   hasMilitaryTerritoryContributor(): boolean {
-    return this.getMilitaryGarrisonFilledCount() > 0;
+    return this.militaryTerritoryEstablished || this.getMilitaryGarrisonFilledCount() > 0;
   }
 
   findFreeMilitarySlotIndex(): number {
@@ -169,6 +171,7 @@ export class Building extends Component {
   assignMilitarySlot(slotIndex: number, workerEntityId: number): void {
     if (!this.militaryGarrison || slotIndex < 0 || slotIndex >= this.militaryGarrison.length) return;
     this.militaryGarrison[slotIndex] = { rank: 1, workerEntityId };
+    this.militaryTerritoryEstablished = true;
   }
 
   /** Lowest rank &lt; 3 first, then lowest slot index. */

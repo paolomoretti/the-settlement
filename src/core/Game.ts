@@ -40,6 +40,49 @@ import { planInitialEnemyVillage, type EnemyVillagePlan, type EnemyVillageBuildi
 
 const DEMOLITION_FIRE_DURATION_MS = 30_000;
 const DEMOLITION_SCORCH_DURATION_MS = 60_000;
+const ENEMY_ATTACK_RANGE_CELLS = 40;
+const ENEMY_ATTACK_DUEL_MS = 10_000;
+const ENEMY_ATTACK_FALLEN_MS = 2_000;
+
+type MilitaryRank = 1 | 2 | 3;
+export type AttackRankSelection = Record<MilitaryRank, number>;
+export type EnemyAttackOptions = {
+  availableByRank: AttackRankSelection;
+  maxByRank: AttackRankSelection;
+  totalAvailable: number;
+  canAttack: boolean;
+  reason?: string;
+};
+
+type AttackParticipant = {
+  workerEntityId: number;
+  rank: MilitaryRank;
+  sourceBuildingId: number;
+  sourceSlotIndex: number;
+};
+
+type ActiveEnemyAttack = {
+  id: number;
+  targetEntityId: number;
+  targetFactionId: FactionId;
+  attackers: AttackParticipant[];
+  defenders: AttackParticipant[];
+  attackerQueue: number[];
+  defenderQueue: number[];
+  currentAttackerId: number | null;
+  currentDefenderId: number | null;
+  phase: 'marching' | 'duel' | 'fallen' | 'returning' | 'complete';
+  duelStartedAt: number;
+  fallenUntil: number;
+  fallenWorkerId: number | null;
+  staging: { attacker: { x: number; y: number }; defender: { x: number; y: number } };
+  returnAssignments: Array<{ workerEntityId: number; buildingEntityId: number; rank: MilitaryRank }>;
+};
+
+function angleToWorkerFacing(angle: number): number {
+  const normalized = (angle + Math.PI * 2) % (Math.PI * 2);
+  return Math.round(normalized / (Math.PI / 2)) % 4;
+}
 
 export class Game {
   private entities: Entity[] = [];
@@ -105,6 +148,8 @@ export class Game {
   private demolitionSites: DemolitionSiteVisual[] = [];
   private nextDemolitionSiteId = 1;
   private enemyRealms: EnemyVillagePlan[] = [];
+  private activeEnemyAttacks: ActiveEnemyAttack[] = [];
+  private nextEnemyAttackId = 1;
 
   private readonly frameHooks: Array<() => void> = [];
 
@@ -736,9 +781,12 @@ export class Game {
 
   private eraseAt(x: number, y: number): void {
     if (!this.isAreaExplored(x, y, 1, 1)) return;
+    this.refreshTerritoryIfDirty();
+    if (!this.territory.isInteriorCell(x, y, PLAYER_FACTION)) return;
 
     const buildingEntity = this.findBuildingEntityAt(x, y);
     if (buildingEntity) {
+      if (!isPlayerOwned(buildingEntity)) return;
       const building = buildingEntity.getComponent(Building);
       const def = building ? dataManager.getBuilding(building.buildingType) : null;
       if (def?.isHeadquarters) return;
@@ -1538,7 +1586,9 @@ export class Game {
     const def = building ? dataManager.getBuilding(building.buildingType as BuildingType) : null;
     const cap = def?.military?.soldierCapacity;
     if (!this.baseCampEntity || !building || !def || typeof cap !== 'number' || cap <= 0) return false;
+    if (!isPlayerOwned(buildingEntity)) return false;
     if (!building.isComplete() || !building.isActive) return false;
+    if (this.hasMilitaryFromBuildingInActiveAttack(buildingEntity.id)) return false;
 
     building.initMilitaryGarrison(cap);
     if (building.findFreeMilitarySlotIndex() < 0) {
@@ -1625,10 +1675,12 @@ export class Game {
       let trainedThisRound = false;
       for (const entity of this.entities) {
         if (!entity.active) continue;
+        if (!isPlayerOwned(entity)) continue;
         const building = entity.getComponent(Building);
         const def = building ? dataManager.getBuilding(building.buildingType as BuildingType) : null;
         const cap = def?.military?.soldierCapacity;
         if (!building?.isComplete() || !building.isActive || typeof cap !== 'number' || cap <= 0) continue;
+        if (this.hasMilitaryFromBuildingInActiveAttack(entity.id)) continue;
         building.initMilitaryGarrison(cap);
         if (building.findFreeMilitarySlotIndex() < 0) continue;
         const emptySlots = building.militaryGarrison!.filter(s => s == null).length;
@@ -1641,6 +1693,17 @@ export class Game {
       }
       if (!trainedThisRound) break;
     }
+  }
+
+  private hasMilitaryFromBuildingInActiveAttack(buildingEntityId: number): boolean {
+    return this.activeEnemyAttacks.some(attack =>
+      attack.phase !== 'complete' &&
+      (
+        attack.attackers.some(p => p.sourceBuildingId === buildingEntityId) ||
+        attack.defenders.some(p => p.sourceBuildingId === buildingEntityId) ||
+        attack.returnAssignments.some(p => p.buildingEntityId === buildingEntityId)
+      )
+    );
   }
 
   /**
@@ -2086,6 +2149,7 @@ export class Game {
 
     for (const entity of this.entities) {
       if (!entity.active) continue;
+      if (!isPlayerOwned(entity)) continue;
       const building = entity.getComponent(Building);
       const storage = entity.getComponent(Storage);
       if (!building?.isComplete() || !building.isActive || !storage) continue;
@@ -2731,6 +2795,8 @@ export class Game {
 
     // Update all systems
     this.systems.forEach(system => system.update(deltaTime));
+    this.updateEnemyAttacks();
+    this.pruneAllMilitaryGarrisons();
 
     /** After movement so walkers that finish a path this frame see `isMoving === false` at goal tile. */
     this.workers.tickReturnLegs();
@@ -2809,33 +2875,8 @@ export class Game {
   }
 
   private updateEnemyRealmDefeat(): void {
-    for (const realm of this.enemyRealms) {
-      const headquarters = this.entities.find(entity => {
-        if (!entity.active || getEntityFaction(entity) !== realm.factionId) return false;
-        const building = entity.getComponent(Building);
-        const pos = entity.getComponent(Position);
-        return (
-          building?.buildingType === realm.headquarters.type &&
-          pos?.x === realm.headquarters.x &&
-          pos.y === realm.headquarters.y
-        );
-      });
-      if (!headquarters) continue;
-
-      const hasDefendingMilitary = this.entities.some(entity => {
-        if (!entity.active || getEntityFaction(entity) !== realm.factionId) return false;
-        const building = entity.getComponent(Building);
-        if (!building || building.buildingType === 'base_camp' || !building.isComplete()) return false;
-        const def = dataManager.getBuilding(building.buildingType);
-        const cap = def?.military?.soldierCapacity;
-        return typeof cap === 'number' && cap > 0 && building.hasMilitaryTerritoryContributor();
-      });
-
-      if (!hasDefendingMilitary) {
-        this.destroyBuildingEntity(headquarters);
-        this.markTerritoryDirty();
-      }
-    }
+    // Enemy HQ conquest is now player-driven through attacks. Military posts can keep
+    // projecting territory after the HQ falls, so the old auto-burn rule is disabled.
   }
 
   /** Roll lazy underground water when a well finishes construction; dry cells (depleted) never reroll. */
@@ -2879,6 +2920,789 @@ export class Game {
 
   public getBuildingEntityAtGrid(x: number, y: number): Entity | null {
     return this.findBuildingEntityAt(x, y);
+  }
+
+  private isMilitaryBuilding(building: Building | null | undefined): boolean {
+    if (!building) return false;
+    const def = dataManager.getBuilding(building.buildingType);
+    const cap = def?.military?.soldierCapacity;
+    return typeof cap === 'number' && cap > 0;
+  }
+
+  public isEnemyAttackTarget(entity: Entity): boolean {
+    if (!entity.active || isPlayerOwned(entity)) return false;
+    const building = entity.getComponent(Building);
+    if (!building?.isComplete()) return false;
+    return building.buildingType === 'base_camp' || this.isMilitaryBuilding(building);
+  }
+
+  private getBuildingCenter(entity: Entity): { x: number; y: number } | null {
+    const pos = entity.getComponent(Position);
+    const building = entity.getComponent(Building);
+    if (!pos || !building) return null;
+    return { x: pos.x + Math.floor(building.width / 2), y: pos.y + Math.floor(building.height / 2) };
+  }
+
+  public getEnemyAttackOptions(targetEntity: Entity): EnemyAttackOptions {
+    const empty: AttackRankSelection = { 1: 0, 2: 0, 3: 0 };
+    if (!this.isEnemyAttackTarget(targetEntity)) {
+      return { availableByRank: { ...empty }, maxByRank: { ...empty }, totalAvailable: 0, canAttack: false, reason: 'Not an attack target' };
+    }
+    const targetCenter = this.getBuildingCenter(targetEntity);
+    if (!targetCenter) {
+      return { availableByRank: { ...empty }, maxByRank: { ...empty }, totalAvailable: 0, canAttack: false, reason: 'No target position' };
+    }
+
+    const availableByRank: AttackRankSelection = { 1: 0, 2: 0, 3: 0 };
+    for (const entity of this.entities) {
+      if (!entity.active || !isPlayerOwned(entity)) continue;
+      const building = entity.getComponent(Building);
+      if (!building?.militaryGarrison || !this.isMilitaryBuilding(building)) continue;
+      this.pruneInvalidMilitaryGarrisonSlots(entity);
+      const center = this.getBuildingCenter(entity);
+      if (!center) continue;
+      const dist = Math.max(Math.abs(center.x - targetCenter.x), Math.abs(center.y - targetCenter.y));
+      if (dist > ENEMY_ATTACK_RANGE_CELLS) continue;
+      for (const slot of building.militaryGarrison) {
+        if (!slot) continue;
+        availableByRank[slot.rank]++;
+      }
+    }
+    const totalAvailable = availableByRank[1] + availableByRank[2] + availableByRank[3];
+    return {
+      availableByRank,
+      maxByRank: { ...availableByRank },
+      totalAvailable,
+      canAttack: totalAvailable > 0,
+      reason: totalAvailable > 0 ? undefined : 'No soldiers in range',
+    };
+  }
+
+  public startEnemyAttack(targetEntity: Entity, selectedByRank: Partial<Record<MilitaryRank, number>>): boolean {
+    if (!this.isEnemyAttackTarget(targetEntity)) return false;
+    if (this.activeEnemyAttacks.some(attack => attack.targetEntityId === targetEntity.id && attack.phase !== 'complete')) {
+      eventBus.emit('toast', { message: 'Attack already underway.' });
+      return false;
+    }
+
+    const requested: AttackRankSelection = {
+      1: Math.max(0, Math.floor(selectedByRank[1] ?? 0)),
+      2: Math.max(0, Math.floor(selectedByRank[2] ?? 0)),
+      3: Math.max(0, Math.floor(selectedByRank[3] ?? 0)),
+    };
+    const totalRequested = requested[1] + requested[2] + requested[3];
+    if (totalRequested <= 0) return false;
+
+    const options = this.getEnemyAttackOptions(targetEntity);
+    if (requested[1] > options.availableByRank[1] || requested[2] > options.availableByRank[2] || requested[3] > options.availableByRank[3]) {
+      eventBus.emit('toast', { message: 'Not enough soldiers in range.' });
+      return false;
+    }
+
+    const targetCenter = this.getBuildingCenter(targetEntity);
+    if (!targetCenter) return false;
+    const staging = this.getAttackStagingTiles(targetEntity);
+    const attackers = this.claimAttackersForEnemyAttack(targetCenter, requested);
+    if (attackers.length !== totalRequested) {
+      this.restoreClaimedAttackers(attackers);
+      eventBus.emit('toast', { message: 'Could not assemble the selected soldiers.' });
+      return false;
+    }
+
+    this.ensureGarrisonWorkersForBuilding(targetEntity);
+    const defenders = this.claimDefendersForEnemyAttack(targetEntity);
+    const targetFactionId = getEntityFaction(targetEntity);
+    const attack: ActiveEnemyAttack = {
+      id: this.nextEnemyAttackId++,
+      targetEntityId: targetEntity.id,
+      targetFactionId,
+      attackers,
+      defenders,
+      attackerQueue: attackers.map(a => a.workerEntityId),
+      defenderQueue: defenders.map(d => d.workerEntityId),
+      currentAttackerId: null,
+      currentDefenderId: null,
+      phase: 'marching',
+      duelStartedAt: 0,
+      fallenUntil: 0,
+      fallenWorkerId: null,
+      staging,
+      returnAssignments: [],
+    };
+    this.activeEnemyAttacks.push(attack);
+    this.marchAttackParticipants(attack);
+    eventBus.emit('toast', { message: defenders.length > 0 ? 'Attack underway.' : 'No defenders. Capturing target.' });
+    return true;
+  }
+
+  private claimAttackersForEnemyAttack(targetCenter: { x: number; y: number }, requested: AttackRankSelection): AttackParticipant[] {
+    const claimed: AttackParticipant[] = [];
+    const remaining: AttackRankSelection = { ...requested };
+    const sourceBuildings = this.entities
+      .filter(entity => {
+        if (!entity.active || !isPlayerOwned(entity)) return false;
+        const building = entity.getComponent(Building);
+        if (!building?.militaryGarrison || !this.isMilitaryBuilding(building)) return false;
+        const center = this.getBuildingCenter(entity);
+        if (!center) return false;
+        return Math.max(Math.abs(center.x - targetCenter.x), Math.abs(center.y - targetCenter.y)) <= ENEMY_ATTACK_RANGE_CELLS;
+      })
+      .sort((a, b) => {
+        const ac = this.getBuildingCenter(a)!;
+        const bc = this.getBuildingCenter(b)!;
+        const ad = Math.max(Math.abs(ac.x - targetCenter.x), Math.abs(ac.y - targetCenter.y));
+        const bd = Math.max(Math.abs(bc.x - targetCenter.x), Math.abs(bc.y - targetCenter.y));
+        return ad - bd;
+      });
+
+    for (const entity of sourceBuildings) {
+      this.pruneInvalidMilitaryGarrisonSlots(entity);
+      const building = entity.getComponent(Building)!;
+      if (!building.militaryGarrison) continue;
+      for (let i = 0; i < building.militaryGarrison.length; i++) {
+        const slot = building.militaryGarrison[i];
+        if (!slot || remaining[slot.rank] <= 0) continue;
+        claimed.push({ workerEntityId: slot.workerEntityId, rank: slot.rank, sourceBuildingId: entity.id, sourceSlotIndex: i });
+        building.militaryGarrison[i] = null;
+        eventBus.emit('military:garrison_changed', { buildingEntityId: entity.id });
+        remaining[slot.rank]--;
+        if (remaining[1] + remaining[2] + remaining[3] <= 0) return claimed;
+      }
+    }
+    return claimed;
+  }
+
+  private claimDefendersForEnemyAttack(targetEntity: Entity): AttackParticipant[] {
+    const building = targetEntity.getComponent(Building);
+    if (!building?.militaryGarrison) return [];
+    this.pruneInvalidMilitaryGarrisonSlots(targetEntity);
+    const defenders: AttackParticipant[] = [];
+    for (let i = 0; i < building.militaryGarrison.length; i++) {
+      const slot = building.militaryGarrison[i];
+      if (!slot) continue;
+      defenders.push({ workerEntityId: slot.workerEntityId, rank: slot.rank, sourceBuildingId: targetEntity.id, sourceSlotIndex: i });
+      building.militaryGarrison[i] = null;
+      eventBus.emit('military:garrison_changed', { buildingEntityId: targetEntity.id });
+    }
+    return defenders;
+  }
+
+  private isWorkerInActiveEnemyAttack(workerEntityId: number): boolean {
+    return this.activeEnemyAttacks.some(attack =>
+      attack.phase !== 'complete' &&
+      (
+        attack.currentAttackerId === workerEntityId ||
+        attack.currentDefenderId === workerEntityId ||
+        attack.fallenWorkerId === workerEntityId ||
+        attack.attackerQueue.includes(workerEntityId) ||
+        attack.defenderQueue.includes(workerEntityId) ||
+        attack.attackers.some(p => p.workerEntityId === workerEntityId) ||
+        attack.defenders.some(p => p.workerEntityId === workerEntityId) ||
+        attack.returnAssignments.some(p => p.workerEntityId === workerEntityId)
+      )
+    );
+  }
+
+  private pruneInvalidMilitaryGarrisonSlots(buildingEntity: Entity): void {
+    const building = buildingEntity.getComponent(Building);
+    if (!building?.militaryGarrison) return;
+    let changed = false;
+    for (let i = 0; i < building.militaryGarrison.length; i++) {
+      const slot = building.militaryGarrison[i];
+      if (!slot) continue;
+      const workerEntity = this.entities.find(e => e.id === slot.workerEntityId && e.active);
+      const worker = workerEntity?.getComponent(Worker);
+      if (
+        !workerEntity ||
+        !worker ||
+        worker.concealedInBuildingId !== buildingEntity.id ||
+        this.isWorkerInActiveEnemyAttack(slot.workerEntityId)
+      ) {
+        building.militaryGarrison[i] = null;
+        changed = true;
+      }
+    }
+    if (changed) eventBus.emit('military:garrison_changed', { buildingEntityId: buildingEntity.id });
+  }
+
+  private pruneAllMilitaryGarrisons(): void {
+    for (const entity of this.entities) {
+      if (!entity.active) continue;
+      if (!entity.getComponent(Building)?.militaryGarrison) continue;
+      this.pruneInvalidMilitaryGarrisonSlots(entity);
+    }
+  }
+
+  private removeWorkerFromAllMilitaryGarrisons(workerEntityId: number): void {
+    for (const entity of this.entities) {
+      const building = entity.getComponent(Building);
+      if (!building?.militaryGarrison) continue;
+      let changed = false;
+      for (let i = 0; i < building.militaryGarrison.length; i++) {
+        if (building.militaryGarrison[i]?.workerEntityId === workerEntityId) {
+          building.militaryGarrison[i] = null;
+          changed = true;
+        }
+      }
+      if (changed) eventBus.emit('military:garrison_changed', { buildingEntityId: entity.id });
+    }
+  }
+
+  private ensureGarrisonWorkersForBuilding(buildingEntity: Entity): void {
+    const building = buildingEntity.getComponent(Building);
+    const pos = buildingEntity.getComponent(Position);
+    if (!building?.militaryGarrison || !pos) return;
+    const factionId = getEntityFaction(buildingEntity);
+    const exit = this.getBuildingExitTile(buildingEntity, 0) ?? { x: pos.x + 0.5, y: pos.y + 0.5 };
+    for (const slot of building.militaryGarrison) {
+      if (!slot) continue;
+      const existing = this.entities.find(e => e.id === slot.workerEntityId && e.active);
+      if (existing) continue;
+      const workerEntity = createMilitaryWorker(exit.x, exit.y, slot.rank);
+      setEntityFaction(workerEntity, factionId);
+      const worker = workerEntity.getComponent(Worker);
+      if (worker) {
+        worker.concealedInBuildingId = buildingEntity.id;
+        worker.setState('idle');
+        worker.dropResource();
+      }
+      this.addEntity(workerEntity);
+      slot.workerEntityId = workerEntity.id;
+    }
+  }
+
+  private restoreClaimedAttackers(participants: AttackParticipant[]): void {
+    for (const p of participants) {
+      const source = this.entities.find(e => e.id === p.sourceBuildingId);
+      const building = source?.getComponent(Building);
+      if (!building?.militaryGarrison) continue;
+      building.militaryGarrison[p.sourceSlotIndex] = { workerEntityId: p.workerEntityId, rank: p.rank };
+    }
+  }
+
+  private getAttackStagingTiles(targetEntity: Entity): ActiveEnemyAttack['staging'] {
+    const targetCenter = this.getBuildingCenter(targetEntity) ?? { x: 0, y: 0 };
+    const attacker = this.findNearestOpenTile(targetCenter.x - 3, targetCenter.y, targetCenter) ??
+      this.findNearestOpenTile(targetCenter.x, targetCenter.y + 3, targetCenter) ??
+      { x: targetCenter.x - 3, y: targetCenter.y };
+    const defender = this.findNearestOpenTile(targetCenter.x - 1, targetCenter.y, targetCenter) ??
+      this.findNearestOpenTile(targetCenter.x, targetCenter.y + 1, targetCenter) ??
+      { x: targetCenter.x - 1, y: targetCenter.y };
+    return { attacker, defender };
+  }
+
+  private offsetAttackStaging(base: { x: number; y: number }, index: number, side: 'attacker' | 'defender'): { x: number; y: number } {
+    const forward = side === 'attacker' ? -1 : 1;
+    const offsets = [
+      { x: 0, y: 0 },
+      { x: 0, y: 1 },
+      { x: 0, y: -1 },
+      { x: forward, y: 0 },
+      { x: forward, y: 1 },
+      { x: forward, y: -1 },
+      { x: -forward, y: 0 },
+    ];
+    const offset = offsets[index % offsets.length];
+    return this.findNearestOpenTile(base.x + offset.x, base.y + offset.y, base) ?? base;
+  }
+
+  private getBuildingExitTile(buildingEntity: Entity, index: number): { x: number; y: number } | null {
+    const pos = buildingEntity.getComponent(Position);
+    const building = buildingEntity.getComponent(Building);
+    if (!pos || !building) return null;
+    const entrance = building.getEntranceOffset();
+    const base = entrance
+      ? { x: pos.x + entrance.dx, y: pos.y + entrance.dy }
+      : { x: pos.x + Math.floor(building.width / 2), y: pos.y + Math.floor(building.height / 2) };
+    return this.offsetAttackStaging(base, index, 'defender');
+  }
+
+  private findNearestOpenTile(x: number, y: number, avoid?: { x: number; y: number }): { x: number; y: number } | null {
+    for (let r = 0; r <= 5; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const gx = Math.floor(x + dx);
+          const gy = Math.floor(y + dy);
+          if (avoid && gx === Math.floor(avoid.x) && gy === Math.floor(avoid.y)) continue;
+          const tile = this.tileMap.getTile(gx, gy);
+          if (tile?.walkable && !tile.isOccupied()) return { x: gx, y: gy };
+        }
+      }
+    }
+    return null;
+  }
+
+  private marchAttackParticipants(attack: ActiveEnemyAttack): void {
+    const moveTo = (p: AttackParticipant, dest: { x: number; y: number }, faction: FactionId, index: number) => {
+      const workerEntity = this.entities.find(e => e.id === p.workerEntityId);
+      if (!workerEntity) return;
+      setEntityFaction(workerEntity, faction);
+      let pos = workerEntity.getComponent(Position);
+      const worker = workerEntity.getComponent(Worker);
+      let movable = workerEntity.getComponent(Movable);
+      if (!pos) {
+        pos = new Position(dest.x, dest.y);
+        workerEntity.addComponent(pos);
+      }
+      if (!movable) {
+        movable = new Movable(2.2);
+        workerEntity.addComponent(movable);
+      }
+      if (worker?.concealedInBuildingId != null) {
+        const exit = this.getBuildingExitTile(this.entities.find(e => e.id === p.sourceBuildingId) ?? workerEntity, index);
+        if (exit) {
+          pos.set(exit.x, exit.y);
+        }
+      }
+      if (worker) {
+        worker.role = 'military';
+        worker.militaryRank = p.rank;
+        worker.concealedInBuildingId = null;
+        worker.visualActivity = 'general';
+        worker.setState('walking');
+      }
+      const path = this.pathFinder.findOffRoadPath(pos, new Position(dest.x, dest.y), this.tileMap);
+      movable.setPath(path.length > 0 ? path : [new Position(dest.x, dest.y)]);
+    };
+    attack.attackers.forEach((p, index) =>
+      moveTo(p, this.offsetAttackStaging(attack.staging.attacker, index, 'attacker'), PLAYER_FACTION, index)
+    );
+    attack.defenders.forEach((p, index) =>
+      moveTo(p, this.offsetAttackStaging(attack.staging.defender, index, 'defender'), attack.targetFactionId, index)
+    );
+  }
+
+  private updateEnemyAttacks(): void {
+    if (this.activeEnemyAttacks.length === 0) return;
+    const now = Date.now();
+    for (const attack of this.activeEnemyAttacks) {
+      if (attack.phase === 'complete') continue;
+      if (attack.phase === 'marching') {
+        const arrived = [...attack.attackers, ...attack.defenders].every(p => {
+          const entity = this.entities.find(e => e.id === p.workerEntityId);
+          const movable = entity?.getComponent(Movable);
+          return !movable || !movable.isMoving;
+        });
+        if (arrived) {
+          this.beginNextEnemyAttackDuel(attack);
+        }
+      } else if (attack.phase === 'duel') {
+        this.keepDuelistsFacing(attack);
+        if (now - attack.duelStartedAt >= ENEMY_ATTACK_DUEL_MS) {
+          this.resolveEnemyAttackDuel(attack, now);
+        }
+      } else if (attack.phase === 'fallen' && now >= attack.fallenUntil) {
+        if (attack.fallenWorkerId != null) {
+          this.removeWorkerFromAllMilitaryGarrisons(attack.fallenWorkerId);
+          const fallen = this.entities.find(e => e.id === attack.fallenWorkerId);
+          if (fallen) this.removeEntity(fallen);
+        }
+        attack.fallenWorkerId = null;
+        this.beginNextEnemyAttackDuel(attack);
+      } else if (attack.phase === 'returning') {
+        const arrived = attack.returnAssignments.every(a => {
+          const entity = this.entities.find(e => e.id === a.workerEntityId);
+          const movable = entity?.getComponent(Movable);
+          return !entity || !entity.active || !movable || !movable.isMoving;
+        });
+        if (arrived) {
+          this.finishEnemyAttackReturn(attack);
+        }
+      }
+    }
+    this.activeEnemyAttacks = this.activeEnemyAttacks.filter(attack => attack.phase !== 'complete');
+  }
+
+  private beginNextEnemyAttackDuel(attack: ActiveEnemyAttack): void {
+    if (attack.currentAttackerId == null) attack.currentAttackerId = attack.attackerQueue.shift() ?? null;
+    if (attack.currentDefenderId == null) attack.currentDefenderId = attack.defenderQueue.shift() ?? null;
+
+    if (attack.currentAttackerId == null) {
+      this.finishEnemyAttackLoss(attack);
+      return;
+    }
+    if (attack.currentDefenderId == null) {
+      this.finishEnemyAttackWin(attack);
+      return;
+    }
+
+    attack.phase = 'duel';
+    attack.duelStartedAt = Date.now();
+    for (const id of [attack.currentAttackerId, attack.currentDefenderId]) {
+      const worker = this.entities.find(e => e.id === id)?.getComponent(Worker);
+      if (!worker) continue;
+      worker.visualActivity = 'combat_duel';
+      worker.carryingResource = undefined;
+      worker.setState('working');
+    }
+    this.setDuelistsCloseTogether(attack);
+    this.keepDuelistsFacing(attack);
+  }
+
+  private setDuelistsCloseTogether(attack: ActiveEnemyAttack): void {
+    if (attack.currentAttackerId == null || attack.currentDefenderId == null) return;
+    const attacker = this.entities.find(e => e.id === attack.currentAttackerId);
+    const defender = this.entities.find(e => e.id === attack.currentDefenderId);
+    const ap = attacker?.getComponent(Position);
+    const dp = defender?.getComponent(Position);
+    if (!ap || !dp) return;
+
+    const midX = (attack.staging.attacker.x + attack.staging.defender.x) / 2;
+    const midY = (attack.staging.attacker.y + attack.staging.defender.y) / 2;
+    // Fractional tile offsets put sprites just a few screen pixels apart in isometric projection.
+    ap.set(midX - 0.09, midY + 0.09);
+    dp.set(midX + 0.09, midY - 0.09);
+    attacker?.getComponent(Movable)?.clearPath();
+    defender?.getComponent(Movable)?.clearPath();
+  }
+
+  private keepDuelistsFacing(attack: ActiveEnemyAttack): void {
+    if (attack.currentAttackerId == null || attack.currentDefenderId == null) return;
+    const attacker = this.entities.find(e => e.id === attack.currentAttackerId);
+    const defender = this.entities.find(e => e.id === attack.currentDefenderId);
+    const ap = attacker?.getComponent(Position);
+    const dp = defender?.getComponent(Position);
+    const aw = attacker?.getComponent(Worker);
+    const dw = defender?.getComponent(Worker);
+    if (!ap || !dp) return;
+    const angle = Math.atan2(dp.y - ap.y, dp.x - ap.x);
+    const facing = angleToWorkerFacing(angle);
+    if (aw) aw.idleFacing = facing;
+    if (dw) dw.idleFacing = (facing + 2) % 4;
+  }
+
+  private resolveEnemyAttackDuel(attack: ActiveEnemyAttack, now: number): void {
+    const attackerId = attack.currentAttackerId;
+    const defenderId = attack.currentDefenderId;
+    if (attackerId == null || defenderId == null) return;
+    const attackerRank = this.getAttackParticipantRank(attack, attackerId);
+    const defenderRank = this.getAttackParticipantRank(attack, defenderId);
+    const attackerRoll = Math.random() * this.getMilitaryRankWeight(attackerRank);
+    const defenderRoll = Math.random() * this.getMilitaryRankWeight(defenderRank);
+    const attackerDies = attackerRoll < defenderRoll;
+    const loserId = attackerDies ? attackerId : defenderId;
+    const winnerId = attackerDies ? defenderId : attackerId;
+
+    const winnerWorker = this.entities.find(e => e.id === winnerId)?.getComponent(Worker);
+    if (winnerWorker) {
+      winnerWorker.visualActivity = 'combat_duel';
+      winnerWorker.setState('working');
+    }
+    const loserWorker = this.entities.find(e => e.id === loserId)?.getComponent(Worker);
+    if (loserWorker) {
+      loserWorker.visualActivity = 'combat_fallen';
+      loserWorker.buildIdleUntil = now + ENEMY_ATTACK_FALLEN_MS;
+      loserWorker.setState('idle');
+    }
+    if (attackerDies) attack.currentAttackerId = null;
+    else attack.currentDefenderId = null;
+    attack.fallenWorkerId = loserId;
+    attack.fallenUntil = now + ENEMY_ATTACK_FALLEN_MS;
+    attack.phase = 'fallen';
+  }
+
+  private getAttackParticipantRank(attack: ActiveEnemyAttack, workerEntityId: number): MilitaryRank {
+    const participant = [...attack.attackers, ...attack.defenders].find(p => p.workerEntityId === workerEntityId);
+    return participant?.rank ?? 1;
+  }
+
+  private getMilitaryRankWeight(rank: MilitaryRank): number {
+    return rank === 3 ? 2.4 : rank === 2 ? 1.6 : 1;
+  }
+
+  private finishEnemyAttackLoss(attack: ActiveEnemyAttack): void {
+    const survivorIds = [attack.currentDefenderId, ...attack.defenderQueue].filter((id): id is number => id != null);
+    this.startAttackReturn(attack, survivorIds.map(id => ({
+      workerEntityId: id,
+      buildingEntityId: attack.targetEntityId,
+      rank: this.getAttackParticipantRank(attack, id),
+    })));
+    this.showAttackResultToast('Attack failed.', attack);
+  }
+
+  private finishEnemyAttackWin(attack: ActiveEnemyAttack): void {
+    const target = this.entities.find(e => e.id === attack.targetEntityId);
+    const building = target?.getComponent(Building);
+    if (!target || !building) {
+      attack.phase = 'complete';
+      return;
+    }
+
+    const survivingAttackers = [attack.currentAttackerId, ...attack.attackerQueue].filter((id): id is number => id != null);
+    if (building.buildingType === 'base_camp') {
+      setEntityFaction(target, PLAYER_FACTION);
+      this.burnEnemyRealmAfterHqCapture(attack.targetFactionId);
+      this.startAttackReturn(attack, survivingAttackers.map(id => {
+        const participant = attack.attackers.find(p => p.workerEntityId === id);
+        return {
+          workerEntityId: id,
+          buildingEntityId: participant?.sourceBuildingId ?? attack.targetEntityId,
+          rank: this.getAttackParticipantRank(attack, id),
+        };
+      }));
+      this.showAttackResultToast('Enemy headquarters captured.', attack);
+    } else {
+      setEntityFaction(target, PLAYER_FACTION);
+      building.militaryTerritoryEstablished = false;
+      this.startAttackReturn(attack, this.getCapturedMilitaryReturnAssignments(target, attack, survivingAttackers));
+      this.showAttackResultToast('Enemy military building captured.', attack);
+    }
+    this.selectedEntity = null;
+    this.updateSelectionUI();
+  }
+
+  private startAttackReturn(
+    attack: ActiveEnemyAttack,
+    assignments: Array<{ workerEntityId: number; buildingEntityId: number; rank: MilitaryRank }>
+  ): void {
+    attack.returnAssignments = assignments.filter(a => this.entities.some(e => e.id === a.workerEntityId && e.active));
+    if (attack.returnAssignments.length === 0) {
+      attack.phase = 'complete';
+      return;
+    }
+
+    for (const assignment of attack.returnAssignments) {
+      this.walkAttackSurvivorToBuilding(assignment.workerEntityId, assignment.buildingEntityId);
+    }
+
+    attack.phase = 'returning';
+    this.markTerritoryDirty();
+  }
+
+  private getCapturedMilitaryReturnAssignments(
+    target: Entity,
+    attack: ActiveEnemyAttack,
+    survivingAttackers: number[]
+  ): Array<{ workerEntityId: number; buildingEntityId: number; rank: MilitaryRank }> {
+    const building = target.getComponent(Building);
+    const cap = Math.max(dataManager.getBuilding(building?.buildingType ?? 'road')?.military?.soldierCapacity ?? 0, 0);
+    return survivingAttackers.map((id, index) => {
+      const participant = attack.attackers.find(p => p.workerEntityId === id);
+      return {
+        workerEntityId: id,
+        buildingEntityId: index < cap ? target.id : participant?.sourceBuildingId ?? target.id,
+        rank: this.getAttackParticipantRank(attack, id),
+      };
+    });
+  }
+
+  private walkAttackSurvivorToBuilding(workerEntityId: number, buildingEntityId: number): void {
+    const workerEntity = this.entities.find(e => e.id === workerEntityId && e.active);
+    const buildingEntity = this.entities.find(e => e.id === buildingEntityId && e.active);
+    const worker = workerEntity?.getComponent(Worker);
+    const pos = workerEntity?.getComponent(Position);
+    const movable = workerEntity?.getComponent(Movable);
+    if (!workerEntity || !buildingEntity || !worker || !pos || !movable) {
+      if (workerEntity) this.removeEntity(workerEntity);
+      return;
+    }
+    const goal = this.getAttackReturnTile(buildingEntity);
+    if (!goal) {
+      this.removeEntity(workerEntity);
+      return;
+    }
+    worker.visualActivity = 'general';
+    worker.concealedInBuildingId = null;
+    worker.setState('walking');
+    movable.speed = 1.8;
+    const path = this.pathFinder.findOffRoadPath(pos, new Position(goal.x, goal.y), this.tileMap);
+    movable.setPath(path.length > 0 ? path : [new Position(goal.x, goal.y)]);
+  }
+
+  private finishEnemyAttackReturn(attack: ActiveEnemyAttack): void {
+    for (const assignment of attack.returnAssignments) {
+      const workerEntity = this.entities.find(e => e.id === assignment.workerEntityId && e.active);
+      const buildingEntity = this.entities.find(e => e.id === assignment.buildingEntityId && e.active);
+      const worker = workerEntity?.getComponent(Worker);
+      const pos = workerEntity?.getComponent(Position);
+      const movable = workerEntity?.getComponent(Movable);
+      if (!workerEntity || !buildingEntity || !worker) continue;
+      const goal = this.getAttackReturnTile(buildingEntity);
+      if (goal && pos) pos.set(goal.x, goal.y);
+      movable?.clearPath();
+      const building = buildingEntity.getComponent(Building);
+      if (building) {
+        const def = dataManager.getBuilding(building.buildingType);
+        const cap = Math.max(def?.military?.soldierCapacity ?? building.militaryGarrison?.length ?? 0, 0);
+        if (cap > 0 && (!building.militaryGarrison || building.militaryGarrison.length !== cap)) {
+          building.militaryGarrison = Array.from({ length: cap }, () => null);
+        }
+        const slotIdx = building.militaryGarrison?.findIndex(slot => slot === null) ?? -1;
+        if (slotIdx >= 0 && building.militaryGarrison) {
+          building.militaryGarrison[slotIdx] = {
+            workerEntityId: assignment.workerEntityId,
+            rank: assignment.rank,
+          };
+          building.militaryTerritoryEstablished = true;
+          eventBus.emit('military:garrison_changed', { buildingEntityId: buildingEntity.id });
+        } else {
+          this.removeEntity(workerEntity);
+          continue;
+        }
+      }
+      worker.visualActivity = 'general';
+      worker.concealedInBuildingId = buildingEntity.id;
+      worker.setState('idle');
+      setEntityFaction(workerEntity, getEntityFaction(buildingEntity));
+    }
+    const target = this.entities.find(e => e.id === attack.targetEntityId && e.active);
+    if (target && isPlayerOwned(target) && this.isMilitaryBuilding(target.getComponent(Building))) {
+      this.markTerritoryDirty();
+      this.refreshTerritoryIfDirty();
+      this.applyConqueredTerritoryAftermath(attack.targetFactionId);
+    }
+    attack.phase = 'complete';
+    this.markTerritoryDirty();
+  }
+
+  private getAttackReturnTile(buildingEntity: Entity): { x: number; y: number } | null {
+    const pos = buildingEntity.getComponent(Position);
+    const building = buildingEntity.getComponent(Building);
+    if (!pos || !building) return null;
+    const entrance = building.getEntranceOffset();
+    return entrance
+      ? { x: pos.x + entrance.dx, y: pos.y + entrance.dy }
+      : this.getBuildingCenter(buildingEntity);
+  }
+
+  private showAttackResultToast(message: string, attack: ActiveEnemyAttack): void {
+    const target = this.entities.find(e => e.id === attack.targetEntityId);
+    const center = target ? this.getBuildingCenter(target) : null;
+    const focus = center ?? {
+      x: (attack.staging.attacker.x + attack.staging.defender.x) / 2,
+      y: (attack.staging.attacker.y + attack.staging.defender.y) / 2,
+    };
+    eventBus.emit('toast', {
+      message,
+      duration: 10_000,
+      action: {
+        label: '⌖',
+        title: 'Jump to attack location',
+        onClick: () => this.renderSystem.centerOnGrid(focus.x, focus.y),
+      },
+    });
+  }
+
+  private getBuildingLootDropTile(entity: Entity): { x: number; y: number } | null {
+    const pos = entity.getComponent(Position);
+    const building = entity.getComponent(Building);
+    if (!pos || !building) return null;
+
+    const entrance = building.getEntranceOffset();
+    return entrance
+      ? { x: pos.x + entrance.dx, y: pos.y + entrance.dy }
+      : { x: pos.x + Math.floor(building.width / 2), y: pos.y + Math.floor(building.height / 2) };
+  }
+
+  private collectBuildingResources(entity: Entity): string[] {
+    const resources: string[] = [];
+    const storage = entity.getComponent(Storage);
+    if (storage) {
+      for (const [resource, amount] of Object.entries(storage.items)) {
+        for (let i = 0; i < Math.floor(amount); i++) resources.push(resource);
+      }
+      storage.items = {};
+    }
+
+    const production = entity.getComponent(Production);
+    if (production) {
+      for (const [resource, amount] of Object.entries(production.outputBuffer)) {
+        for (let i = 0; i < Math.floor(amount); i++) resources.push(resource);
+      }
+      production.outputBuffer = {};
+    }
+    return resources;
+  }
+
+  private dropCollectedResourcesForPickup(dropTile: { x: number; y: number }, resources: string[]): void {
+    const destination = this.baseCampEntity?.id ?? null;
+    for (const resource of resources) {
+      transportManager.addJunctionItem(dropTile.x, dropTile.y, resource, destination);
+    }
+  }
+
+  private destroyConqueredEnemyCivilianBuilding(entity: Entity): void {
+    const dropTile = this.getBuildingLootDropTile(entity);
+    const resources = this.collectBuildingResources(entity);
+    this.destroyBuildingEntity(entity);
+    if (dropTile) {
+      const tile = this.tileMap.getTile(dropTile.x, dropTile.y);
+      if (tile) tile.hasRoad = true;
+      this.dropCollectedResourcesForPickup(dropTile, resources);
+    }
+  }
+
+  private burnEnemyRealmAfterHqCapture(enemyFactionId: FactionId): void {
+    const toBurn = this.entities.filter(entity => {
+      if (!entity.active || getEntityFaction(entity) !== enemyFactionId) return false;
+      const building = entity.getComponent(Building);
+      return !!building && building.buildingType !== 'base_camp' && !this.isMilitaryBuilding(building);
+    });
+    for (const entity of toBurn) this.destroyConqueredEnemyCivilianBuilding(entity);
+    this.removeOrRetreatEnemyWorkersInPlayerLand(enemyFactionId);
+    this.markTerritoryDirty();
+  }
+
+  private applyConqueredTerritoryAftermath(enemyFactionId: FactionId): void {
+    const playerLayer = this.territory.getLayer(PLAYER_FACTION);
+    const playerOwnedCells = new Set<string>([
+      ...playerLayer.unionU,
+      ...playerLayer.frontier,
+      ...playerLayer.interior,
+    ]);
+    const toBurn = this.entities.filter(entity => {
+      if (!entity.active || getEntityFaction(entity) !== enemyFactionId) return false;
+      const building = entity.getComponent(Building);
+      const pos = entity.getComponent(Position);
+      if (!building || !pos || building.buildingType === 'base_camp' || this.isMilitaryBuilding(building)) return false;
+      for (let dy = 0; dy < building.height; dy++) {
+        for (let dx = 0; dx < building.width; dx++) {
+          if (playerOwnedCells.has(`${pos.x + dx},${pos.y + dy}`)) return true;
+        }
+      }
+      return false;
+    });
+    for (const entity of toBurn) this.destroyConqueredEnemyCivilianBuilding(entity);
+    this.removeOrRetreatEnemyWorkersInPlayerLand(enemyFactionId);
+    roadSegmentManager.recalculate(this.tileMap);
+    this.recomputeTransportRoutes();
+  }
+
+  private removeOrRetreatEnemyWorkersInPlayerLand(enemyFactionId: FactionId): void {
+    const playerLayer = this.territory.getLayer(PLAYER_FACTION);
+    const playerOwnedCells = new Set<string>([
+      ...playerLayer.unionU,
+      ...playerLayer.frontier,
+      ...playerLayer.interior,
+    ]);
+    for (const entity of this.entities) {
+      if (!entity.active || getEntityFaction(entity) !== enemyFactionId || !entity.hasComponent(Worker)) continue;
+      const pos = entity.getComponent(Position);
+      if (!pos || !playerOwnedCells.has(`${Math.floor(pos.x)},${Math.floor(pos.y)}`)) continue;
+      const hq = this.findEnemyHeadquarters(enemyFactionId);
+      const center = hq ? this.getBuildingCenter(hq) : null;
+      const movable = entity.getComponent(Movable);
+      const worker = entity.getComponent(Worker);
+      if (!center || !movable) {
+        this.removeEntity(entity);
+        continue;
+      }
+      const path = this.pathFinder.findOffRoadPath(pos, new Position(center.x, center.y), this.tileMap);
+      if (path.length === 0) {
+        this.removeEntity(entity);
+      } else {
+        worker?.setState('walking');
+        movable.setPath(path);
+      }
+    }
+  }
+
+  private findEnemyHeadquarters(enemyFactionId: FactionId): Entity | null {
+    return this.entities.find(entity => {
+      if (!entity.active || getEntityFaction(entity) !== enemyFactionId) return false;
+      return entity.getComponent(Building)?.buildingType === 'base_camp';
+    }) ?? null;
   }
 
   /** Highlight a grass tile while the “Send Surveyor” popover is open (canvas). */
@@ -2935,9 +3759,19 @@ export class Game {
 
     if (foundEntity) {
       this.clearSurveyPending();
+      if (!this.isAreaExplored(x, y, 1, 1)) {
+        this.selectedEntity = null;
+        this.updateSelectionUI();
+        return;
+      }
+      if (!isPlayerOwned(foundEntity) && !this.isEnemyAttackTarget(foundEntity)) {
+        this.selectedEntity = null;
+        this.updateSelectionUI();
+        return;
+      }
 
       // Check if it's the base camp
-      if (foundEntity === this.baseCampEntity) {
+      if (foundEntity === this.baseCampEntity && isPlayerOwned(foundEntity)) {
         // Show inventory panel
         eventBus.emit('open:inventory');
         console.log(`🏕️ Base Camp clicked - opening inventory`);
@@ -2989,6 +3823,7 @@ export class Game {
   checkDragSelected(x: number, y: number): void {
     // Check if clicking on the selected entity to start dragging
     if (!this.selectedEntity) return;
+    if (!isPlayerOwned(this.selectedEntity)) return;
 
     const pos = this.selectedEntity.getComponent(Position);
     const building = this.selectedEntity.getComponent(Building);
@@ -3009,6 +3844,7 @@ export class Game {
 
   deleteSelectedEntity(): void {
     if (!this.selectedEntity) return;
+    if (!isPlayerOwned(this.selectedEntity)) return;
     this.destroyBuildingEntity(this.selectedEntity);
   }
 
@@ -3165,6 +4001,9 @@ export class Game {
           data.militaryGarrison = building.militaryGarrison.map(s =>
             s ? { rank: s.rank, workerEntityId: s.workerEntityId } : null
           );
+        }
+        if (building?.militaryTerritoryEstablished) {
+          data.militaryTerritoryEstablished = true;
         }
 
         if (production) {
@@ -3336,6 +4175,7 @@ export class Game {
           const capRestore = dataManager.getBuilding(buildingData.type as BuildingType)?.military?.soldierCapacity;
           if (typeof capRestore === 'number' && capRestore > 0) {
             building.initMilitaryGarrison(capRestore);
+            building.militaryTerritoryEstablished = buildingData.militaryTerritoryEstablished === true;
             if (Array.isArray(buildingData.militaryGarrison) && building.militaryGarrison) {
               for (let i = 0; i < building.militaryGarrison.length; i++) {
                 const entry = buildingData.militaryGarrison[i];
@@ -3347,6 +4187,7 @@ export class Game {
                   rank: Math.min(3, Math.max(1, entry.rank)) as 1 | 2 | 3,
                   workerEntityId: entry.workerEntityId,
                 };
+                building.militaryTerritoryEstablished = true;
               }
             }
           }

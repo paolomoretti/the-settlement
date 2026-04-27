@@ -3903,6 +3903,9 @@ export class RenderSystem extends System {
     ) {
       return;
     }
+    if (worker.visualActivity === 'combat_duel' || worker.visualActivity === 'combat_fallen') {
+      return;
+    }
     if (worker.visualActivity === 'production_plant' && worker.state === 'working') {
       return;
     }
@@ -4047,7 +4050,8 @@ export class RenderSystem extends System {
     }
 
     const now = Date.now();
-    const frame = isMoving ? Math.floor(now / 200) % 4 : 0;
+    const isCombatDuel = worker.visualActivity === 'combat_duel' && worker.role === 'military';
+    const frame = isMoving || isCombatDuel ? Math.floor(now / (isCombatDuel ? 120 : 200)) % 4 : 0;
     // Keep military close to civilian size; body proportions are normalized in painter.
     const s = worker.role === 'military' ? 2.05 : 2;
     const anim = worker.idleAnim;
@@ -4101,7 +4105,7 @@ export class RenderSystem extends System {
       worker,
       s,
       facing,
-      isMoving,
+      isMoving: isMoving || isCombatDuel,
       frame,
       now,
       anim,
@@ -4116,6 +4120,34 @@ export class RenderSystem extends System {
       armAnim,
       enemyTint,
     };
+
+    if (worker.visualActivity === 'combat_fallen') {
+      const fadeUntil = worker.buildIdleUntil || now;
+      const alpha = Math.max(0, Math.min(1, (fadeUntil - now) / 2000));
+      this.ctx.save();
+      this.ctx.globalAlpha *= alpha;
+      this.ctx.translate(0, 2.5 * s - 10);
+      this.ctx.rotate(-Math.PI / 2);
+      this.ctx.translate(-2 * s, 8.5 * s);
+      this.paintWorkerSpriteBody({
+        ...bodyArgs,
+        isMoving: false,
+        anim: 'none',
+        animT: 0,
+        isCarrying: false,
+        isHammerConstruct: false,
+        isPlantDigging: false,
+        isFisherFishing: false,
+        isStoneGathering: false,
+        isSideCarryTool: false,
+        isOverheadCarry: false,
+        armAnim: 'none',
+        drawRoundFootShadow: false,
+        napPillowArms: false,
+      });
+      this.ctx.restore();
+      return;
+    }
 
     if (
       !isMoving &&

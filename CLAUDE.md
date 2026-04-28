@@ -78,6 +78,7 @@ Not yet implemented: tool requirements for workers, mine food system (bread/fish
 - [Save Slots](.claude/SAVE_SLOTS.md) - Save/load slot storage, resume pointer, autosave binding, and clear-slot behavior
 - [Building Dependencies](.claude/BUILDING_DEPENDENCIES.md) - **Local storage, demand routing, production chains** — how buildings receive inputs and produce outputs
 - [Construction Delivery](.claude/CONSTRUCTION_DELIVERY.md) - **Material delivery to construction sites** — builder workers, material dispatch, construction flow
+- [Building Workers](.claude/BUILDING_WORKERS.md) - **Staffed building workers** — tool specialists vs indoor operators, load restore, and demolition return rules
 - [Toast Notifications](.claude/TOAST.md) - Reusable short-lived messages via `showToast()` or EventBus `'toast'` event
 - [Hover tooltip (canvas)](.claude/HOVER_TOOLTIP.md) - **Alt/Option + hover** insight (grid, highlights, tooltips); `InsightAltKey`, `registerFrameHook`, `buildHoverLines.ts`
 - [World Generation](.claude/WORLD_GENERATION.md) - Terrain generation pipeline, RLE persistence, deterministic seeding
@@ -92,6 +93,7 @@ Not yet implemented: tool requirements for workers, mine food system (bread/fish
 - [Production priorities](.claude/METALWORKS_PRIORITIES.md) - **Tools + building routing priorities** — weighted-random Metalworks tools, building priority weights for construction/input dispatch, save/load normalization
 - [Enemy realms](.claude/ENEMY_REALMS.md) - **Prototype computer-controlled village** — owner factions, per-faction territory, red cordon, initial 40x40 enemy village, attackable HQ
 - [Production Animation](.claude/PRODUCTION_ANIMATION.md) - **Worker animation during production** — woodcutter leaves building, chops tree, terrain changes, returns
+- [Building production sprites](.claude/BUILDING_PRODUCTION_SPRITES.md) - **Per-building facade animation control** — `activeFraction` windows and custom burst/pause frame sequences
 - [Demolition Fire](.claude/DEMOLITION_FIRE.md) - **Building deletion aftermath** — 30s blocking fire, 60s cosmetic scorch, save/load behavior
 - [Worker spawn rules](.claude/WORKER_SPAWN.md) - **HQ-assigned workers** — spawn at base camp road, walk in; never appear at the job site without travel
 - [Street planning & vector roads](.claude/STREET_PLANNING_AND_RENDERING.md) - **Shift A-to-B road planning + vector road visuals** — buildable-road A*, batch placement, mask-derived curved road drawing, worker visual alignment

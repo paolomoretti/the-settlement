@@ -128,11 +128,19 @@ export class GameWorkerRegistry {
    */
   resolveStaffingAnimation(buildingDef: BuildingDefinition): AnimationConfig | null {
     if (buildingDef.animation) {
+      if (buildingDef.requiredTool && buildingDef.animation.type === 'interior_operator') {
+        return null;
+      }
       return buildingDef.animation;
     }
     const req = buildingDef.population?.requires ?? 0;
     const prodTime = buildingDef.production?.productionTime;
     if (req < 1 || prodTime == null || prodTime <= 0) {
+      return null;
+    }
+    // Tool-required buildings are staffed by their delivered tool specialist; do not add
+    // a second visual indoor operator.
+    if (buildingDef.requiredTool) {
       return null;
     }
     /** Outdoor / field jobs: keep no map worker until a bespoke `gather` (or similar) exists. */
@@ -340,7 +348,10 @@ export class GameWorkerRegistry {
         const movable = entity.getComponent(Movable);
         if (movable && !movable.isMoving) {
           const worker = entity.getComponent(Worker);
-          if (worker?.returnToHqAsSpecialist && worker.role === 'military') {
+          if (worker?.returnToHqToolSpecialist) {
+            this.world.returnToolSpecialistToHq(worker.returnToHqToolSpecialist);
+            worker.returnToHqToolSpecialist = null;
+          } else if (worker?.returnToHqAsSpecialist && worker.role === 'military') {
             this.world.onMilitarySpecialistReturnedToHq();
           }
           this.world.removeEntity(entity);
@@ -747,6 +758,25 @@ export class GameWorkerRegistry {
             new Position(state.workTile.x, state.workTile.y),
             tileMap
           );
+
+        if (isInterior) {
+          if (movable?.isMoving) continue;
+          const onWork =
+            Math.floor(workerPos.x) === state.workTile.x && Math.floor(workerPos.y) === state.workTile.y;
+          if (!onWork) {
+            const wpath = pathToWork();
+            if (wpath.length > 0 && movable) {
+              movable.speed = speed;
+              movable.setPath(wpath);
+              workerComp.setState('walking');
+              state.phase = 'to_entrance';
+            }
+            continue;
+          }
+          state.phase = 'interior_inside';
+          this.enterMillInterior(buildingEntity, workerComp, workerPos, movable);
+          continue;
+        }
 
         if (timer < state.lastProductionTimer - 0.05 && state.lastProductionTimer > 1) {
           if (state.phase === 'drawing') {
@@ -1469,6 +1499,63 @@ export class GameWorkerRegistry {
     }
   }
 
+  private sendWorkerBackToBaseCamp(workerEntity: Entity, sourceBuildingEntity: Entity, speed: number = 1.8): boolean {
+    const spawnTile = this.findBaseCampSpawnTile();
+    if (!spawnTile) return false;
+
+    const pos = workerEntity.getComponent(Position);
+    const movable = workerEntity.getComponent(Movable);
+    const worker = workerEntity.getComponent(Worker);
+    if (!pos || !movable || !worker) return false;
+
+    if (worker.concealedInBuildingId != null) {
+      const sourceRoad = this.findBuildingAdjacentRoadTile(sourceBuildingEntity);
+      if (sourceRoad) pos.set(sourceRoad.x + 0.5, sourceRoad.y + 0.5);
+    }
+
+    worker.concealedInBuildingId = null;
+    worker.visualActivity = 'general';
+    worker.setState('walking');
+
+    const start = new Position(Math.floor(pos.x), Math.floor(pos.y));
+    const goal = new Position(spawnTile.x, spawnTile.y);
+    const tileMap = this.world.getTileMap();
+    const pathFinder = this.world.getPathFinder();
+    const roadPath = pathFinder.findPath(start, goal, tileMap);
+    const path = roadPath.length > 0 ? roadPath : pathFinder.findOffRoadPath(start, goal, tileMap);
+    if (path.length === 0) return false;
+
+    movable.speed = speed;
+    movable.setPath(path);
+    this.returningWorkers.add(workerEntity.id);
+    return true;
+  }
+
+  returnAssignedToolSpecialistToHq(buildingEntity: Entity, tool: string): boolean {
+    const roadTile = this.findBuildingAdjacentRoadTile(buildingEntity);
+    const pos = buildingEntity.getComponent(Position);
+    if (!roadTile && !pos) return false;
+
+    const start = roadTile ?? { x: Math.floor(pos!.x), y: Math.floor(pos!.y) };
+    const workerEntity = createWorker(start.x + 0.5, start.y + 0.5);
+    setEntityFaction(workerEntity, getEntityFaction(buildingEntity));
+
+    const worker = workerEntity.getComponent(Worker);
+    if (worker) {
+      worker.pickUpResource(tool);
+      worker.visualActivity = 'deliver_tool';
+      worker.returnToHqToolSpecialist = tool;
+    }
+
+    this.world.addEntity(workerEntity);
+    if (this.sendWorkerBackToBaseCamp(workerEntity, buildingEntity)) {
+      return true;
+    }
+
+    this.world.removeEntity(workerEntity);
+    return false;
+  }
+
   /** Remove attached worker entities and clear registry entries when a building is destroyed. */
   detachWorkersForDestroyedBuilding(entity: Entity, opts?: { retreatOwnerWorkers?: boolean }): void {
     const building = entity.getComponent(Building);
@@ -1490,8 +1577,13 @@ export class GameWorkerRegistry {
     if (building.animationWorkerId != null) {
       const animWorker = entities.find(e => e.id === building.animationWorkerId && e.active);
       if (animWorker) {
-        if (retreatFaction) this.retreatWorkerToFactionHeadquarters(animWorker, retreatFaction, entity);
-        else this.world.removeEntity(animWorker);
+        if (retreatFaction) {
+          this.retreatWorkerToFactionHeadquarters(animWorker, retreatFaction, entity);
+        } else if (isPlayerOwned(entity)) {
+          if (!this.sendWorkerBackToBaseCamp(animWorker, entity)) this.world.removeEntity(animWorker);
+        } else {
+          this.world.removeEntity(animWorker);
+        }
       }
       const animState = this.animationWorkers.get(building.animationWorkerId);
       if (animState) {
@@ -2208,6 +2300,71 @@ export class GameWorkerRegistry {
     workerComp.concealedInBuildingId = null;
     workerComp.visualActivity = 'general';
     movable?.clearPath();
+  }
+
+  private fallbackInteriorTiles(buildingEntity: Entity): { idle: { x: number; y: number }; work: { x: number; y: number } } | null {
+    const pos = buildingEntity.getComponent(Position);
+    const building = buildingEntity.getComponent(Building);
+    if (!pos || !building) return null;
+    const road = this.findBuildingAdjacentRoadTile(buildingEntity);
+    const entrance = building.getEntranceOffset();
+    const work = road ?? (entrance ? { x: pos.x + entrance.dx, y: pos.y + entrance.dy } : { x: pos.x, y: pos.y });
+    return { idle: work, work };
+  }
+
+  private createConcealedInteriorOperator(buildingEntity: Entity, anim: Extract<AnimationConfig, { type: 'interior_operator' }>): boolean {
+    const building = buildingEntity.getComponent(Building);
+    const pos = buildingEntity.getComponent(Position);
+    const production = buildingEntity.getComponent(Production);
+    if (!building || !pos || !production || building.animationWorkerId != null) return false;
+
+    const tiles = this.computeInteriorApproachTiles(buildingEntity) ?? this.fallbackInteriorTiles(buildingEntity);
+    if (!tiles) return false;
+
+    const bx = Math.floor(pos.x);
+    const by = Math.floor(pos.y);
+    const cx = bx + (building.width - 1) / 2 + 0.5;
+    const cy = by + (building.height - 1) / 2 + 0.5;
+    const worker = createWorker(cx, cy);
+    setEntityFaction(worker, getEntityFaction(buildingEntity));
+
+    const workerComp = worker.getComponent(Worker);
+    const movable = worker.getComponent(Movable);
+    if (workerComp) {
+      workerComp.visualActivity = 'general';
+      workerComp.setState('working');
+      workerComp.concealedInBuildingId = buildingEntity.id;
+      this.applyInteriorOperatorAppearance(workerComp, anim.operatorRole);
+    }
+    movable?.clearPath();
+
+    this.world.addEntity(worker);
+    building.animationWorkerId = worker.id;
+    this.animationWorkers.set(worker.id, {
+      kind: 'well_operator',
+      buildingEntityId: buildingEntity.id,
+      phase: 'interior_inside',
+      idleTile: tiles.idle,
+      workTile: tiles.work,
+      lastProductionTimer: production.timer,
+    });
+    return true;
+  }
+
+  restoreInteriorOperatorsInsideCompletedBuildings(): void {
+    for (const entity of this.world.getEntities()) {
+      if (!entity.active || !isPlayerOwned(entity)) continue;
+      const building = entity.getComponent(Building);
+      const production = entity.getComponent(Production);
+      if (!building || !production || !building.isComplete() || !building.isActive) continue;
+      if (building.animationWorkerId != null) continue;
+
+      const buildingDef = dataManager.getBuilding(building.buildingType);
+      const anim = buildingDef ? this.resolveStaffingAnimation(buildingDef) : null;
+      if (anim?.type !== 'interior_operator') continue;
+
+      this.createConcealedInteriorOperator(entity, anim);
+    }
   }
 
   private spawnSiteOperator(buildingEntity: Entity): void {

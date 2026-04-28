@@ -979,7 +979,13 @@ export class Game {
     }
 
     if (building.assignedToolSpecialist) {
-      if (isPlayerOwned(entity)) this.addToolSpecialistToHqPool(building.assignedToolSpecialist, 1);
+      if (isPlayerOwned(entity)) {
+        const returnedVisibly = this.workers.returnAssignedToolSpecialistToHq(
+          entity,
+          building.assignedToolSpecialist
+        );
+        if (!returnedVisibly) this.addToolSpecialistToHqPool(building.assignedToolSpecialist, 1);
+      }
       building.assignedToolSpecialist = null;
     }
 
@@ -5220,6 +5226,7 @@ export class Game {
       }
 
       this.updateBuildingRoadConnections();
+      this.workers.restoreInteriorOperatorsInsideCompletedBuildings();
       this.seedLoadedEnemyDecorations();
 
       if (this.baseCampEntity) {

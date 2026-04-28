@@ -385,6 +385,11 @@
       "productionTime": 25,
       "continuous": true
     },
+    "chimneySmoke": {
+      "offsetX": 42,
+      "offsetY": -15,
+      "density": 3
+    },
     "storage": { "capacity": 10 },
     "population": { "requires": 1 },
     "category": "production",

@@ -20,6 +20,7 @@ import { transportManager } from '@/economics/TransportManager';
 import type { SurveyOverlayForRender } from '@/survey/SurveyCoordinator';
 import {
   BUILDING_CONSTRUCTION_SPRITES,
+  BUILDING_PRODUCTION_SPRITE_ANIMATION,
   BUILDING_PRODUCTION_SPRITES,
   collectAllCataloguedBuildingSpritePaths,
 } from '@/catalog/buildingSprites';
@@ -3623,9 +3624,26 @@ export class RenderSystem extends System {
     if (!stages || stages.length === 0) return renderable.spritePath;
 
     const progress = Math.max(0, Math.min(0.999999, production.getProgress()));
-    const totalSlices = stages.length + 2;
-    const slice = Math.floor(progress * totalSlices);
-    const stageIndex = Math.min(slice, stages.length - 1);
+    const animConfig = BUILDING_PRODUCTION_SPRITE_ANIMATION[building.buildingType];
+    const activeFractionRaw = animConfig?.activeFraction;
+    const activeFraction = typeof activeFractionRaw === 'number' && Number.isFinite(activeFractionRaw)
+      ? Math.max(0, Math.min(1, activeFractionRaw))
+      : 1;
+    if (activeFraction <= 0) return renderable.spritePath;
+    if (progress >= activeFraction) return renderable.spritePath;
+
+    const phaseProgress = progress / activeFraction;
+
+    const sequence = animConfig?.sequence;
+    if (sequence && sequence.length > 0) {
+      const seqIndex = Math.min(Math.floor(phaseProgress * sequence.length), sequence.length - 1);
+      const spriteIndex = sequence[seqIndex];
+      if (spriteIndex == null) return renderable.spritePath;
+      const bounded = Math.max(0, Math.min(stages.length - 1, spriteIndex));
+      return stages[bounded] ?? renderable.spritePath;
+    }
+
+    const stageIndex = Math.min(Math.floor(phaseProgress * stages.length), stages.length - 1);
     return stages[stageIndex] ?? renderable.spritePath;
   }
 

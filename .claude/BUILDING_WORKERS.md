@@ -7,8 +7,9 @@ This document defines how **staffed buildings** get a **map worker**: a peasant 
 | Condition | Map worker |
 |-----------|------------|
 | `population.provides` only (hut, house, headquarters, warehouse, …) | **No** dedicated map worker for “housing capacity”. |
-| `population.requires` + timed `production` + **no** `animation` in JSON | **Yes** — runtime synthesizes **`interior_operator`**, except buildings deferred until custom outdoor animation exists (today: `hunter`, `farm`, `pig_farm`; see `resolveStaffingAnimation()`). |
-| `population.requires` + explicit `animation` | **Yes** — behaviour is whatever that block specifies. |
+| `population.requires` + `requiredTool` | **No extra map worker** — the delivered tool specialist is the building worker. They enter the building, are tracked on the building, and return to HQ if the building is demolished. |
+| `population.requires` + timed `production` + **no** `animation` in JSON + **no** `requiredTool` | **Yes** — runtime synthesizes **`interior_operator`**, except buildings deferred until custom outdoor animation exists (today: `hunter`, `farm`, `pig_farm`; see `resolveStaffingAnimation()`). |
+| `population.requires` + explicit `animation` | **Yes** — behaviour is whatever that block specifies, except `requiredTool` + `interior_operator` still uses only the tool specialist. |
 | `population.requires` but **no** `production` timer (e.g. donkey breeder, shipyard, lookout as of today) | **No** automatic interior worker; add `animation` later or extend systems when those buildings get timed work. |
 
 Residential and pure storage/military buildings without `population.requires` do not use this staffing pipeline.
@@ -17,11 +18,12 @@ Residential and pure storage/military buildings without `population.requires` do
 
 ### 1. `interior_operator` — default workshop operator
 
-**Intent:** The worker is **delivered from HQ**, waits **outside** on an idle tile, walks to the **door**, then is **hidden inside** the footprint for the “active” slice of each production cycle (timer-aligned). They reappear at the door and walk back to idle when the cycle ends or production stops.
+**Intent:** The worker is **delivered from HQ**, walks to the **door**, then is **hidden inside** the footprint for the lifetime of the building. They do not idle outside or step out for production-cycle timing. If the building is demolished, the worker is revealed at the road/door and walks back to HQ, freeing the worker slot when they arrive.
 
 - **Strictly tied to the building type** via **`operatorRole`** (usually the same string as the building `id`, e.g. `mill`, `bakery`). Code uses `operatorRole` for outfits and future upgrades (“mill worker” vs “baker”).
-- **JSON:** either omit `animation` entirely (game infers `interior_operator` + `operatorRole: <building id>` + timing from `productionTime`), or declare an `interior_operator` block to override speed / phase lengths (see `mill` in `buildings.json`).
+- **JSON:** either omit `animation` entirely (game infers `interior_operator` + `operatorRole: <building id>`), or declare an `interior_operator` block to override speed / legacy phase fields (see `mill` in `buildings.json`).
 - **Implementation:** `GameWorkerRegistry.resolveStaffingAnimation()`, `spawnSiteOperator()`, phases `interior_inside`, `Worker.concealedInBuildingId`, `RenderSystem` skip-draw when concealed.
+- **Load behavior:** completed buildings with an interior operator restore that worker already concealed inside, so refreshing a save does not send a new visible worker from HQ.
 
 **Optional later:** occasional “step outside” breaks (same operator, same building) without changing the data model.
 

@@ -107,7 +107,6 @@ export const BUILDING_CONSTRUCTION_SPRITES: Record<string, string[]> = {
     '/assets/buildings/bakery_build_0.png',
     '/assets/buildings/bakery_build_1.png',
     '/assets/buildings/bakery_build_2.png',
-    '/assets/buildings/bakery_build_3.png',
   ],
   brewery: [
     '/assets/buildings/brewery_build_0.png',
@@ -165,12 +164,43 @@ export const BUILDING_CONSTRUCTION_SPRITES: Record<string, string[]> = {
  * Naming: `/assets/buildings/<type>_prod_<index>.png`.
  */
 export const BUILDING_PRODUCTION_SPRITES: Record<string, string[]> = {
+  bakery: [
+    '/assets/buildings/bakery_prod_0.png',
+    '/assets/buildings/bakery_prod_1.png',
+    '/assets/buildings/bakery_prod_2.png',
+  ],
   farm: [
     '/assets/buildings/farm_prod_0.png',
     '/assets/buildings/farm_prod_1.png',
     '/assets/buildings/farm_prod_2.png',
     '/assets/buildings/farm_prod_3.png',
   ],
+};
+
+/**
+ * Per-building production sprite animation behavior.
+ * - `activeFraction`: portion of the production cycle used for sprite animation.
+ * - `sequence`: optional custom pattern over the active fraction.
+ *   Use sprite indices (`0..n`) or `null` to temporarily fall back to final sprite.
+ */
+export type BuildingProductionSpriteAnimation = {
+  activeFraction?: number;
+  sequence?: Array<number | null>;
+};
+
+export const BUILDING_PRODUCTION_SPRITE_ANIMATION: Record<string, BuildingProductionSpriteAnimation> = {
+  // Bakery oven: short bursts of flame, then brief pauses.
+  bakery: {
+    activeFraction: 0.55,
+    sequence: [
+      0, 1, 2, 1, 0,
+      null, null,
+      0, 1, 2, 1, 0,
+      null, null, null,
+      0, 1, 2, 1,
+      null, null,
+    ],
+  },
 };
 
 export function collectAllCataloguedBuildingSpritePaths(): string[] {

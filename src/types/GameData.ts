@@ -186,9 +186,9 @@ export type AnimationConfig =
     }
   | {
       /**
-       * Indoor workshop operator: HQ delivery, idle near the building, door approach, then concealed
-       * inside the footprint for the active slice of each production cycle. Use for any staffed building
-       * that does not use a custom site animation (`gather`, `well_operator`, `plant_tree`).
+       * Indoor workshop operator: HQ delivery, door approach, then concealed inside the footprint
+       * until demolition. Use for staffed buildings that have no required tool and no custom site
+       * animation (`gather`, `well_operator`, `plant_tree`).
        */
       type: 'interior_operator';
       /** Worker spec id (usually same as building id): drives outfit and future upgrades; tied 1:1 to this building type. */

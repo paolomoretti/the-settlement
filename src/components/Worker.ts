@@ -116,6 +116,8 @@ export class Worker extends Component {
   public concealedInBuildingId: number | null = null;
   /** On arrival at HQ return tile, convert this worker into a persistent specialist pool entry. */
   public returnToHqAsSpecialist = false;
+  /** On arrival at HQ return tile, convert this worker into a ready tool specialist. */
+  public returnToHqToolSpecialist: string | null = null;
   /** Builder may hammer on site only after `beginConstruction()` runs. */
   public hammerConstructionEnabled = false;
   /** Builder stands and plays hammer idle until this time (ms since epoch). */

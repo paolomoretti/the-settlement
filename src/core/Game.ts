@@ -161,10 +161,11 @@ export class Game {
   private nextEnemyAttackId = 1;
   private nextEnemyPressureCheckAt = 0;
   private nextEnemyRoadMaintenanceAt = 0;
+  private nextBattleClashAt = 0;
 
   private readonly frameHooks: Array<() => void> = [];
 
-  constructor(canvas: HTMLCanvasElement, skipInit = false) {
+  constructor(private canvas: HTMLCanvasElement, skipInit = false) {
     // Initialize large map (20x bigger: 1000x1000)
     this.tileMap = new TileMap(1000, 1000);
     this.territory = new TerritoryCoordinator(this.tileMap);
@@ -265,6 +266,10 @@ export class Game {
     audioManager.loadSound('demolish', '/audio/demolish.mp3');
     audioManager.loadSound('erase_demolition', '/audio/erase_demolition.mp3');
     audioManager.loadSound('building_complete', '/audio/building_complete.mp3');
+    audioManager.loadSound('battle_clash_1', '/audio/battle_clash_1.mp3');
+    audioManager.loadSound('battle_clash_2', '/audio/battle_clash_2.mp3');
+    audioManager.loadSound('battle_victory', '/audio/battle_victory.mp3');
+    audioManager.loadSound('battle_loss', '/audio/battle_loss.mp3');
 
     // Setup event listeners
     this.setupEventListeners();
@@ -4078,7 +4083,10 @@ export class Game {
   }
 
   private updateEnemyAttacks(): void {
-    if (this.activeEnemyAttacks.length === 0) return;
+    if (this.activeEnemyAttacks.length === 0) {
+      this.nextBattleClashAt = 0;
+      return;
+    }
     const now = Date.now();
     for (const attack of this.activeEnemyAttacks) {
       if (attack.phase === 'complete') continue;
@@ -4116,6 +4124,64 @@ export class Game {
       }
     }
     this.activeEnemyAttacks = this.activeEnemyAttacks.filter(attack => attack.phase !== 'complete');
+    this.updateBattleAudio(now);
+  }
+
+  private updateBattleAudio(now: number): void {
+    const hasVisibleDuel = this.activeEnemyAttacks.some(
+      attack => attack.phase === 'duel' && this.isAttackVisibleToPlayer(attack)
+    );
+    if (!hasVisibleDuel) {
+      this.nextBattleClashAt = 0;
+      return;
+    }
+    if (now < this.nextBattleClashAt) return;
+
+    audioManager.playSound(Math.random() < 0.5 ? 'battle_clash_1' : 'battle_clash_2');
+    const quickFollowUp = Math.random() < 0.35;
+    const delayMs = quickFollowUp
+      ? 180 + Math.random() * 260
+      : 700 + Math.random() * 900;
+    this.nextBattleClashAt = now + delayMs;
+  }
+
+  private playBattleOutcomeSoundIfVisible(attack: ActiveEnemyAttack, playerWon: boolean): void {
+    if (!this.isAttackVisibleToPlayer(attack)) return;
+    audioManager.playSound(playerWon ? 'battle_victory' : 'battle_loss');
+  }
+
+  private isAttackVisibleToPlayer(attack: ActiveEnemyAttack): boolean {
+    const points: Array<{ x: number; y: number }> = [];
+    if (attack.currentAttackerId != null) {
+      const attackerPos = this.entities.find(e => e.id === attack.currentAttackerId)?.getComponent(Position);
+      if (attackerPos) points.push({ x: attackerPos.x, y: attackerPos.y });
+    }
+    if (attack.currentDefenderId != null) {
+      const defenderPos = this.entities.find(e => e.id === attack.currentDefenderId)?.getComponent(Position);
+      if (defenderPos) points.push({ x: defenderPos.x, y: defenderPos.y });
+    }
+    if (points.length === 0) {
+      points.push({
+        x: (attack.staging.attacker.x + attack.staging.defender.x) / 2,
+        y: (attack.staging.attacker.y + attack.staging.defender.y) / 2,
+      });
+    }
+
+    return points.some(point => this.isBattlePointVisible(point.x, point.y));
+  }
+
+  private isBattlePointVisible(gridX: number, gridY: number): boolean {
+    const tile = this.tileMap.getTile(Math.floor(gridX), Math.floor(gridY));
+    if (!tile?.isExplored()) return false;
+
+    const screen = this.renderSystem.gridToScreen(gridX, gridY);
+    const padding = 48;
+    return (
+      screen.x >= -padding &&
+      screen.x <= this.canvas.width + padding &&
+      screen.y >= -padding &&
+      screen.y <= this.canvas.height + padding
+    );
   }
 
   private beginNextEnemyAttackDuel(attack: ActiveEnemyAttack): void {
@@ -4216,6 +4282,8 @@ export class Game {
   }
 
   private finishEnemyAttackLoss(attack: ActiveEnemyAttack): void {
+    const playerWon = attack.attackerFactionId !== PLAYER_FACTION;
+    this.playBattleOutcomeSoundIfVisible(attack, playerWon);
     const survivorIds = [attack.currentDefenderId, ...attack.defenderQueue].filter((id): id is number => id != null);
     this.startAttackReturn(attack, survivorIds.map(id => ({
       workerEntityId: id,
@@ -4226,6 +4294,8 @@ export class Game {
   }
 
   private finishEnemyAttackWin(attack: ActiveEnemyAttack): void {
+    const playerWon = attack.attackerFactionId === PLAYER_FACTION;
+    this.playBattleOutcomeSoundIfVisible(attack, playerWon);
     const target = this.entities.find(e => e.id === attack.targetEntityId);
     const building = target?.getComponent(Building);
     if (!target || !building) {

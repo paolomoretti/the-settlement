@@ -3454,12 +3454,6 @@ export class RenderSystem extends System {
       this.ctx.filter = 'none';
     }
 
-    // Construction overlay: bar + dust only while workers are actively building (not while waiting on materials)
-    if (building && building.state === 'under_construction') {
-      this.ctx.globalAlpha = 1;
-      this.renderConstructionOverlay(building);
-    }
-
     // Status bubble for inactive buildings (only when complete)
     if (isInactive && building && building.isComplete()) {
       const hovered = entity.id === this.hoveredEntityId;
@@ -3929,37 +3923,6 @@ export class RenderSystem extends System {
     }
 
     this.ctx.restore();
-  }
-
-  private renderConstructionOverlay(building: Building): void {
-    const tileW = this.iso.tileWidth;
-    const tileH = this.iso.tileHeight;
-    const width = building.width;
-    const depth = building.height;
-
-    const centerX = ((width - depth) * tileW / 2) / 2;
-    const frontY = (width + depth) * tileH / 2;
-
-    // Progress bar at the bottom of the building footprint
-    const barWidth = (width + depth) * tileW / 3;
-    const barHeight = 4;
-    const barX = centerX - barWidth / 2;
-    const barY = frontY + 4;
-
-    // Red background
-    this.ctx.fillStyle = '#882222';
-    this.ctx.fillRect(barX, barY, barWidth, barHeight);
-
-    // Green progress fill
-    this.ctx.fillStyle = '#44aa44';
-    this.ctx.fillRect(barX, barY, barWidth * building.constructionProgress, barHeight);
-
-    // Thin border
-    this.ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-    this.ctx.lineWidth = 0.5;
-    this.ctx.strokeRect(barX, barY, barWidth, barHeight);
-
-    this.ctx.globalAlpha = 1;
   }
 
   private renderJunctionItems(viewportBounds: { minX: number; maxX: number; minY: number; maxY: number }): void {

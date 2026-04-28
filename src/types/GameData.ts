@@ -341,6 +341,51 @@ export interface GameConfig {
     mapSize: { width: number; height: number };
     seed?: number;
   };
+
+  enemyRealms: {
+    /** Number of enemy villages planned when creating a new world. */
+    villageCount: number;
+    /** Square village patch side length in map cells for the nearest enemy. */
+    minVillageSize: number;
+    /** Maximum square village patch side length in map cells for distant enemies. */
+    maxVillageSize: number;
+    /** Empty map-cell padding enforced between planned enemy village patches. */
+    minSpacingBetweenVillages: number;
+    /** Aggressiveness per planned village index; index 0 is the nearby starter enemy. */
+    aggressivenessByVillageIndex: number[];
+    /** Temporary debug override for all realms, including existing saves. Use null for normal behavior. */
+    debugAggressivenessOverride: number | null;
+    attacks: {
+      enabled: boolean;
+      /** Maximum Chebyshev distance, in map cells, from source fort to target fort. */
+      maxRangeCells: number;
+      /** How often the enemy border-pressure scheduler wakes up. */
+      checkIntervalMs: number;
+      /** First possible attack delay after border contact, indexed by aggressiveness level. */
+      firstAttackDelayMsByAggressiveness: Record<number, number>;
+      /** Cooldown after an attack attempt, indexed by aggressiveness level. */
+      cooldownMsByAggressiveness: Record<number, number>;
+      /** Maximum soldiers committed to one attack, indexed by aggressiveness level. */
+      maxAttackersByAggressiveness: Record<number, number>;
+      /** How often an enemy realm can add replacement soldiers to its military buildings. */
+      garrisonReinforceIntervalMs: number;
+      /** Replacement soldiers added per reinforcement tick while borders touch. */
+      garrisonReinforceCount: number;
+    };
+    roadMaintenance: {
+      enabled: boolean;
+      /** How often active, visible enemy realms try to reconnect stranded buildings. */
+      intervalMs: number;
+      /** Maximum disconnected buildings repaired across all enemy realms per tick. */
+      maxRepairsPerTick: number;
+      /** Maximum forward barracks created across all enemy realms per tick. */
+      maxForwardBarracksPerTick: number;
+      /** Safety cap for generated repair road length in cells. */
+      maxPathCells: number;
+      /** Candidate search radius around an isolated military post when placing a forward barracks. */
+      forwardBarracksSearchRadius: number;
+    };
+  };
 }
 
 // ============================================================================

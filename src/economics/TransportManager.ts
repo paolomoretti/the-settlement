@@ -82,6 +82,12 @@ export class TransportManager {
     if (items.length === 0) this.pendingPickupVisuals.delete(key);
   }
 
+  clearItemsAt(x: number, y: number): void {
+    const key = `${x},${y}`;
+    this.junctionItems.delete(key);
+    this.pendingPickupVisuals.delete(key);
+  }
+
   getJunctionItemsMap(): ReadonlyMap<string, JunctionItem[]> {
     return this.junctionItems;
   }

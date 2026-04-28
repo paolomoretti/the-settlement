@@ -17,7 +17,10 @@ export type EnemyVillagePlan = {
   id: string;
   factionId: EnemyFactionId;
   difficulty: number;
+  aggressivenessLevel: number;
   activated?: boolean;
+  nextAttackAt?: number;
+  lastReinforcedAt?: number;
   bounds: { x: number; y: number; width: number; height: number };
   headquarters: EnemyVillageBuildingPlan;
   buildings: EnemyVillageBuildingPlan[];
@@ -25,11 +28,6 @@ export type EnemyVillagePlan = {
   waterCells: { x: number; y: number }[];
   revealCells: { x: number; y: number }[];
 };
-
-const ENEMY_VILLAGE_COUNT = 10;
-const MIN_VILLAGE_SIZE = 28;
-const MAX_VILLAGE_SIZE = 56;
-const MIN_SPACING_BETWEEN_VILLAGES = 12;
 
 const CIVILIAN_TYPES: BuildingType[] = [
   'hut',
@@ -151,11 +149,12 @@ function overlapsExistingBounds(
   candidate: { x: number; y: number; width: number; height: number },
   existing: readonly { x: number; y: number; width: number; height: number }[]
 ): boolean {
+  const { minSpacingBetweenVillages } = dataManager.getGameConfig().enemyRealms;
   return existing.some(bounds =>
-    candidate.x < bounds.x + bounds.width + MIN_SPACING_BETWEEN_VILLAGES &&
-    candidate.x + candidate.width + MIN_SPACING_BETWEEN_VILLAGES > bounds.x &&
-    candidate.y < bounds.y + bounds.height + MIN_SPACING_BETWEEN_VILLAGES &&
-    candidate.y + candidate.height + MIN_SPACING_BETWEEN_VILLAGES > bounds.y
+    candidate.x < bounds.x + bounds.width + minSpacingBetweenVillages &&
+    candidate.x + candidate.width + minSpacingBetweenVillages > bounds.x &&
+    candidate.y < bounds.y + bounds.height + minSpacingBetweenVillages &&
+    candidate.y + candidate.height + minSpacingBetweenVillages > bounds.y
   );
 }
 
@@ -220,7 +219,8 @@ function findVillageBounds(
   } else {
     const maxRadius = Math.min(tileMap.width, tileMap.height) * 0.46;
     const minRadius = initialRadius + 80;
-    const radius = minRadius + ((maxRadius - minRadius) * villageIndex) / (ENEMY_VILLAGE_COUNT - 1);
+    const villageCount = Math.max(1, dataManager.getGameConfig().enemyRealms.villageCount);
+    const radius = minRadius + ((maxRadius - minRadius) * villageIndex) / Math.max(1, villageCount - 1);
     const baseAngle = -Math.PI / 3 + villageIndex * 2.399963229728653;
     for (let ring = 0; ring < 5; ring++) {
       for (let step = 0; step < 10; step++) {
@@ -249,8 +249,10 @@ function planEnemyVillage(
   villageIndex: number,
   existingBounds: readonly { x: number; y: number; width: number; height: number }[]
 ): EnemyVillagePlan | null {
+  const realmConfig = dataManager.getGameConfig().enemyRealms;
   const difficulty = villageIndex;
-  const size = Math.min(MAX_VILLAGE_SIZE, MIN_VILLAGE_SIZE + difficulty * 3);
+  const size = Math.min(realmConfig.maxVillageSize, realmConfig.minVillageSize + difficulty * 3);
+  const aggressivenessLevel = Math.max(0, Math.min(5, realmConfig.aggressivenessByVillageIndex[villageIndex] ?? 5));
   const bounds = findVillageBounds(tileMap, playerCenter, size, villageIndex, existingBounds);
   if (!bounds) return null;
 
@@ -339,6 +341,7 @@ function planEnemyVillage(
     id: `${factionId}_village`,
     factionId,
     difficulty,
+    aggressivenessLevel,
     bounds,
     headquarters,
     buildings,
@@ -351,7 +354,8 @@ function planEnemyVillage(
 export function planEnemyVillages(tileMap: TileMap, playerCenter: { x: number; y: number }): EnemyVillagePlan[] {
   const plans: EnemyVillagePlan[] = [];
   const bounds: Array<{ x: number; y: number; width: number; height: number }> = [];
-  for (let i = 0; i < ENEMY_VILLAGE_COUNT; i++) {
+  const villageCount = dataManager.getGameConfig().enemyRealms.villageCount;
+  for (let i = 0; i < villageCount; i++) {
     const plan = planEnemyVillage(tileMap, playerCenter, i, bounds);
     if (!plan) {
       console.warn(`Enemy village generation skipped for slot ${i + 1}: no valid site.`);

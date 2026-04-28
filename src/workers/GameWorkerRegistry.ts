@@ -310,8 +310,20 @@ export class GameWorkerRegistry {
         movable.setPath(path);
         worker.setState('walking');
       } else {
-        this.world.removeEntity(entity);
-        this.returningWorkers.delete(workerId);
+        const offRoadPath = pathFinder.findOffRoadPath(
+          new Position(Math.floor(pos.x), Math.floor(pos.y)),
+          new Position(spawnTile.x, spawnTile.y),
+          tileMap
+        );
+        if (offRoadPath.length > 0) {
+          movable.setPath(offRoadPath);
+          worker.setState('walking');
+          worker.visualActivity = 'general';
+          worker.dropResource();
+        } else {
+          this.world.removeEntity(entity);
+          this.returningWorkers.delete(workerId);
+        }
       }
     }
   }
@@ -1458,12 +1470,12 @@ export class GameWorkerRegistry {
   }
 
   /** Remove attached worker entities and clear registry entries when a building is destroyed. */
-  detachWorkersForDestroyedBuilding(entity: Entity): void {
+  detachWorkersForDestroyedBuilding(entity: Entity, opts?: { retreatOwnerWorkers?: boolean }): void {
     const building = entity.getComponent(Building);
     if (!building) return;
 
     const entities = [...this.world.getEntities()];
-    const retreatFaction = !isPlayerOwned(entity) ? getEntityFaction(entity) : null;
+    const retreatFaction = opts?.retreatOwnerWorkers || !isPlayerOwned(entity) ? getEntityFaction(entity) : null;
 
     if (building.builderEntityId != null) {
       const builderEntity = entities.find(e => e.id === building.builderEntityId && e.active);
@@ -1705,6 +1717,24 @@ export class GameWorkerRegistry {
       if (movable && worker) {
         movable.setPath(path);
         worker.setState('walking');
+        this.returningWorkers.add(workerId);
+        return;
+      }
+    }
+
+    const offRoadPath = pathFinder.findOffRoadPath(
+      new Position(Math.floor(pos.x), Math.floor(pos.y)),
+      new Position(spawnTile.x, spawnTile.y),
+      tileMap
+    );
+    if (offRoadPath.length > 0) {
+      const movable = entity.getComponent(Movable);
+      const worker = entity.getComponent(Worker);
+      if (movable && worker) {
+        movable.setPath(offRoadPath);
+        worker.setState('walking');
+        worker.visualActivity = 'general';
+        worker.dropResource();
         this.returningWorkers.add(workerId);
         return;
       }

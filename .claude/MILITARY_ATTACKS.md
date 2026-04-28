@@ -1,13 +1,14 @@
 # Military Attacks
 
-Enemy attacks are a runtime-only first pass for conquering enemy realm targets.
+Military attacks are a runtime-only first pass for conquering military targets. The same duel/conquest loop is used for player attacks against enemy realms and for AI raids against player military posts.
 
 ## Target Rules
 
 - Enemy civilian buildings are not selectable.
 - Enemy military buildings and enemy headquarters are selectable when the clicked tile is explored.
 - Enemy headquarters can be attacked even while enemy military buildings still exist.
-- Player soldiers can join an attack from player military buildings within Chebyshev distance `<= 40` cells of the target building center.
+- Player soldiers can join an attack from player military buildings within `GAME_CONFIG.enemyRealms.attacks.maxRangeCells` Chebyshev cells of the target building center.
+- AI raids target player-owned military buildings only. They begin after an activated enemy realm with aggressiveness `> 0` shares a cardinal territory boundary with the player.
 
 ## Attack UI
 
@@ -31,6 +32,16 @@ Each duel lasts 10 seconds. One attacker and one defender animate in a combat po
 
 Duelists are snapped to close fractional-tile face-off positions while fighting so the sword/shield animation reads as contact instead of two distant walkers.
 
+## Enemy Raids
+
+Enemy raids are scheduled by `Game.updateEnemyBorderPressure()` and tuned through `GAME_CONFIG.enemyRealms.attacks`.
+
+- Aggressiveness `0` never attacks.
+- Higher aggressiveness shortens first-contact delay and cooldown, and allows more attackers per raid.
+- If a saved realm already has a future `nextAttackAt`, lowering the configured first-contact delay pulls that timer earlier on the next scheduler tick. This keeps debug tuning responsive in existing saves.
+- While borders touch, enemy military buildings periodically receive replacement garrison soldiers. This is a temporary AI abstraction; enemies do not yet produce weapons, gold, or food through a separate economy.
+- Only one active raid involving the same enemy faction can run at a time.
+
 Rank weights:
 
 - Rank 1: `1`
@@ -46,11 +57,13 @@ Attack result toasts stay visible for 10 seconds and include a jump action that 
 If attackers survive:
 
 - Captured enemy military buildings transfer to the player.
+- Captured player military buildings transfer to the attacking enemy faction when an AI raid wins.
 - Surviving attackers visibly walk into the captured building before being hidden in its garrison. If more attackers survive than the captured post can hold, the overflow soldiers walk back to their original military building.
 - Player territory is finalized after the first surviving attacker enters the captured post. From that point the captured post holds its ground until another force conquers it, even if its soldiers later march out or die elsewhere.
+- Enemy territory is likewise finalized after an AI raid captures a player military post; player civilian buildings inside the resulting enemy-owned territory burn.
 - Enemy non-military buildings inside the newly owned territory cells burn after that final territory recalculation. This includes the new cordon/frontier cells so captured posts carve out a clear local block of land.
 - Storage and output-buffer goods from burned enemy civilian buildings are dropped on the former building entrance/footprint cell for player pickup when possible.
-- Enemy workers tied to burned buildings retreat toward their headquarters when possible; otherwise they are removed.
+- Workers tied to burned buildings retreat toward their owning headquarters when possible; this includes player workers when enemy territory burns a player building.
 
 Enemy headquarters are military control points, not civilian burn targets. Capturing an enemy headquarters transfers its ownership to the player and leaves its storage in place, so it becomes a secondary player-owned storehouse. Surviving enemy military buildings remain enemy-owned and keep projecting territory until conquered separately.
 

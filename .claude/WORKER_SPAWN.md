@@ -34,6 +34,10 @@ Details: `.claude/BUILDING_WORKERS.md`.
 
 Road segment workers may be re-created at segment centers when deserializing old saves (`loadSaveData`). That is persistence repair, not a new HQ assignment.
 
+## Retreats from lost territory
+
+When territory changes strand player road workers or burn a player building, those workers should retreat toward the player HQ instead of being removed. Road workers first try the road network; if enemy frontier cleanup cut the road, `freeSegmentWorker` / `rerouteReturningWorkers` can fall back to off-road pathing to HQ. Workers attached to buildings destroyed by territory pressure use `detachWorkersForDestroyedBuilding(..., { retreatOwnerWorkers: true })`, which reveals concealed workers and sends them toward their owning faction's headquarters.
+
 ## When adding new workers
 
 Before merging:

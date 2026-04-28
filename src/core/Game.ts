@@ -48,7 +48,6 @@ import { planEnemyVillages, type EnemyVillagePlan, type EnemyVillageBuildingPlan
 
 const DEMOLITION_FIRE_DURATION_MS = 30_000;
 const DEMOLITION_SCORCH_DURATION_MS = 60_000;
-const ENEMY_ATTACK_RANGE_CELLS = 40;
 const ENEMY_ATTACK_DUEL_MS = 10_000;
 const ENEMY_ATTACK_FALLEN_MS = 2_000;
 
@@ -72,7 +71,9 @@ type AttackParticipant = {
 type ActiveEnemyAttack = {
   id: number;
   targetEntityId: number;
+  attackerFactionId: FactionId;
   targetFactionId: FactionId;
+  initiatedBy: 'player' | 'enemy';
   attackers: AttackParticipant[];
   defenders: AttackParticipant[];
   attackerQueue: number[];
@@ -158,6 +159,8 @@ export class Game {
   private enemyRealms: EnemyVillagePlan[] = [];
   private activeEnemyAttacks: ActiveEnemyAttack[] = [];
   private nextEnemyAttackId = 1;
+  private nextEnemyPressureCheckAt = 0;
+  private nextEnemyRoadMaintenanceAt = 0;
 
   private readonly frameHooks: Array<() => void> = [];
 
@@ -502,6 +505,8 @@ export class Game {
     this.territory.rebuildFrom(this.entities, this.baseCampEntity);
     this.territory.applyFogReveal(this.renderSystem);
     this.updateEnemyRealmActivation();
+    this.applyPlayerTerritoryPressureAftermath();
+    this.removeRoadsOnTerritoryFrontiers();
     this.territoryDirty = false;
   }
 
@@ -928,7 +933,11 @@ export class Game {
   }
 
   /** Shared demolition path for Delete key and erase tool. */
-  private destroyBuildingEntity(entity: Entity, demolishSound: 'demolish' | 'erase_demolition' = 'demolish'): void {
+  private destroyBuildingEntity(
+    entity: Entity,
+    demolishSound: 'demolish' | 'erase_demolition' = 'demolish',
+    opts?: { retreatOwnerWorkers?: boolean }
+  ): void {
     const pos = entity.getComponent(Position);
     const building = entity.getComponent(Building);
 
@@ -969,7 +978,7 @@ export class Game {
       building.assignedToolSpecialist = null;
     }
 
-    this.workers.detachWorkersForDestroyedBuilding(entity);
+    this.workers.detachWorkersForDestroyedBuilding(entity, opts);
 
     const entrance = building.getEntranceOffset();
 
@@ -2926,6 +2935,8 @@ export class Game {
     this.updateEnemyRealmDefeat();
 
     this.refreshTerritoryIfDirty();
+    this.updateEnemyBorderPressure();
+    this.updateEnemyRoadMaintenance();
 
     this.surveys.tick();
     this.renderSystem.setSurveyWorkerIdsOnTop(this.surveys.getActiveSurveyorWorkerIds());
@@ -3081,6 +3092,10 @@ export class Game {
     return { x: pos.x + Math.floor(building.width / 2), y: pos.y + Math.floor(building.height / 2) };
   }
 
+  private getEnemyAttackRangeCells(): number {
+    return dataManager.getGameConfig().enemyRealms.attacks.maxRangeCells;
+  }
+
   public getEnemyAttackOptions(targetEntity: Entity): EnemyAttackOptions {
     const empty: AttackRankSelection = { 1: 0, 2: 0, 3: 0 };
     if (!this.isEnemyAttackTarget(targetEntity)) {
@@ -3100,7 +3115,7 @@ export class Game {
       const center = this.getBuildingCenter(entity);
       if (!center) continue;
       const dist = Math.max(Math.abs(center.x - targetCenter.x), Math.abs(center.y - targetCenter.y));
-      if (dist > ENEMY_ATTACK_RANGE_CELLS) continue;
+      if (dist > this.getEnemyAttackRangeCells()) continue;
       for (const slot of building.militaryGarrison) {
         if (!slot) continue;
         availableByRank[slot.rank]++;
@@ -3153,7 +3168,9 @@ export class Game {
     const attack: ActiveEnemyAttack = {
       id: this.nextEnemyAttackId++,
       targetEntityId: targetEntity.id,
+      attackerFactionId: PLAYER_FACTION,
       targetFactionId,
+      initiatedBy: 'player',
       attackers,
       defenders,
       attackerQueue: attackers.map(a => a.workerEntityId),
@@ -3183,7 +3200,7 @@ export class Game {
         if (!building?.militaryGarrison || !this.isMilitaryBuilding(building)) return false;
         const center = this.getBuildingCenter(entity);
         if (!center) return false;
-        return Math.max(Math.abs(center.x - targetCenter.x), Math.abs(center.y - targetCenter.y)) <= ENEMY_ATTACK_RANGE_CELLS;
+        return Math.max(Math.abs(center.x - targetCenter.x), Math.abs(center.y - targetCenter.y)) <= this.getEnemyAttackRangeCells();
       })
       .sort((a, b) => {
         const ac = this.getBuildingCenter(a)!;
@@ -3404,11 +3421,660 @@ export class Game {
       movable.setPath(path.length > 0 ? path : [new Position(dest.x, dest.y)]);
     };
     attack.attackers.forEach((p, index) =>
-      moveTo(p, this.offsetAttackStaging(attack.staging.attacker, index, 'attacker'), PLAYER_FACTION, index)
+      moveTo(p, this.offsetAttackStaging(attack.staging.attacker, index, 'attacker'), attack.attackerFactionId, index)
     );
     attack.defenders.forEach((p, index) =>
       moveTo(p, this.offsetAttackStaging(attack.staging.defender, index, 'defender'), attack.targetFactionId, index)
     );
+  }
+
+  private updateEnemyBorderPressure(): void {
+    const attackConfig = dataManager.getGameConfig().enemyRealms.attacks;
+    if (!attackConfig.enabled || this.enemyRealms.length === 0) return;
+
+    const now = Date.now();
+    if (now < this.nextEnemyPressureCheckAt) return;
+    this.nextEnemyPressureCheckAt = now + attackConfig.checkIntervalMs;
+
+    for (const realm of this.enemyRealms) {
+      const aggressiveness = this.getRealmAggressiveness(realm);
+      if (aggressiveness <= 0 || realm.activated !== true) continue;
+      if (!this.factionTerritoriesTouch(realm.factionId, PLAYER_FACTION)) {
+        realm.nextAttackAt = undefined;
+        continue;
+      }
+
+      this.reinforceEnemyRealmGarrison(realm, now);
+
+      if (this.hasActiveAttackForFaction(realm.factionId)) continue;
+      const firstDelay = this.getAggressionTuningValue(
+        attackConfig.firstAttackDelayMsByAggressiveness,
+        aggressiveness,
+        Number.POSITIVE_INFINITY
+      );
+      if (realm.nextAttackAt === undefined) {
+        realm.nextAttackAt = Number.isFinite(firstDelay) ? now + firstDelay : Number.POSITIVE_INFINITY;
+        continue;
+      }
+      if (Number.isFinite(firstDelay) && realm.nextAttackAt > now + firstDelay) {
+        realm.nextAttackAt = now + firstDelay;
+      }
+      if (now < realm.nextAttackAt) continue;
+
+      const cooldown = this.getAggressionTuningValue(
+        attackConfig.cooldownMsByAggressiveness,
+        aggressiveness,
+        Number.POSITIVE_INFINITY
+      );
+      const attempted = this.startEnemyRealmAttack(realm);
+      realm.nextAttackAt = now + (attempted ? cooldown : Math.min(cooldown, attackConfig.checkIntervalMs * 6));
+    }
+  }
+
+  private getRealmAggressiveness(realm: EnemyVillagePlan): number {
+    const override = dataManager.getGameConfig().enemyRealms.debugAggressivenessOverride;
+    if (typeof override === 'number') {
+      return Math.max(0, Math.min(5, Math.floor(override)));
+    }
+    if (typeof realm.aggressivenessLevel === 'number') {
+      return Math.max(0, Math.min(5, Math.floor(realm.aggressivenessLevel)));
+    }
+    const index = this.enemyRealms.findIndex(r => r.factionId === realm.factionId);
+    const configured = dataManager.getGameConfig().enemyRealms.aggressivenessByVillageIndex[index] ?? 0;
+    realm.aggressivenessLevel = Math.max(0, Math.min(5, Math.floor(configured)));
+    return realm.aggressivenessLevel;
+  }
+
+  private getAggressionTuningValue(values: Record<number, number>, aggressiveness: number, fallback: number): number {
+    return values[aggressiveness] ?? values[Math.max(0, Math.min(5, aggressiveness))] ?? fallback;
+  }
+
+  private factionTerritoriesTouch(a: FactionId, b: FactionId): boolean {
+    const aLayer = this.territory.getLayer(a);
+    const bLayer = this.territory.getLayer(b);
+    if (aLayer.unionU.size === 0 || bLayer.unionU.size === 0) return false;
+    const dirs: readonly [number, number][] = [
+      [-1, 0],
+      [1, 0],
+      [0, -1],
+      [0, 1],
+    ];
+    for (const cell of aLayer.frontier) {
+      const [xRaw, yRaw] = cell.split(',');
+      const x = Number(xRaw);
+      const y = Number(yRaw);
+      for (const [dx, dy] of dirs) {
+        if (bLayer.unionU.has(`${x + dx},${y + dy}`)) return true;
+      }
+    }
+    return false;
+  }
+
+  private hasActiveAttackForFaction(factionId: FactionId): boolean {
+    return this.activeEnemyAttacks.some(attack =>
+      attack.phase !== 'complete' &&
+      (attack.attackerFactionId === factionId || attack.targetFactionId === factionId)
+    );
+  }
+
+  private startEnemyRealmAttack(realm: EnemyVillagePlan): boolean {
+    const target = this.findEnemyRealmAttackTarget(realm);
+    if (!target) return false;
+    const targetCenter = this.getBuildingCenter(target);
+    if (!targetCenter) return false;
+
+    const aggressiveness = this.getRealmAggressiveness(realm);
+    const attackConfig = dataManager.getGameConfig().enemyRealms.attacks;
+    const maxAttackers = this.getAggressionTuningValue(
+      attackConfig.maxAttackersByAggressiveness,
+      aggressiveness,
+      0
+    );
+    const attackers = this.claimFactionAttackers(realm.factionId, targetCenter, maxAttackers);
+    if (attackers.length === 0) return false;
+
+    this.ensureGarrisonWorkersForBuilding(target);
+    const defenders = this.claimDefendersForEnemyAttack(target);
+    const attack: ActiveEnemyAttack = {
+      id: this.nextEnemyAttackId++,
+      targetEntityId: target.id,
+      attackerFactionId: realm.factionId,
+      targetFactionId: PLAYER_FACTION,
+      initiatedBy: 'enemy',
+      attackers,
+      defenders,
+      attackerQueue: attackers.map(a => a.workerEntityId),
+      defenderQueue: defenders.map(d => d.workerEntityId),
+      currentAttackerId: null,
+      currentDefenderId: null,
+      phase: 'marching',
+      duelStartedAt: 0,
+      fallenUntil: 0,
+      fallenWorkerId: null,
+      staging: this.getAttackStagingTiles(target),
+      returnAssignments: [],
+    };
+    this.activeEnemyAttacks.push(attack);
+    this.marchAttackParticipants(attack);
+    eventBus.emit('toast', { message: 'Enemy raid sighted near the frontier.', duration: 10_000 });
+    return true;
+  }
+
+  private findEnemyRealmAttackTarget(realm: EnemyVillagePlan): Entity | null {
+    const enemySources = this.getFactionMilitaryCenters(realm.factionId);
+    if (enemySources.length === 0) return null;
+    const range = this.getEnemyAttackRangeCells();
+
+    const candidates = this.entities
+      .filter(entity => {
+        if (!entity.active || !isPlayerOwned(entity)) return false;
+        if (this.activeEnemyAttacks.some(attack => attack.targetEntityId === entity.id && attack.phase !== 'complete')) return false;
+        const building = entity.getComponent(Building);
+        return !!building?.isComplete() && this.isMilitaryBuilding(building);
+      })
+      .map(entity => {
+        const center = this.getBuildingCenter(entity);
+        const building = entity.getComponent(Building);
+        if (!center || !building) return null;
+        const nearest = Math.min(...enemySources.map(source =>
+          Math.max(Math.abs(source.x - center.x), Math.abs(source.y - center.y))
+        ));
+        if (nearest > range) return null;
+        return {
+          entity,
+          distance: nearest,
+          defenders: building.getMilitaryGarrisonFilledCount(),
+        };
+      })
+      .filter((entry): entry is { entity: Entity; distance: number; defenders: number } => entry !== null)
+      .sort((a, b) => a.distance - b.distance || a.defenders - b.defenders);
+
+    return candidates[0]?.entity ?? null;
+  }
+
+  private getFactionMilitaryCenters(factionId: FactionId): Array<{ entity: Entity; x: number; y: number }> {
+    return this.entities
+      .filter(entity => {
+        if (!entity.active || getEntityFaction(entity) !== factionId) return false;
+        if (this.hasMilitaryFromBuildingInActiveAttack(entity.id)) return false;
+        const building = entity.getComponent(Building);
+        return !!building?.isComplete() && this.isMilitaryBuilding(building) && building.getMilitaryGarrisonFilledCount() > 0;
+      })
+      .map(entity => {
+        const center = this.getBuildingCenter(entity);
+        return center ? { entity, ...center } : null;
+      })
+      .filter((entry): entry is { entity: Entity; x: number; y: number } => entry !== null);
+  }
+
+  private claimFactionAttackers(
+    factionId: FactionId,
+    targetCenter: { x: number; y: number },
+    maxCount: number
+  ): AttackParticipant[] {
+    if (maxCount <= 0) return [];
+    const claimed: AttackParticipant[] = [];
+    const sources = this.getFactionMilitaryCenters(factionId)
+      .filter(source => Math.max(Math.abs(source.x - targetCenter.x), Math.abs(source.y - targetCenter.y)) <= this.getEnemyAttackRangeCells())
+      .sort((a, b) => {
+        const ad = Math.max(Math.abs(a.x - targetCenter.x), Math.abs(a.y - targetCenter.y));
+        const bd = Math.max(Math.abs(b.x - targetCenter.x), Math.abs(b.y - targetCenter.y));
+        return ad - bd;
+      });
+
+    for (const source of sources) {
+      this.pruneInvalidMilitaryGarrisonSlots(source.entity);
+      const building = source.entity.getComponent(Building);
+      if (!building?.militaryGarrison) continue;
+      for (const rank of [3, 2, 1] as const) {
+        for (let i = 0; i < building.militaryGarrison.length; i++) {
+          const slot = building.militaryGarrison[i];
+          if (!slot || slot.rank !== rank) continue;
+          claimed.push({ workerEntityId: slot.workerEntityId, rank: slot.rank, sourceBuildingId: source.entity.id, sourceSlotIndex: i });
+          building.militaryGarrison[i] = null;
+          eventBus.emit('military:garrison_changed', { buildingEntityId: source.entity.id });
+          if (claimed.length >= maxCount) return claimed;
+        }
+      }
+    }
+    return claimed;
+  }
+
+  private reinforceEnemyRealmGarrison(realm: EnemyVillagePlan, now: number): void {
+    const attackConfig = dataManager.getGameConfig().enemyRealms.attacks;
+    if (
+      realm.lastReinforcedAt !== undefined &&
+      now - realm.lastReinforcedAt < attackConfig.garrisonReinforceIntervalMs
+    ) {
+      return;
+    }
+    realm.lastReinforcedAt = now;
+
+    let remaining = Math.max(0, attackConfig.garrisonReinforceCount);
+    if (remaining <= 0) return;
+    const rank = this.getEnemyReinforcementRank(this.getRealmAggressiveness(realm));
+    const posts = this.entities
+      .filter(entity => {
+        if (!entity.active || getEntityFaction(entity) !== realm.factionId) return false;
+        if (this.hasMilitaryFromBuildingInActiveAttack(entity.id)) return false;
+        const building = entity.getComponent(Building);
+        return !!building?.isComplete() && this.isMilitaryBuilding(building);
+      })
+      .sort((a, b) => {
+        const af = a.getComponent(Building)?.getMilitaryGarrisonFilledCount() ?? 0;
+        const bf = b.getComponent(Building)?.getMilitaryGarrisonFilledCount() ?? 0;
+        return af - bf;
+      });
+
+    for (const entity of posts) {
+      const building = entity.getComponent(Building);
+      const pos = entity.getComponent(Position);
+      if (!building || !pos) continue;
+      const cap = dataManager.getBuilding(building.buildingType)?.military?.soldierCapacity ?? 0;
+      building.initMilitaryGarrison(cap);
+      const slotIndex = building.findFreeMilitarySlotIndex();
+      if (slotIndex < 0) continue;
+
+      const soldier = createMilitaryWorker(pos.x + 0.5, pos.y + 0.5, rank);
+      setEntityFaction(soldier, realm.factionId);
+      const worker = soldier.getComponent(Worker);
+      if (worker) {
+        worker.concealedInBuildingId = entity.id;
+        worker.setState('idle');
+      }
+      this.addEntity(soldier);
+      building.militaryGarrison![slotIndex] = { rank, workerEntityId: soldier.id };
+      building.militaryTerritoryEstablished = true;
+      eventBus.emit('military:garrison_changed', { buildingEntityId: entity.id });
+      remaining--;
+      if (remaining <= 0) break;
+    }
+  }
+
+  private getEnemyReinforcementRank(aggressiveness: number): MilitaryRank {
+    if (aggressiveness >= 5) return 3;
+    if (aggressiveness >= 3) return 2;
+    return 1;
+  }
+
+  private updateEnemyRoadMaintenance(): void {
+    const config = dataManager.getGameConfig().enemyRealms.roadMaintenance;
+    if (!config.enabled || this.enemyRealms.length === 0) return;
+
+    const now = Date.now();
+    if (now < this.nextEnemyRoadMaintenanceAt) return;
+    this.nextEnemyRoadMaintenanceAt = now + config.intervalMs;
+
+    let repairsRemaining = Math.max(0, config.maxRepairsPerTick);
+    let forwardBarracksRemaining = Math.max(0, config.maxForwardBarracksPerTick);
+    if (repairsRemaining <= 0 && forwardBarracksRemaining <= 0) return;
+
+    for (const realm of this.enemyRealms) {
+      if (realm.activated !== true || !this.isEnemyRealmVisible(realm)) continue;
+      if (
+        forwardBarracksRemaining > 0 &&
+        this.buildForwardBarracksForIsolatedMilitary(realm, config.maxPathCells, config.forwardBarracksSearchRadius)
+      ) {
+        forwardBarracksRemaining--;
+      }
+      while (repairsRemaining > 0 && this.repairOneEnemyRoadConnection(realm, config.maxPathCells)) {
+        repairsRemaining--;
+      }
+      if (repairsRemaining <= 0 && forwardBarracksRemaining <= 0) break;
+    }
+  }
+
+  private isEnemyRealmVisible(realm: EnemyVillagePlan): boolean {
+    for (let y = realm.bounds.y; y < realm.bounds.y + realm.bounds.height; y++) {
+      for (let x = realm.bounds.x; x < realm.bounds.x + realm.bounds.width; x++) {
+        if (this.tileMap.getTile(x, y)?.isExplored()) return true;
+      }
+    }
+    return false;
+  }
+
+  private repairOneEnemyRoadConnection(realm: EnemyVillagePlan, maxPathCells: number): boolean {
+    const hq = this.findEnemyHeadquarters(realm.factionId);
+    if (!hq) return false;
+    const connectedRoads = this.getFactionHeadquartersConnectedRoads(realm.factionId, hq);
+    const disconnected = this.entities
+      .filter(entity => {
+        if (!entity.active || getEntityFaction(entity) !== realm.factionId) return false;
+        const building = entity.getComponent(Building);
+        const pos = entity.getComponent(Position);
+        if (!building || !pos || !building.requiresRoad) return false;
+        if (this.hasBuildingConnectedRoad(pos, building, connectedRoads)) return false;
+        return this.getEnemyRoadAnchorForBuilding(entity, realm.factionId) !== null;
+      })
+      .sort((a, b) => {
+        const ac = this.getBuildingCenter(a);
+        const bc = this.getBuildingCenter(b);
+        const ah = this.getBuildingCenter(this.findEnemyHeadquarters(realm.factionId) ?? a);
+        if (!ac || !bc || !ah) return 0;
+        const ad = Math.max(Math.abs(ac.x - ah.x), Math.abs(ac.y - ah.y));
+        const bd = Math.max(Math.abs(bc.x - ah.x), Math.abs(bc.y - ah.y));
+        return ad - bd;
+      });
+
+    for (const entity of disconnected) {
+      const target = this.getEnemyRoadAnchorForBuilding(entity, realm.factionId);
+      if (!target) continue;
+      const source = this.findNearestEnemyRoadCell(realm.factionId, target, realm.bounds, connectedRoads);
+      if (!source) continue;
+      const path = this.planEnemyRoadPath(source, target, realm.factionId);
+      if (path.length === 0 || path.length > maxPathCells) continue;
+
+      if (this.buildEnemyRoadPath(path, realm.factionId)) return true;
+    }
+    return false;
+  }
+
+  private findEnemyHeadquarters(factionId: FactionId): Entity | null {
+    return this.entities.find(entity => {
+      if (!entity.active || getEntityFaction(entity) !== factionId) return false;
+      return entity.getComponent(Building)?.buildingType === 'base_camp';
+    }) ?? null;
+  }
+
+  private getFactionHeadquartersConnectedRoads(factionId: FactionId, headquarters: Entity): Set<string> {
+    const connected = new Set<string>();
+    const pos = headquarters.getComponent(Position);
+    const building = headquarters.getComponent(Building);
+    if (!pos || !building) return connected;
+
+    const isNetworkRoad = (x: number, y: number): boolean => {
+      const tile = this.tileMap.getTile(x, y);
+      if (!tile?.hasRoad) return false;
+      if (!tile.isOccupied()) return this.territory.isInteriorCell(x, y, factionId);
+      const occupant = this.entities.find(entity => entity.id === tile.occupiedBy);
+      return !!occupant && getEntityFaction(occupant) === factionId;
+    };
+
+    const entrance = building.getEntranceOffset();
+    if (!entrance) return connected;
+    const queue: { x: number; y: number }[] = [];
+    const seed = (x: number, y: number): void => {
+      const key = `${x},${y}`;
+      if (connected.has(key) || !isNetworkRoad(x, y)) return;
+      connected.add(key);
+      queue.push({ x, y });
+    };
+    seed(pos.x + entrance.dx, pos.y + entrance.dy);
+
+    const dirs: readonly [number, number][] = [
+      [-1, 0],
+      [1, 0],
+      [0, -1],
+      [0, 1],
+    ];
+    while (queue.length > 0) {
+      const { x, y } = queue.shift()!;
+      for (const [dx, dy] of dirs) seed(x + dx, y + dy);
+    }
+    return connected;
+  }
+
+  private buildForwardBarracksForIsolatedMilitary(
+    realm: EnemyVillagePlan,
+    maxPathCells: number,
+    searchRadius: number
+  ): boolean {
+    const hq = this.findEnemyHeadquarters(realm.factionId);
+    if (!hq) return false;
+    const connectedRoads = this.getFactionHeadquartersConnectedRoads(realm.factionId, hq);
+    if (connectedRoads.size === 0) return false;
+
+    const isolatedPost = this.findIsolatedEnemyMilitaryPost(realm.factionId, hq, connectedRoads);
+    if (!isolatedPost) return false;
+
+    const targetAnchor = this.getEnemyRoadAnchorForBuilding(isolatedPost, realm.factionId);
+    const barracksSite = targetAnchor
+      ? this.findForwardBarracksSite(realm.factionId, isolatedPost, targetAnchor, searchRadius)
+      : null;
+    if (!barracksSite) return false;
+    if (this.hasEnemyBarracksNear(realm.factionId, isolatedPost, Math.max(6, Math.floor(searchRadius / 2)))) return false;
+
+    const barracksPlan: EnemyVillageBuildingPlan = {
+      type: 'barracks',
+      x: barracksSite.x,
+      y: barracksSite.y,
+      seedGarrison: true,
+      garrisonFillRatio: 1,
+      garrisonRank: this.getEnemyReinforcementRank(this.getRealmAggressiveness(realm)),
+    };
+    const barracks = this.placeEnemyBuilding(barracksPlan, realm.factionId, false);
+    if (!barracks) return false;
+
+    const barracksBuilding = barracks.getComponent(Building);
+    if (barracksBuilding) barracksBuilding.militaryTerritoryEstablished = true;
+    this.markTerritoryDirty();
+    this.refreshTerritoryIfDirty();
+
+    const barracksAnchor = this.getEnemyRoadAnchorForBuilding(barracks, realm.factionId);
+    const source = barracksAnchor
+      ? this.findNearestEnemyRoadCell(realm.factionId, barracksAnchor, realm.bounds, connectedRoads)
+      : null;
+    if (source && barracksAnchor) {
+      const path = this.planEnemyRoadPath(source, barracksAnchor, realm.factionId);
+      if (path.length > 0 && path.length <= maxPathCells) this.buildEnemyRoadPath(path, realm.factionId);
+    }
+
+    const refreshedConnectedRoads = this.getFactionHeadquartersConnectedRoads(realm.factionId, hq);
+    const isolatedStillDisconnected = (() => {
+      const pos = isolatedPost.getComponent(Position);
+      const building = isolatedPost.getComponent(Building);
+      return !!pos && !!building && !this.hasBuildingConnectedRoad(pos, building, refreshedConnectedRoads);
+    })();
+    if (isolatedStillDisconnected && barracksAnchor && targetAnchor) {
+      const path = this.planEnemyRoadPath(barracksAnchor, targetAnchor, realm.factionId);
+      if (path.length > 0 && path.length <= maxPathCells) this.buildEnemyRoadPath(path, realm.factionId);
+    }
+
+    this.updateBuildingRoadConnections();
+    eventBus.emit('toast', { message: 'Enemy realm builds a forward barracks.', type: 'warning' });
+    return true;
+  }
+
+  private findIsolatedEnemyMilitaryPost(
+    factionId: FactionId,
+    headquarters: Entity,
+    connectedRoads: Set<string>
+  ): Entity | null {
+    const hqCenter = this.getBuildingCenter(headquarters);
+    const candidates = this.entities
+      .filter(entity => {
+        if (!entity.active || entity === headquarters || getEntityFaction(entity) !== factionId) return false;
+        const building = entity.getComponent(Building);
+        const pos = entity.getComponent(Position);
+        if (!building || !pos || !building.isComplete() || !this.isMilitaryBuilding(building)) return false;
+        if (this.hasBuildingConnectedRoad(pos, building, connectedRoads)) return false;
+        return this.getEnemyRoadAnchorForBuilding(entity, factionId) !== null;
+      })
+      .sort((a, b) => {
+        const ac = this.getBuildingCenter(a);
+        const bc = this.getBuildingCenter(b);
+        if (!ac || !bc || !hqCenter) return 0;
+        return Math.abs(bc.x - hqCenter.x) + Math.abs(bc.y - hqCenter.y) -
+          (Math.abs(ac.x - hqCenter.x) + Math.abs(ac.y - hqCenter.y));
+      });
+    return candidates[0] ?? null;
+  }
+
+  private findForwardBarracksSite(
+    factionId: FactionId,
+    isolatedPost: Entity,
+    targetAnchor: { x: number; y: number },
+    searchRadius: number
+  ): { x: number; y: number } | null {
+    const def = dataManager.getBuilding('barracks');
+    const center = this.getBuildingCenter(isolatedPost);
+    if (!def || !center) return null;
+
+    let best: { x: number; y: number; score: number } | null = null;
+    const radius = Math.max(4, searchRadius);
+    const { width, height } = def.size;
+    for (let y = Math.max(0, Math.floor(center.y) - radius); y <= Math.min(this.tileMap.height - 1, Math.ceil(center.y) + radius); y++) {
+      for (let x = Math.max(0, Math.floor(center.x) - radius); x <= Math.min(this.tileMap.width - 1, Math.ceil(center.x) + radius); x++) {
+        if (!this.canPlaceEnemyBuildingAt(x, y, width, height, factionId)) continue;
+        const footprintCenter = { x: x + width / 2, y: y + height / 2 };
+        const distanceToPost = Math.abs(footprintCenter.x - center.x) + Math.abs(footprintCenter.y - center.y);
+        const distanceToAnchor = Math.abs(footprintCenter.x - targetAnchor.x) + Math.abs(footprintCenter.y - targetAnchor.y);
+        const frontierScore = this.distanceFromFactionFrontier(x, y, width, height, factionId);
+        const score = distanceToPost + distanceToAnchor * 0.5 + frontierScore * 0.35;
+        if (!best || score < best.score) best = { x, y, score };
+      }
+    }
+    return best ? { x: best.x, y: best.y } : null;
+  }
+
+  private hasEnemyBarracksNear(factionId: FactionId, target: Entity, radius: number): boolean {
+    const center = this.getBuildingCenter(target);
+    if (!center) return false;
+    return this.entities.some(entity => {
+      if (!entity.active || entity === target || getEntityFaction(entity) !== factionId) return false;
+      const building = entity.getComponent(Building);
+      const otherCenter = this.getBuildingCenter(entity);
+      if (!building || building.buildingType !== 'barracks' || !otherCenter) return false;
+      const distance = Math.abs(otherCenter.x - center.x) + Math.abs(otherCenter.y - center.y);
+      return distance <= radius;
+    });
+  }
+
+  private canPlaceEnemyBuildingAt(x: number, y: number, width: number, height: number, factionId: FactionId): boolean {
+    if (!this.canPlaceBuilding(x, y, width, height)) return false;
+    for (let dy = 0; dy < height; dy++) {
+      for (let dx = 0; dx < width; dx++) {
+        if (!this.territory.isInteriorCell(x + dx, y + dy, factionId)) return false;
+      }
+    }
+    return true;
+  }
+
+  private distanceFromFactionFrontier(x: number, y: number, width: number, height: number, factionId: FactionId): number {
+    let best = Number.POSITIVE_INFINITY;
+    const radius = 8;
+    for (let cy = Math.max(0, y - radius); cy <= Math.min(this.tileMap.height - 1, y + height + radius); cy++) {
+      for (let cx = Math.max(0, x - radius); cx <= Math.min(this.tileMap.width - 1, x + width + radius); cx++) {
+        if (!this.territory.getLayer(factionId).frontier.has(`${cx},${cy}`)) continue;
+        const distance = Math.abs(cx - (x + width / 2)) + Math.abs(cy - (y + height / 2));
+        if (distance < best) best = distance;
+      }
+    }
+    return Number.isFinite(best) ? best : radius + 1;
+  }
+
+  private getEnemyRoadAnchorForBuilding(entity: Entity, factionId: FactionId): { x: number; y: number } | null {
+    const pos = entity.getComponent(Position);
+    const building = entity.getComponent(Building);
+    if (!pos || !building) return null;
+
+    const candidates: Array<{ x: number; y: number }> = [];
+    const entrance = building.getEntranceOffset();
+    if (entrance) {
+      const ex = pos.x + entrance.dx;
+      const ey = pos.y + entrance.dy;
+      candidates.push(
+        { x: ex + 1, y: ey },
+        { x: ex, y: ey + 1 },
+        { x: ex, y: ey - 1 },
+        { x: ex - 1, y: ey },
+      );
+    }
+
+    const dirs: readonly [number, number][] = [
+      [-1, 0],
+      [1, 0],
+      [0, -1],
+      [0, 1],
+    ];
+    for (let dy = 0; dy < building.height; dy++) {
+      for (let dx = 0; dx < building.width; dx++) {
+        const x = pos.x + dx;
+        const y = pos.y + dy;
+        for (const [ox, oy] of dirs) candidates.push({ x: x + ox, y: y + oy });
+      }
+    }
+
+    return candidates.find(cell => this.canUseEnemyRoadPathCell(cell.x, cell.y, factionId)) ?? null;
+  }
+
+  private findNearestEnemyRoadCell(
+    factionId: FactionId,
+    target: { x: number; y: number },
+    bounds: { x: number; y: number; width: number; height: number },
+    connectedRoads?: Set<string>
+  ): { x: number; y: number } | null {
+    let best: { x: number; y: number; distance: number } | null = null;
+    if (connectedRoads) {
+      for (const key of connectedRoads) {
+        const [rawX, rawY] = key.split(',');
+        const x = Number(rawX);
+        const y = Number(rawY);
+        const tile = this.tileMap.getTile(x, y);
+        if (!tile?.hasRoad || tile.isOccupied()) continue;
+        const distance = Math.abs(x - target.x) + Math.abs(y - target.y);
+        if (!best || distance < best.distance) best = { x, y, distance };
+      }
+      return best ? { x: best.x, y: best.y } : null;
+    }
+
+    const minX = Math.max(0, bounds.x - 4);
+    const minY = Math.max(0, bounds.y - 4);
+    const maxX = Math.min(this.tileMap.width - 1, bounds.x + bounds.width + 4);
+    const maxY = Math.min(this.tileMap.height - 1, bounds.y + bounds.height + 4);
+
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        const tile = this.tileMap.getTile(x, y);
+        if (!tile?.hasRoad || tile.isOccupied()) continue;
+        if (!this.territory.isInteriorCell(x, y, factionId)) continue;
+        const distance = Math.abs(x - target.x) + Math.abs(y - target.y);
+        if (!best || distance < best.distance) best = { x, y, distance };
+      }
+    }
+    return best ? { x: best.x, y: best.y } : null;
+  }
+
+  private buildEnemyRoadPath(path: { x: number; y: number }[], factionId: FactionId): boolean {
+    let built = 0;
+    for (const cell of path) {
+      const tile = this.tileMap.getTile(cell.x, cell.y);
+      if (!tile || (tile.hasRoad && !tile.isOccupied())) continue;
+      if (!this.canUseEnemyRoadPathCell(cell.x, cell.y, factionId)) continue;
+      if (this.tileMap.buildRoad(cell.x, cell.y)) {
+        roadSegmentManager.addRoad(cell.x, cell.y);
+        built++;
+      }
+    }
+    if (built <= 0) return false;
+
+    roadSegmentManager.recalculate(this.tileMap);
+    this.recomputeTransportRoutes();
+    this.updateBuildingRoadConnections();
+    return true;
+  }
+
+  private planEnemyRoadPath(
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+    factionId: FactionId
+  ): { x: number; y: number }[] {
+    return this.pathFinder.findBuildableRoadPath(from, to, this.tileMap, {
+      canUseCell: (x, y) => this.canUseEnemyRoadPathCell(x, y, factionId),
+      isExistingRoad: (x, y) => {
+        const tile = this.tileMap.getTile(x, y);
+        return !!(tile?.hasRoad && !tile.isOccupied());
+      },
+    });
+  }
+
+  private canUseEnemyRoadPathCell(x: number, y: number, factionId: FactionId): boolean {
+    const tile = this.tileMap.getTile(x, y);
+    if (!tile) return false;
+    if (this.isDemolitionFireBlockingCell(x, y)) return false;
+    if (!this.territory.isInteriorCell(x, y, factionId)) return false;
+    if (tile.hasRoad && !tile.isOccupied()) return true;
+    return tile.terrain !== 'water' && tile.terrain !== 'mountain' && !tile.isOccupied();
   }
 
   private updateEnemyAttacks(): void {
@@ -3556,7 +4222,7 @@ export class Game {
       buildingEntityId: attack.targetEntityId,
       rank: this.getAttackParticipantRank(attack, id),
     })));
-    this.showAttackResultToast('Attack failed.', attack);
+    this.showAttackResultToast(attack.initiatedBy === 'enemy' ? 'Enemy attack repelled.' : 'Attack failed.', attack);
   }
 
   private finishEnemyAttackWin(attack: ActiveEnemyAttack): void {
@@ -3569,8 +4235,10 @@ export class Game {
 
     const survivingAttackers = [attack.currentAttackerId, ...attack.attackerQueue].filter((id): id is number => id != null);
     if (building.buildingType === 'base_camp') {
-      setEntityFaction(target, PLAYER_FACTION);
-      this.burnEnemyRealmAfterHqCapture(attack.targetFactionId);
+      setEntityFaction(target, attack.attackerFactionId);
+      if (attack.attackerFactionId === PLAYER_FACTION) {
+        this.burnEnemyRealmAfterHqCapture(attack.targetFactionId);
+      }
       this.startAttackReturn(attack, survivingAttackers.map(id => {
         const participant = attack.attackers.find(p => p.workerEntityId === id);
         return {
@@ -3579,12 +4247,18 @@ export class Game {
           rank: this.getAttackParticipantRank(attack, id),
         };
       }));
-      this.showAttackResultToast('Enemy headquarters captured.', attack);
+      this.showAttackResultToast(
+        attack.attackerFactionId === PLAYER_FACTION ? 'Enemy headquarters captured.' : 'Headquarters captured by enemy.',
+        attack
+      );
     } else {
-      setEntityFaction(target, PLAYER_FACTION);
+      setEntityFaction(target, attack.attackerFactionId);
       building.militaryTerritoryEstablished = false;
       this.startAttackReturn(attack, this.getCapturedMilitaryReturnAssignments(target, attack, survivingAttackers));
-      this.showAttackResultToast('Enemy military building captured.', attack);
+      this.showAttackResultToast(
+        attack.attackerFactionId === PLAYER_FACTION ? 'Enemy military building captured.' : 'Military building captured by enemy.',
+        attack
+      );
     }
     this.selectedEntity = null;
     this.updateSelectionUI();
@@ -3685,10 +4359,25 @@ export class Game {
       setEntityFaction(workerEntity, getEntityFaction(buildingEntity));
     }
     const target = this.entities.find(e => e.id === attack.targetEntityId && e.active);
-    if (target && isPlayerOwned(target) && this.isMilitaryBuilding(target.getComponent(Building))) {
+    if (
+      target &&
+      attack.attackerFactionId === PLAYER_FACTION &&
+      isPlayerOwned(target) &&
+      this.isMilitaryBuilding(target.getComponent(Building))
+    ) {
       this.markTerritoryDirty();
       this.refreshTerritoryIfDirty();
       this.applyConqueredTerritoryAftermath(attack.targetFactionId);
+    }
+    if (
+      target &&
+      attack.attackerFactionId !== PLAYER_FACTION &&
+      getEntityFaction(target) === attack.attackerFactionId &&
+      this.isMilitaryBuilding(target.getComponent(Building))
+    ) {
+      this.markTerritoryDirty();
+      this.refreshTerritoryIfDirty();
+      this.applyFactionTerritoryAftermath(attack.attackerFactionId, PLAYER_FACTION);
     }
     attack.phase = 'complete';
     this.markTerritoryDirty();
@@ -3763,7 +4452,7 @@ export class Game {
   private destroyConqueredEnemyCivilianBuilding(entity: Entity): void {
     const dropTile = this.getBuildingLootDropTile(entity);
     const resources = this.collectBuildingResources(entity);
-    this.destroyBuildingEntity(entity);
+    this.destroyBuildingEntity(entity, 'demolish', { retreatOwnerWorkers: true });
     if (dropTile) {
       const tile = this.tileMap.getTile(dropTile.x, dropTile.y);
       if (tile) tile.hasRoad = true;
@@ -3782,29 +4471,96 @@ export class Game {
     this.markTerritoryDirty();
   }
 
-  private applyConqueredTerritoryAftermath(enemyFactionId: FactionId): void {
-    const playerLayer = this.territory.getLayer(PLAYER_FACTION);
-    const playerOwnedCells = new Set<string>([
-      ...playerLayer.unionU,
-      ...playerLayer.frontier,
-      ...playerLayer.interior,
-    ]);
-    const toBurn = this.entities.filter(entity => {
-      if (!entity.active || getEntityFaction(entity) !== enemyFactionId) return false;
+  private applyPlayerTerritoryPressureAftermath(): void {
+    for (const factionId of ENEMY_FACTIONS) {
+      if (this.hasCivilianBuildingInFactionTerritory(factionId, PLAYER_FACTION)) {
+        this.applyConqueredTerritoryAftermath(factionId);
+      }
+    }
+  }
+
+  private hasCivilianBuildingInFactionTerritory(victimFactionId: FactionId, ownerFactionId: FactionId): boolean {
+    const ownedCells = this.getFactionOwnedCells(ownerFactionId);
+
+    return this.entities.some(entity => {
+      if (!entity.active || getEntityFaction(entity) !== victimFactionId) return false;
       const building = entity.getComponent(Building);
       const pos = entity.getComponent(Position);
       if (!building || !pos || building.buildingType === 'base_camp' || this.isMilitaryBuilding(building)) return false;
-      for (let dy = 0; dy < building.height; dy++) {
-        for (let dx = 0; dx < building.width; dx++) {
-          if (playerOwnedCells.has(`${pos.x + dx},${pos.y + dy}`)) return true;
-        }
-      }
-      return false;
+      return this.buildingFootprintTouchesCells(pos, building, ownedCells);
+    });
+  }
+
+  private applyConqueredTerritoryAftermath(enemyFactionId: FactionId): void {
+    this.applyFactionTerritoryAftermath(PLAYER_FACTION, enemyFactionId);
+  }
+
+  private applyFactionTerritoryAftermath(ownerFactionId: FactionId, victimFactionId: FactionId): void {
+    const ownedCells = this.getFactionOwnedCells(ownerFactionId);
+    const toBurn = this.entities.filter(entity => {
+      if (!entity.active || getEntityFaction(entity) !== victimFactionId) return false;
+      const building = entity.getComponent(Building);
+      const pos = entity.getComponent(Position);
+      if (!building || !pos || building.buildingType === 'base_camp' || this.isMilitaryBuilding(building)) return false;
+      return this.buildingFootprintTouchesCells(pos, building, ownedCells);
     });
     for (const entity of toBurn) this.destroyConqueredEnemyCivilianBuilding(entity);
-    this.removeOrRetreatEnemyWorkersInPlayerLand(enemyFactionId);
+    if (ownerFactionId === PLAYER_FACTION) {
+      this.removeOrRetreatEnemyWorkersInPlayerLand(victimFactionId);
+    }
     roadSegmentManager.recalculate(this.tileMap);
     this.recomputeTransportRoutes();
+  }
+
+  private getFactionOwnedCells(factionId: FactionId): Set<string> {
+    const layer = this.territory.getLayer(factionId);
+    return new Set<string>([
+      ...layer.unionU,
+      ...layer.frontier,
+      ...layer.interior,
+    ]);
+  }
+
+  private removeRoadsOnTerritoryFrontiers(): void {
+    const frontierCells = new Set<string>();
+    for (const factionId of this.territory.getFactionIds()) {
+      for (const cell of this.territory.getLayer(factionId).frontier) {
+        frontierCells.add(cell);
+      }
+    }
+
+    let changed = false;
+    for (const cell of frontierCells) {
+      const [xRaw, yRaw] = cell.split(',');
+      const x = Number(xRaw);
+      const y = Number(yRaw);
+      const tile = this.tileMap.getTile(x, y);
+      transportManager.clearItemsAt(x, y);
+      if (!tile?.hasRoad) continue;
+      tile.hasRoad = false;
+      roadSegmentManager.removeRoad(x, y);
+      changed = true;
+    }
+
+    if (changed) {
+      roadSegmentManager.recalculate(this.tileMap);
+      this.recomputeTransportRoutes();
+      this.updateBuildingRoadConnections();
+      this.workers.rerouteReturningWorkers();
+    }
+  }
+
+  private buildingFootprintTouchesCells(
+    pos: Position,
+    building: Building,
+    cells: ReadonlySet<string>
+  ): boolean {
+    for (let dy = 0; dy < building.height; dy++) {
+      for (let dx = 0; dx < building.width; dx++) {
+        if (cells.has(`${pos.x + dx},${pos.y + dy}`)) return true;
+      }
+    }
+    return false;
   }
 
   private removeOrRetreatEnemyWorkersInPlayerLand(enemyFactionId: FactionId): void {
@@ -3834,13 +4590,6 @@ export class Game {
         movable.setPath(path);
       }
     }
-  }
-
-  private findEnemyHeadquarters(enemyFactionId: FactionId): Entity | null {
-    return this.entities.find(entity => {
-      if (!entity.active || getEntityFaction(entity) !== enemyFactionId) return false;
-      return entity.getComponent(Building)?.buildingType === 'base_camp';
-    }) ?? null;
   }
 
   /** Highlight a grass tile while the “Send Surveyor” popover is open (canvas). */
@@ -4204,6 +4953,10 @@ export class Game {
     this.demolitionSites = [];
     this.nextDemolitionSiteId = 1;
     this.enemyRealms = [];
+    this.activeEnemyAttacks = [];
+    this.nextEnemyAttackId = 1;
+    this.nextEnemyPressureCheckAt = 0;
+    this.nextEnemyRoadMaintenanceAt = 0;
     this.syncDemolitionSitesToRender();
 
     this.wildlife.reset();
@@ -4238,6 +4991,10 @@ export class Game {
       this.demolitionSites = [];
       this.nextDemolitionSiteId = 1;
       this.enemyRealms = Array.isArray(saveData.enemyRealms) ? saveData.enemyRealms : [];
+      this.activeEnemyAttacks = [];
+      this.nextEnemyAttackId = 1;
+      this.nextEnemyPressureCheckAt = 0;
+      this.nextEnemyRoadMaintenanceAt = 0;
       this.syncDemolitionSitesToRender();
 
       if (saveData.wildlife) {

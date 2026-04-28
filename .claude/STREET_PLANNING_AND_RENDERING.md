@@ -13,6 +13,10 @@ Roads are still stored as plain `Tile.hasRoad` cells. The build tool and rendere
 
 Batch building calls `roadSegmentManager.addRoad` for new cells, then performs one segment recalculation and one building connection update. This avoids per-tile recalculation cost on long routes.
 
+## Building Connections
+
+Buildings are considered road-connected when a base-camp-connected road touches any cardinal edge of their footprint. The formal entrance tile still exists for building visuals and legacy routing, but connection status follows what the player sees at the building edge. `RoadSegmentManager` also treats roads beside any occupied building footprint as building endpoints, and worker dispatch resolves the same footprint-edge road so builders/operators do not target a disconnected fragment.
+
 ## Vector Road Rendering
 
 `src/debug/debugFlags.ts` exposes `ROAD_RENDERING_MODE`:

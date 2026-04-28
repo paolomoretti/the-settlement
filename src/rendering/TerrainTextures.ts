@@ -725,15 +725,144 @@ export class TerrainTextures {
     );
   }
 
-  drawRoad(ctx: CanvasRenderingContext2D, config: number, screenCenterX: number, screenCenterY: number): void {
-    const col = config % ROAD_COLS;
-    const row = Math.floor(config / ROAD_COLS);
+  private roadHash(tileX: number, tileY: number, salt: number): number {
+    let h = tileX * 374761393 + tileY * 668265263 + salt * 2246822519;
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  }
 
-    ctx.drawImage(
-      this.roadAtlas,
-      col * TILE_W, row * TILE_H, TILE_W, TILE_H,
-      screenCenterX - TILE_W / 2, screenCenterY - TILE_H / 2, TILE_W, TILE_H
-    );
+  private roadLocalPoint(bit: number): { x: number; y: number } {
+    const p = EDGE_MID[bit] ?? CENTER;
+    return { x: p.x - CENTER.x, y: p.y - CENTER.y };
+  }
+
+  private traceRoadPath(
+    ctx: CanvasRenderingContext2D,
+    connections: number[],
+    tileX: number,
+    tileY: number
+  ): void {
+    const wobbleX = (this.roadHash(tileX, tileY, 1) - 0.5) * 4.5;
+    const wobbleY = (this.roadHash(tileX, tileY, 2) - 0.5) * 2.5;
+    const hub = { x: wobbleX, y: wobbleY };
+
+    ctx.beginPath();
+    if (connections.length === 0) {
+      ctx.ellipse(hub.x, hub.y, 8, 4.2, 0, 0, Math.PI * 2);
+      return;
+    }
+
+    if (connections.length === 1) {
+      const end = this.roadLocalPoint(connections[0]!);
+      ctx.moveTo(hub.x, hub.y);
+      ctx.quadraticCurveTo(hub.x * 1.5, hub.y * 1.5, end.x, end.y);
+      return;
+    }
+
+    if (connections.length === 2) {
+      const a = this.roadLocalPoint(connections[0]!);
+      const b = this.roadLocalPoint(connections[1]!);
+      const opposite = (connections[0]! + 2) % 4 === connections[1]!;
+      const bend = opposite ? 0.75 : 1.25;
+      ctx.moveTo(a.x, a.y);
+      ctx.quadraticCurveTo(hub.x * bend, hub.y * bend, b.x, b.y);
+      return;
+    }
+
+    for (const bit of connections) {
+      const end = this.roadLocalPoint(bit);
+      ctx.moveTo(hub.x, hub.y);
+      ctx.quadraticCurveTo(hub.x * 1.25, hub.y * 1.25, end.x, end.y);
+    }
+  }
+
+  private drawRoadPebbles(
+    ctx: CanvasRenderingContext2D,
+    connections: number[],
+    tileX: number,
+    tileY: number
+  ): void {
+    const count = 2 + Math.floor(this.roadHash(tileX, tileY, 20) * 4);
+    const usableConnections = connections.length > 0 ? connections : [Math.floor(this.roadHash(tileX, tileY, 21) * 4)];
+    for (let i = 0; i < count; i++) {
+      const bit = usableConnections[i % usableConnections.length]!;
+      const end = this.roadLocalPoint(bit);
+      const t = 0.18 + this.roadHash(tileX, tileY, 30 + i) * 0.62;
+      const side = this.roadHash(tileX, tileY, 40 + i) - 0.5;
+      const len = Math.max(1, Math.hypot(end.x, end.y));
+      const nx = -end.y / len;
+      const ny = end.x / len;
+      const x = end.x * t + nx * side * 5.5;
+      const y = end.y * t + ny * side * 3.2;
+      const r = 0.8 + this.roadHash(tileX, tileY, 50 + i) * 1.2;
+      ctx.fillStyle = this.roadHash(tileX, tileY, 60 + i) > 0.5
+        ? 'rgba(111, 82, 48, 0.38)'
+        : 'rgba(235, 205, 155, 0.24)';
+      ctx.beginPath();
+      ctx.ellipse(x, y, r * 1.35, r * 0.72, this.roadHash(tileX, tileY, 70 + i) * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  drawRoad(
+    ctx: CanvasRenderingContext2D,
+    config: number,
+    screenCenterX: number,
+    screenCenterY: number,
+    tileX: number = 0,
+    tileY: number = 0
+  ): void {
+    if (config < 0) {
+      const col = config % ROAD_COLS;
+      const row = Math.floor(config / ROAD_COLS);
+      ctx.drawImage(
+        this.roadAtlas,
+        col * TILE_W, row * TILE_H, TILE_W, TILE_H,
+        screenCenterX - TILE_W / 2, screenCenterY - TILE_H / 2, TILE_W, TILE_H
+      );
+      return;
+    }
+
+    const connections: number[] = [];
+    for (let bit = 0; bit < 4; bit++) {
+      if (config & (1 << bit)) connections.push(bit);
+    }
+
+    ctx.save();
+    ctx.translate(screenCenterX, screenCenterY);
+    ctx.beginPath();
+    ctx.moveTo(0, -TILE_H / 2);
+    ctx.lineTo(TILE_W / 2, 0);
+    ctx.lineTo(0, TILE_H / 2);
+    ctx.lineTo(-TILE_W / 2, 0);
+    ctx.closePath();
+    ctx.clip();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    this.traceRoadPath(ctx, connections, tileX, tileY);
+    ctx.strokeStyle = 'rgba(78, 54, 31, 0.34)';
+    ctx.lineWidth = 13;
+    ctx.stroke();
+
+    this.traceRoadPath(ctx, connections, tileX, tileY);
+    ctx.strokeStyle = 'rgba(118, 82, 45, 0.74)';
+    ctx.lineWidth = 10;
+    ctx.stroke();
+
+    this.traceRoadPath(ctx, connections, tileX, tileY);
+    const warm = this.roadHash(tileX, tileY, 90);
+    ctx.strokeStyle = warm > 0.5 ? 'rgba(205, 171, 112, 0.96)' : 'rgba(190, 151, 96, 0.96)';
+    ctx.lineWidth = 7;
+    ctx.stroke();
+
+    this.traceRoadPath(ctx, connections, tileX, tileY);
+    ctx.strokeStyle = 'rgba(244, 222, 176, 0.23)';
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+
+    this.drawRoadPebbles(ctx, connections, tileX, tileY);
+    ctx.restore();
   }
 
   drawWater(

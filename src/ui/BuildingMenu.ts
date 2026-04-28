@@ -5,6 +5,8 @@
 import { Game } from '@/core/Game';
 import { dataManager } from '@/data/DataManager';
 import { BuildingDefinition, BuildingType } from '@/types/GameData';
+import '@fortawesome/fontawesome-free/css/fontawesome.min.css';
+import '@fortawesome/fontawesome-free/css/solid.min.css';
 
 export class BuildingMenu {
   private game: Game;
@@ -101,6 +103,9 @@ export class BuildingMenu {
   private createBuildingCard(building: BuildingDefinition): HTMLElement {
     const card = document.createElement('div');
     card.className = 'building-card';
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+    card.setAttribute('aria-label', `Build ${building.name}`);
 
     // Check affordability
     const canAfford = dataManager.canAfford(building.id, this.game.inventory);
@@ -114,14 +119,7 @@ export class BuildingMenu {
 
     const preview = document.createElement('div');
     preview.className = 'building-preview';
-    preview.style.width = '80px';
-    preview.style.height = '60px';
-    preview.style.borderRadius = '4px';
-    preview.style.marginBottom = '8px';
     preview.style.backgroundImage = `url(${spriteSrc})`;
-    preview.style.backgroundSize = 'cover';
-    preview.style.backgroundPosition = 'center';
-    preview.style.backgroundRepeat = 'no-repeat';
 
     const testImg = new Image();
     testImg.src = spriteSrc;
@@ -140,112 +138,89 @@ export class BuildingMenu {
     desc.className = 'building-description';
     desc.textContent = building.description;
 
-    // Size info
-    const sizeInfo = document.createElement('div');
-    sizeInfo.className = 'building-info';
-    sizeInfo.textContent = `Size: ${building.size.width}×${building.size.height}  ·  Build time: ${building.buildTime}s`;
-
-    // Build cost
-    const costSection = document.createElement('div');
-    costSection.className = 'building-cost';
-    costSection.innerHTML = '<strong>Cost:</strong>';
-
-    const costList = document.createElement('div');
-    costList.style.marginTop = '4px';
-
+    const metaRow = document.createElement('div');
+    metaRow.className = 'building-meta-row';
+    metaRow.appendChild(this.createMetaItem('fa-border-all', `${building.size.width}×${building.size.height}`, 'Size'));
+    metaRow.appendChild(this.createMetaSeparator());
+    metaRow.appendChild(this.createMetaItem('fa-clock', `${building.buildTime}s`, 'Build time'));
+    metaRow.appendChild(this.createMetaSeparator());
+    const costMeta = this.createMetaItem('fa-coins', '', 'Cost');
+    const costChips = document.createElement('span');
+    costChips.className = 'building-resource-chips';
     if (Object.keys(building.buildCost).length === 0) {
-      costList.textContent = 'Free';
+      costChips.textContent = 'Free';
     } else {
       Object.entries(building.buildCost).forEach(([resourceId, amount]) => {
         const resource = dataManager.getResource(resourceId as any);
         if (!resource) return;
-
-        const costItem = document.createElement('div');
-        costItem.className = 'cost-item';
-
         const available = this.game.inventory[resourceId] || 0;
-        const hasEnough = available >= amount;
-
-        costItem.innerHTML = `
-          <span style="color: ${hasEnough ? '#4caf50' : '#f44336'}">
-            ${hasEnough ? '✓' : '✗'}
-          </span>
-          <img src="/assets/resources/${resourceId}.png" class="resource-icon" onerror="this.style.display='none'">
-          <span>${resource.name}: ${amount}</span>
-          ${!hasEnough ? `<span style="color: #f44336; font-size: 10px;"> (need ${amount - available})</span>` : ''}
-        `;
-
-        costList.appendChild(costItem);
+        costChips.appendChild(this.createResourceChip(resourceId, amount, available >= amount));
       });
     }
-
-    costSection.appendChild(costList);
+    costMeta.appendChild(costChips);
+    metaRow.appendChild(costMeta);
 
     // Production info
+    const roleRow = document.createElement('div');
+    roleRow.className = 'building-role-row';
     if (building.production) {
-      const prodSection = document.createElement('div');
-      prodSection.className = 'building-production';
-
-      const outputs = Object.entries(building.production.outputs);
+      const outputs = Object.entries(building.production.outputs)
+        .filter(([id]) => !dataManager.getResource(id as any)?.virtualOutput);
       const inputs = building.production.inputs ? Object.entries(building.production.inputs) : [];
       const inputsAny = building.production.inputsAny ?? [];
-
       if (inputs.length > 0 || inputsAny.length > 0) {
-        // Conversion
-        const fixedParts = inputs
-          .filter(([, n]) => (n ?? 0) > 0)
-          .map(([id]) => {
-            const res = dataManager.getResource(id as any);
-            return `${res?.name || id}`;
-          });
-        const anyParts = inputsAny.map(g => {
-          const names = g.resourceTypes
-            .map(id => dataManager.getResource(id)?.name ?? id)
-            .join(' / ');
-          return g.amount > 1 ? `${g.amount}× (${names})` : `(${names})`;
-        });
-        const inputStr = [...fixedParts, ...anyParts].join(' + ');
-
-        const outputStr = outputs.map(([id, amt]) => {
-          const res = dataManager.getResource(id as any);
-          return `${amt} ${res?.name || id}`;
-        }).join(', ');
-
-        prodSection.innerHTML = `<strong>Converts:</strong><br>${inputStr} → ${outputStr}`;
-      } else {
-        // Production
-        const outputStr = outputs.map(([id, amt]) => {
-          const res = dataManager.getResource(id as any);
-          return `${amt} ${res?.name || id}`;
-        }).join(', ');
-
-        prodSection.innerHTML = `<strong>Produces:</strong><br>${outputStr} every ${building.production.productionTime}s`;
+        const inputRow = this.createRoleLine('is-requirement');
+        inputRow.appendChild(this.createRoleLabel('Input'));
+        inputRow.appendChild(this.createResourceChipGroup(inputs, inputsAny));
+        roleRow.appendChild(inputRow);
       }
-
-      costSection.appendChild(prodSection);
+      const outputRow = this.createRoleLine();
+      outputRow.appendChild(this.createRoleLabel('Output'));
+      outputRow.appendChild(this.createOutputChipGroup(outputs, building));
+      roleRow.appendChild(outputRow);
+    } else if (building.storage) {
+      const line = this.createRoleLine();
+      line.appendChild(this.createRoleLabel('Stores'));
+      const storesCoinsOnly =
+        building.storage.accepts?.length === 1 && building.storage.accepts[0] === 'gold_coin';
+      line.appendChild(this.createPlainRoleText(`${building.storage.capacity} ${storesCoinsOnly ? 'coins' : 'items'}`));
+      roleRow.appendChild(line);
+    } else if (building.military?.soldierCapacity) {
+      const line = this.createRoleLine();
+      line.appendChild(this.createRoleLabel('Garrisons'));
+      line.appendChild(this.createPlainRoleText(`${building.military.soldierCapacity} soldiers`));
+      roleRow.appendChild(line);
+    } else if (building.population?.provides) {
+      const line = this.createRoleLine();
+      const popBadge = document.createElement('span');
+      popBadge.className = 'building-pop-badge';
+      popBadge.append(`+${building.population.provides}`);
+      popBadge.appendChild(this.createInlineIcon('fa-user', 'population'));
+      line.appendChild(popBadge);
+      roleRow.appendChild(line);
+    } else {
+      const line = this.createRoleLine();
+      line.appendChild(this.createRoleLabel('Role'));
+      line.appendChild(this.createPlainRoleText(building.requiredTool ? 'Staffed workshop' : 'Utility building'));
+      roleRow.appendChild(line);
     }
 
     // Population requirements
-    if (building.population) {
-      const popSection = document.createElement('div');
-      popSection.className = 'building-info';
-
-      if (building.population.provides) {
-        popSection.innerHTML = `<strong>Housing:</strong> +${building.population.provides} population`;
-      }
-      if (building.population.requires) {
-        popSection.innerHTML = `<strong>Workers:</strong> ${building.population.requires} needed`;
-      }
-
-      costSection.appendChild(popSection);
+    if (building.population?.requires && !building.production) {
+      const popBadge = document.createElement('span');
+      popBadge.className = 'building-pop-badge';
+      popBadge.append(`${building.population.requires}`);
+      popBadge.appendChild(this.createInlineIcon('fa-user', 'population'));
+      const firstLine = roleRow.querySelector('.building-role-line') ?? roleRow;
+      firstLine.appendChild(popBadge);
     }
 
-    // Build button
-    const buildBtn = document.createElement('button');
-    buildBtn.className = 'build-button';
-    buildBtn.textContent = canAfford ? 'Build' : 'Place Site';
-
-    buildBtn.addEventListener('click', () => {
+    card.addEventListener('click', () => {
+      this.startBuilding(building.id);
+    });
+    card.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
       this.startBuilding(building.id);
     });
 
@@ -253,11 +228,141 @@ export class BuildingMenu {
     card.appendChild(preview);
     card.appendChild(name);
     card.appendChild(desc);
-    card.appendChild(sizeInfo);
-    card.appendChild(costSection);
-    card.appendChild(buildBtn);
+    card.appendChild(metaRow);
+    card.appendChild(roleRow);
 
     return card;
+  }
+
+  private createMetaItem(icon: string, text: string, label: string): HTMLElement {
+    const item = document.createElement('span');
+    item.className = 'building-meta-item';
+    item.title = label;
+    item.appendChild(this.createInlineIcon(icon, label));
+    if (text) item.append(text);
+    return item;
+  }
+
+  private createMetaSeparator(): HTMLElement {
+    const sep = document.createElement('span');
+    sep.className = 'building-meta-separator';
+    sep.textContent = '·';
+    return sep;
+  }
+
+  private createInlineIcon(icon: string, label: string): HTMLElement {
+    const i = document.createElement('i');
+    i.className = `fa-solid ${icon}`;
+    i.setAttribute('aria-hidden', 'true');
+    i.title = label;
+    return i;
+  }
+
+  private createRoleLine(extraClass = ''): HTMLElement {
+    const line = document.createElement('div');
+    line.className = `building-role-line${extraClass ? ` ${extraClass}` : ''}`;
+    return line;
+  }
+
+  private createResourceChip(resourceId: string, amount?: number, ok = true): HTMLElement {
+    const resource = dataManager.getResource(resourceId as any);
+    const chip = document.createElement('span');
+    chip.className = `building-resource-chip${ok ? '' : ' is-missing'}`;
+    chip.title = resource?.name ?? resourceId;
+
+    const img = document.createElement('img');
+    const fallbackSrc = `/assets/resources/${resourceId}.png`;
+    const primarySrc = resource?.icon || fallbackSrc;
+    img.src = primarySrc;
+    img.className = 'building-resource-icon';
+    const fallback = document.createElement('span');
+    fallback.className = 'building-resource-fallback';
+    fallback.textContent = this.getResourceFallbackText(resource?.name ?? resourceId);
+    fallback.hidden = true;
+    img.onload = () => { fallback.hidden = true; };
+    img.onerror = () => {
+      if (img.src !== new URL(fallbackSrc, window.location.origin).href) {
+        img.src = fallbackSrc;
+        return;
+      }
+      img.remove();
+      fallback.hidden = false;
+    };
+    chip.appendChild(img);
+    chip.appendChild(fallback);
+
+    if (typeof amount === 'number') {
+      const badge = document.createElement('span');
+      badge.className = 'building-resource-amount';
+      badge.textContent = `×${amount}`;
+      chip.appendChild(badge);
+    }
+
+    return chip;
+  }
+
+  private getResourceFallbackText(name: string): string {
+    return name
+      .split(/[\s_-]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map(part => part[0]?.toUpperCase() ?? '')
+      .join('') || '?';
+  }
+
+  private createRoleLabel(text: string): HTMLElement {
+    const label = document.createElement('span');
+    label.className = 'building-role-label';
+    label.textContent = text;
+    return label;
+  }
+
+  private createPlainRoleText(text: string): HTMLElement {
+    const value = document.createElement('span');
+    value.className = 'building-role-text';
+    value.textContent = text;
+    return value;
+  }
+
+  private createResourceChipGroup(
+    inputs: [string, number][],
+    inputsAny: NonNullable<BuildingDefinition['production']>['inputsAny']
+  ): HTMLElement {
+    const group = document.createElement('span');
+    group.className = 'building-resource-chips';
+
+    inputs
+      .filter(([, amount]) => amount > 0)
+      .forEach(([id, amount]) => group.appendChild(this.createResourceChip(id, amount)));
+
+    for (const anyGroup of inputsAny ?? []) {
+      const anyWrap = document.createElement('span');
+      anyWrap.className = 'building-any-resource-group';
+      anyGroup.resourceTypes.forEach((id, index) => {
+        if (index > 0) {
+          const slash = document.createElement('span');
+          slash.className = 'building-any-separator';
+          slash.textContent = '/';
+          anyWrap.appendChild(slash);
+        }
+        anyWrap.appendChild(this.createResourceChip(id, anyGroup.amount));
+      });
+      group.appendChild(anyWrap);
+    }
+
+    return group;
+  }
+
+  private createOutputChipGroup(outputs: [string, number][], building: BuildingDefinition): HTMLElement {
+    const group = document.createElement('span');
+    group.className = 'building-resource-chips building-output-chips';
+    outputs.forEach(([id, amount]) => group.appendChild(this.createResourceChip(id, amount)));
+    if (outputs.length === 0) {
+      const outputIds = Object.keys(building.production?.outputs ?? {});
+      const text = outputIds.includes('planted_tree') ? 'Plant trees' : 'Map effect';
+      group.appendChild(this.createPlainRoleText(text));
+    }
+    return group;
   }
 
   private startBuilding(buildingType: BuildingType): void {

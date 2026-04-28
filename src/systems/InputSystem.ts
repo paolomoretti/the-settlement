@@ -24,6 +24,8 @@ export class InputSystem {
   private dragStartGridPos: { x: number; y: number } | null = null;
   private spacebarPressed = false;
   private lastRoadBuildPos: { x: number; y: number } | null = null;
+  /** Last road cell intentionally placed; Shift-click uses it as point A for path building. */
+  private roadPathAnchorGridPos: { x: number; y: number } | null = null;
   private lastErasePos: { x: number; y: number } | null = null;
   /** Last known Shift key (for straight road row while dragging). */
   private shiftKeyHeld = false;
@@ -136,9 +138,17 @@ export class InputSystem {
       eventBus.emit('check:drag_selected', this.dragStartGridPos);
     }
 
-    // Place first road tile on mouse-down
+    // Place first road tile on mouse-down, or complete an anchored Shift road path.
     if (this.mode === 'build_road') {
-      eventBus.emit('build:road', { x: this.dragStartGridPos.x, y: this.dragStartGridPos.y });
+      if (shiftKey && this.roadPathAnchorGridPos) {
+        eventBus.emit('build:road_path', {
+          from: { ...this.roadPathAnchorGridPos },
+          to: { x: this.dragStartGridPos.x, y: this.dragStartGridPos.y }
+        });
+      } else {
+        eventBus.emit('build:road', { x: this.dragStartGridPos.x, y: this.dragStartGridPos.y });
+      }
+      this.roadPathAnchorGridPos = { ...this.dragStartGridPos };
       this.lastRoadBuildPos = { ...this.dragStartGridPos };
     }
 
@@ -169,7 +179,8 @@ export class InputSystem {
       this.isDragging &&
       this.mode === 'build_road' &&
       this.dragStartGridPos &&
-      shiftKey
+      shiftKey &&
+      !this.roadPathAnchorGridPos
     ) {
       const snapped = this.renderSystem.snapRoadHoverToAxisAlignedRow(
         this.dragStartGridPos.x,
@@ -196,6 +207,7 @@ export class InputSystem {
         // Drag selected entity in real-time
         eventBus.emit('drag:move', { x: this.hoverGridPos.x, y: this.hoverGridPos.y });
       } else if (this.mode === 'build_road') {
+        if (shiftKey && this.roadPathAnchorGridPos) return;
         const gx = this.hoverGridPos.x;
         const gy = this.hoverGridPos.y;
         if (!this.lastRoadBuildPos || gx !== this.lastRoadBuildPos.x || gy !== this.lastRoadBuildPos.y) {
@@ -333,6 +345,9 @@ export class InputSystem {
 
   setMode(mode: InputMode): void {
     this.mode = mode;
+    if (mode !== 'build_road') {
+      this.roadPathAnchorGridPos = null;
+    }
     if (!this.spacebarPressed) {
       this.canvas.style.cursor = mode === 'erase' ? 'crosshair' : 'default';
     }
@@ -356,6 +371,12 @@ export class InputSystem {
   getRoadDragAnchorGrid(): { x: number; y: number } | null {
     if (this.mode !== 'build_road' || !this.isDragging || !this.dragStartGridPos) return null;
     return { ...this.dragStartGridPos };
+  }
+
+  /** Point A for Shift-click road planning. Persists across road clicks while in road mode. */
+  getRoadPathAnchorGrid(): { x: number; y: number } | null {
+    if (this.mode !== 'build_road' || !this.roadPathAnchorGridPos) return null;
+    return { ...this.roadPathAnchorGridPos };
   }
 
   getHoverClientPos(): { x: number; y: number } | null {

@@ -90,6 +90,7 @@ Not yet implemented: tool requirements for workers, mine food system (bread/fish
 - [Production Animation](.claude/PRODUCTION_ANIMATION.md) - **Worker animation during production** — woodcutter leaves building, chops tree, terrain changes, returns
 - [Demolition Fire](.claude/DEMOLITION_FIRE.md) - **Building deletion aftermath** — 30s blocking fire, 60s cosmetic scorch, save/load behavior
 - [Worker spawn rules](.claude/WORKER_SPAWN.md) - **HQ-assigned workers** — spawn at base camp road, walk in; never appear at the job site without travel
+- [Street planning & vector roads](.claude/STREET_PLANNING_AND_RENDERING.md) - **Shift A-to-B road planning + vector road visuals** — buildable-road A*, batch placement, mask-derived curved road drawing, worker visual alignment
 - [Debug asset catalogue](.claude/DEBUG_CATALOGUE.md) - **`/debug.html`** — building sprite maps + worker preview grid; **must stay in sync** when adding/changing building PNGs, construction/production frames, or new worker visual cases
 
 **Convention**: Every time new logic is added to the game, document it in `.claude/` and reference it here. Future agents and chats rely on these docs to understand how systems work without re-explanation.

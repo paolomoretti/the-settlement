@@ -407,6 +407,8 @@ export class Game {
   private setupEventListeners(): void {
     // Building events
     eventBus.on('build:road', (data) => this.buildRoad(data.x, data.y));
+    eventBus.on('build:road_path', (data: { from: { x: number; y: number }; to: { x: number; y: number } }) =>
+      this.buildRoadPath(data.from, data.to));
     eventBus.on('road:drag_end', () => { this.roadDragMode = null; });
     eventBus.on('erase:tile', (data: { x: number; y: number }) => this.eraseAt(data.x, data.y));
 
@@ -532,6 +534,15 @@ export class Game {
       roadSegmentManager.recalculate(this.tileMap);
       this.recomputeTransportRoutes();
     }, 200);
+  }
+
+  private flushSegmentRecalc(): void {
+    if (this.segmentRecalcTimer) {
+      clearTimeout(this.segmentRecalcTimer);
+      this.segmentRecalcTimer = null;
+    }
+    roadSegmentManager.recalculate(this.tileMap);
+    this.recomputeTransportRoutes();
   }
 
   /**
@@ -766,6 +777,55 @@ export class Game {
         this.updateBuildingRoadConnections();
       }
     }
+  }
+
+  private canUseRoadPathCell(x: number, y: number): boolean {
+    const tile = this.tileMap.getTile(x, y);
+    if (!tile || !tile.isExplored()) return false;
+    if (this.isDemolitionFireBlockingCell(x, y)) return false;
+    this.refreshTerritoryIfDirty();
+    if (!this.territory.isInteriorCell(x, y, PLAYER_FACTION)) return false;
+    if (tile.hasRoad && !tile.isOccupied()) return true;
+    return tile.terrain !== 'water' && tile.terrain !== 'mountain' && !tile.isOccupied();
+  }
+
+  private planRoadPath(
+    from: { x: number; y: number },
+    to: { x: number; y: number }
+  ): { x: number; y: number }[] {
+    return this.pathFinder.findBuildableRoadPath(from, to, this.tileMap, {
+      canUseCell: (x, y) => this.canUseRoadPathCell(x, y),
+      isExistingRoad: (x, y) => {
+        const tile = this.tileMap.getTile(x, y);
+        return !!(tile?.hasRoad && !tile.isOccupied());
+      },
+    });
+  }
+
+  private buildRoadPath(from: { x: number; y: number }, to: { x: number; y: number }): void {
+    const path = this.planRoadPath(from, to);
+    if (path.length === 0) {
+      eventBus.emit('build:failed', { reason: 'No valid road path' });
+      return;
+    }
+
+    this.roadDragMode = 'create';
+    let built = 0;
+    for (const cell of path) {
+      const tile = this.tileMap.getTile(cell.x, cell.y);
+      if (!tile || (tile.hasRoad && !tile.isOccupied())) continue;
+      if (!this.canUseRoadPathCell(cell.x, cell.y)) continue;
+      if (this.tileMap.buildRoad(cell.x, cell.y)) {
+        roadSegmentManager.addRoad(cell.x, cell.y);
+        built++;
+      }
+    }
+
+    this.roadDragMode = null;
+    if (built === 0) return;
+    audioManager.playSound('road_build');
+    this.flushSegmentRecalc();
+    this.updateBuildingRoadConnections();
   }
 
   private findBuildingEntityAt(x: number, y: number): Entity | null {
@@ -2687,13 +2747,16 @@ export class Game {
         const t = this.tileMap.getTile(gx, gy);
         const isExistingRoad = !!(t && t.hasRoad && !t.isOccupied());
         roadDragIntent = this.roadDragMode ?? (isExistingRoad ? 'delete' : 'create');
-        if (
-          this.inputSystem.isPointerDragging() &&
-          this.inputSystem.getShiftKeyHeld()
-        ) {
-          const anchor = this.inputSystem.getRoadDragAnchorGrid();
-          if (anchor && (anchor.x !== gx || anchor.y !== gy)) {
-            roadLineTiles = axisAlignedGridLine(anchor.x, anchor.y, gx, gy);
+        if (this.inputSystem.getShiftKeyHeld()) {
+          const pathAnchor = this.inputSystem.getRoadPathAnchorGrid();
+          if (pathAnchor && (pathAnchor.x !== gx || pathAnchor.y !== gy)) {
+            roadLineTiles = this.planRoadPath(pathAnchor, { x: gx, y: gy });
+            roadDragIntent = 'create';
+          } else if (this.inputSystem.isPointerDragging()) {
+            const dragAnchor = this.inputSystem.getRoadDragAnchorGrid();
+            if (dragAnchor && (dragAnchor.x !== gx || dragAnchor.y !== gy)) {
+              roadLineTiles = axisAlignedGridLine(dragAnchor.x, dragAnchor.y, gx, gy);
+            }
           }
         }
       }

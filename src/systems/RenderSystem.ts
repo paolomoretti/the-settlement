@@ -411,6 +411,7 @@ export class RenderSystem extends System {
 
     // Render tiles
     this.renderTiles();
+    this.renderRoads(this.getViewportBounds());
     this.renderDemolitionScorches(this.getViewportBounds());
     this.renderFishJumps();
 
@@ -450,9 +451,9 @@ export class RenderSystem extends System {
       const outX = ex + 1;
       const outY = ey;
       const entranceCenter = this.iso.gridToScreen(ex, ey);
-      this.terrainTextures.drawRoad(this.ctx, 4, entranceCenter.x, entranceCenter.y);
+      this.terrainTextures.drawRoad(this.ctx, 4, entranceCenter.x, entranceCenter.y, ex, ey);
       const outCenter = this.iso.gridToScreen(outX, outY);
-      this.terrainTextures.drawRoad(this.ctx, 1, outCenter.x, outCenter.y);
+      this.terrainTextures.drawRoad(this.ctx, 1, outCenter.x, outCenter.y, outX, outY);
       const corners = this.iso.getTileCorners(outX, outY);
       this.ctx.beginPath();
       this.ctx.moveTo(corners[0].x, corners[0].y);
@@ -1197,7 +1198,7 @@ export class RenderSystem extends System {
       }
       this.ctx.save();
       this.ctx.globalAlpha = alpha;
-      this.terrainTextures.drawRoad(this.ctx, mask, center.x, center.y);
+      this.terrainTextures.drawRoad(this.ctx, mask, center.x, center.y, x, y);
       this.ctx.restore();
     }
 
@@ -1574,6 +1575,18 @@ export class RenderSystem extends System {
     }
   }
 
+  private renderRoads(viewportBounds: { minX: number; maxX: number; minY: number; maxY: number }): void {
+    for (let y = viewportBounds.minY; y <= viewportBounds.maxY; y++) {
+      for (let x = viewportBounds.minX; x <= viewportBounds.maxX; x++) {
+        const tile = this.tileMap.getTile(x, y);
+        if (!tile?.isExplored() || !tile.hasRoad) continue;
+        const center = this.iso.gridToScreen(x, y);
+        const config = this.getRoadConfig(x, y);
+        this.terrainTextures.drawRoad(this.ctx, config, center.x, center.y, x, y);
+      }
+    }
+  }
+
   private renderFogOcclusion(viewportBounds: { minX: number; maxX: number; minY: number; maxY: number }): void {
     this.ctx.save();
     this.ctx.fillStyle = '#050607';
@@ -1942,6 +1955,120 @@ export class RenderSystem extends System {
     let h = x * 374761393 + y * 668265263 + salt * 1274126177;
     h = ((h ^ (h >> 13)) * 1274126177) >>> 0;
     return h / 4294967296;
+  }
+
+  private roadVisualHash(x: number, y: number, salt: number): number {
+    let h = x * 374761393 + y * 668265263 + salt * 2246822519;
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  }
+
+  private roadVisualHub(gx: number, gy: number): { x: number; y: number } {
+    return {
+      x: (this.roadVisualHash(gx, gy, 1) - 0.5) * 4.5,
+      y: (this.roadVisualHash(gx, gy, 2) - 0.5) * 2.5,
+    };
+  }
+
+  private roadEdgeLocalForStep(dx: number, dy: number): { x: number; y: number } | null {
+    if (dx < 0 && dy === 0) return { x: -16, y: -8 };
+    if (dx === 0 && dy < 0) return { x: 16, y: -8 };
+    if (dx > 0 && dy === 0) return { x: 16, y: 8 };
+    if (dx === 0 && dy > 0) return { x: -16, y: 8 };
+    return null;
+  }
+
+  private quadraticPoint(
+    a: { x: number; y: number },
+    c: { x: number; y: number },
+    b: { x: number; y: number },
+    t: number
+  ): { x: number; y: number } {
+    const u = 1 - t;
+    return {
+      x: u * u * a.x + 2 * u * t * c.x + t * t * b.x,
+      y: u * u * a.y + 2 * u * t * c.y + t * t * b.y,
+    };
+  }
+
+  private sampleQuadraticByLength(
+    a: { x: number; y: number },
+    c: { x: number; y: number },
+    b: { x: number; y: number },
+    distance: number,
+    steps: number = 10
+  ): { point: { x: number; y: number }; length: number } {
+    let prev = a;
+    const samples: Array<{ point: { x: number; y: number }; length: number }> = [{ point: a, length: 0 }];
+    let total = 0;
+    for (let i = 1; i <= steps; i++) {
+      const point = this.quadraticPoint(a, c, b, i / steps);
+      total += Math.hypot(point.x - prev.x, point.y - prev.y);
+      samples.push({ point, length: total });
+      prev = point;
+    }
+
+    const d = Math.max(0, Math.min(total, distance));
+    for (let i = 1; i < samples.length; i++) {
+      const before = samples[i - 1]!;
+      const after = samples[i]!;
+      if (after.length < d) continue;
+      const span = Math.max(0.0001, after.length - before.length);
+      const t = (d - before.length) / span;
+      return {
+        point: {
+          x: before.point.x + (after.point.x - before.point.x) * t,
+          y: before.point.y + (after.point.y - before.point.y) * t,
+        },
+        length: total,
+      };
+    }
+
+    return { point: b, length: total };
+  }
+
+  private getRoadWalkScreenPosition(movable: Movable): { x: number; y: number } | null {
+    if (!movable.isMoving) return null;
+    const target = movable.getCurrentTarget();
+    if (!target) return null;
+    const sx = Math.floor(movable.segmentStartX);
+    const sy = Math.floor(movable.segmentStartY);
+    const tx = Math.floor(target.x);
+    const ty = Math.floor(target.y);
+    const dx = tx - sx;
+    const dy = ty - sy;
+    if (Math.abs(dx) + Math.abs(dy) !== 1) return null;
+    const startTile = this.tileMap.getTile(sx, sy);
+    const targetTile = this.tileMap.getTile(tx, ty);
+    if (!startTile?.hasRoad || !targetTile?.hasRoad) return null;
+
+    const sharedEdge = this.roadEdgeLocalForStep(dx, dy);
+    if (!sharedEdge) return null;
+    const startCenter = this.iso.gridToScreen(sx, sy);
+    const targetCenter = this.iso.gridToScreen(tx, ty);
+    const startHub = this.roadVisualHub(sx, sy);
+    const targetHub = this.roadVisualHub(tx, ty);
+    const p = Math.max(0, Math.min(1, movable.progress));
+    const targetEdge = { x: -sharedEdge.x, y: -sharedEdge.y };
+
+    const first = {
+      a: { x: startCenter.x + startHub.x, y: startCenter.y + startHub.y },
+      c: { x: startCenter.x + startHub.x * 1.25, y: startCenter.y + startHub.y * 1.25 },
+      b: { x: startCenter.x + sharedEdge.x, y: startCenter.y + sharedEdge.y },
+    };
+    const second = {
+      a: { x: targetCenter.x + targetEdge.x, y: targetCenter.y + targetEdge.y },
+      c: { x: targetCenter.x + targetHub.x * 1.25, y: targetCenter.y + targetHub.y * 1.25 },
+      b: { x: targetCenter.x + targetHub.x, y: targetCenter.y + targetHub.y },
+    };
+
+    const firstLen = this.sampleQuadraticByLength(first.a, first.c, first.b, Infinity).length;
+    const secondLen = this.sampleQuadraticByLength(second.a, second.c, second.b, Infinity).length;
+    const travel = p * (firstLen + secondLen);
+    if (travel <= firstLen) {
+      return this.sampleQuadraticByLength(first.a, first.c, first.b, travel).point;
+    }
+    return this.sampleQuadraticByLength(second.a, second.c, second.b, travel - firstLen).point;
   }
 
   private findMountainBlocks(
@@ -2927,11 +3054,6 @@ export class RenderSystem extends System {
       }
     }
 
-    if (tile.hasRoad) {
-      const config = this.getRoadConfig(tile.x, tile.y);
-      this.terrainTextures.drawRoad(this.ctx, config, center.x, center.y);
-    }
-
     if (
       this.insightHighlightRock &&
       this.insightHighlightRock.x === tile.x &&
@@ -3094,6 +3216,7 @@ export class RenderSystem extends System {
     const pos = entity.getComponent(Position)!;
     const renderable = entity.getComponent(Renderable)!;
     const building = entity.getComponent(Building);
+    const movableForRoad = entity.getComponent(Movable) ?? null;
 
     // Check if this entity is selected
     const isSelected = this.selectedEntityId === entity.id;
@@ -3102,7 +3225,10 @@ export class RenderSystem extends System {
     const renderX = (isSelected && this.dragPreviewPosition) ? this.dragPreviewPosition.x : pos.x;
     const renderY = (isSelected && this.dragPreviewPosition) ? this.dragPreviewPosition.y : pos.y;
 
-    const screenPos = this.iso.gridToScreen(renderX, renderY);
+    let screenPos = this.iso.gridToScreen(renderX, renderY);
+    if (!building && entity.hasComponent(Worker) && movableForRoad) {
+      screenPos = this.getRoadWalkScreenPosition(movableForRoad) ?? screenPos;
+    }
     const offsetX = renderable.offsetX;
     const offsetY = renderable.offsetY;
 

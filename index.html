@@ -1071,19 +1071,25 @@
     }
 
     .building-card {
-      background: rgba(255, 255, 255, 0.05);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(0, 0, 0, 0.18));
       border: 2px solid #4a6741;
       border-radius: 8px;
-      padding: 15px;
+      padding: 12px;
       transition: all 0.3s;
       cursor: pointer;
+      min-height: 252px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
 
-    .building-card:hover {
+    .building-card:hover,
+    .building-card:focus-visible {
       background: rgba(255, 255, 255, 0.08);
       border-color: #6b8e5f;
       transform: translateY(-2px);
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      outline: none;
     }
 
     .building-card.unaffordable {
@@ -1098,91 +1104,184 @@
     .building-preview {
       margin: 0 auto;
       border: 2px solid rgba(255, 255, 255, 0.2);
+      width: 150px;
+      height: 104px;
+      border-radius: 6px;
+      background-size: contain;
+      background-position: center bottom;
+      background-repeat: no-repeat;
+      background-color: rgba(0, 0, 0, 0.24);
+      box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.28);
     }
 
     .building-name {
       font-size: 14px;
       font-weight: bold;
       color: #ffff00;
-      margin-bottom: 6px;
+      margin-bottom: 0;
       text-align: center;
     }
 
     .building-description {
       font-size: 10px;
       color: #aaa;
-      margin-bottom: 10px;
+      margin-bottom: 0;
       text-align: center;
       line-height: 1.4;
+      min-height: 28px;
     }
 
-    .building-info {
+    .building-meta-row,
+    .building-role-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 6px;
       font-size: 11px;
       color: #ccc;
-      margin: 6px 0;
     }
 
-    .building-cost {
-      font-size: 11px;
-      margin: 10px 0;
-      padding: 8px;
+    .building-meta-row {
+      padding: 7px 8px;
       background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 4px;
     }
 
-    .building-cost strong {
-      color: #ffff00;
-    }
-
-    .cost-item {
-      margin: 4px 0;
-      display: flex;
+    .building-meta-item,
+    .building-pop-badge,
+    .building-cadence {
+      display: inline-flex;
       align-items: center;
-      gap: 6px;
-      font-size: 10px;
+      gap: 4px;
+      white-space: nowrap;
     }
 
-    .building-production {
-      margin-top: 8px;
-      padding-top: 8px;
-      border-top: 1px solid #444;
+    .building-meta-item i,
+    .building-role-label,
+    .building-pop-badge i,
+    .building-cadence i {
+      color: #d7b46a;
+    }
+
+    .building-meta-separator {
+      color: #6f6246;
+    }
+
+    .building-resource-chips {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .building-resource-chip {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 999px;
+      background: rgba(84, 63, 35, 0.8);
+      border: 1px solid rgba(222, 190, 111, 0.36);
+      box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.45);
+    }
+
+    .building-resource-chip.is-missing {
+      border-color: rgba(239, 83, 80, 0.75);
+      background: rgba(82, 25, 24, 0.78);
+      filter: saturate(0.8);
+    }
+
+    .building-resource-icon {
+      width: 19px;
+      height: 19px;
+      object-fit: contain;
+      image-rendering: auto;
+    }
+
+    .building-resource-fallback {
+      color: #f4dca0;
+      font-size: 9px;
+      line-height: 1;
+      font-weight: bold;
+      letter-spacing: -0.04em;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+    }
+
+    .building-resource-amount {
+      position: absolute;
+      right: -5px;
+      bottom: -5px;
+      min-width: 14px;
+      height: 14px;
+      padding: 0 2px;
+      border-radius: 999px;
+      background: #1e160f;
+      border: 1px solid rgba(255, 226, 135, 0.52);
+      color: #fff3c4;
+      font-size: 8px;
+      line-height: 13px;
+      text-align: center;
+      font-weight: bold;
+    }
+
+    .building-role-row {
+      flex-direction: column;
+      min-height: 30px;
+      padding-top: 2px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
       font-size: 10px;
       color: #9acd32;
     }
 
-    .building-production strong {
+    .building-role-line {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 6px;
+      width: 100%;
+    }
+
+    .building-role-label {
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: bold;
       color: #7cb342;
     }
 
-    .build-button {
-      width: 100%;
-      margin-top: 10px;
-      padding: 10px;
-      font-size: 13px;
-      background: #4a6741;
-      border: 2px solid #6b8e5f;
-      color: white;
-      font-weight: bold;
-      cursor: pointer;
-      border-radius: 4px;
-      transition: all 0.2s;
+    .building-role-line.is-requirement .building-role-label,
+    .building-role-line.is-requirement .building-resource-chip {
+      color: #9acd32;
+      border-color: rgba(124, 179, 66, 0.58);
     }
 
-    .build-button:hover:not(:disabled) {
-      background: #5a7751;
-      transform: scale(1.02);
+    .building-role-text {
+      color: #ddd;
     }
 
-    .build-button:active:not(:disabled) {
-      background: #3a5731;
-      transform: scale(0.98);
+    .building-any-resource-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
     }
 
-    .build-button:disabled {
-      background: #444;
-      border-color: #666;
-      color: #888;
-      cursor: not-allowed;
+    .building-any-separator {
+      color: #88795a;
+      font-size: 11px;
+    }
+
+    .building-output-chips {
+      gap: 8px;
+    }
+
+    .building-cadence {
+      color: #b9aa83;
+      margin-left: 2px;
     }
 
     /*

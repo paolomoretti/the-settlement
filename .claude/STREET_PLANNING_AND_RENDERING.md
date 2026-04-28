@@ -15,6 +15,13 @@ Batch building calls `roadSegmentManager.addRoad` for new cells, then performs o
 
 ## Vector Road Rendering
 
+`src/debug/debugFlags.ts` exposes `ROAD_RENDERING_MODE`:
+
+- `'vector'` uses the curved/linearized renderer and matching worker visual projection.
+- `'classic'` uses the original 16-mask tile atlas road visuals and normal tile-interpolated worker rendering.
+
+The in-game Options dialog persists the same mode under `settler_options.roadRenderingMode` and updates the renderer immediately.
+
 Road visuals remain derived from the 4-bit road mask:
 
 - bit 0: road at `x - 1, y` (NW edge)

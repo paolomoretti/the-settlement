@@ -1,4 +1,5 @@
 import { NoiseGenerator } from '@/utils/NoiseGenerator';
+import { ROAD_RENDERING_MODE } from '@/debug/debugFlags';
 
 const TILE_W = 64;
 const TILE_H = 32;
@@ -740,13 +741,22 @@ export class TerrainTextures {
     ctx: CanvasRenderingContext2D,
     connections: number[],
     tileX: number,
-    tileY: number
+    tileY: number,
+    linearizeCorner: boolean = false
   ): void {
     const wobbleX = (this.roadHash(tileX, tileY, 1) - 0.5) * 4.5;
     const wobbleY = (this.roadHash(tileX, tileY, 2) - 0.5) * 2.5;
     const hub = { x: wobbleX, y: wobbleY };
 
     ctx.beginPath();
+    if (linearizeCorner && connections.length === 2 && (connections[0]! + 2) % 4 !== connections[1]!) {
+      const a = this.roadLocalPoint(connections[0]!);
+      const b = this.roadLocalPoint(connections[1]!);
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      return;
+    }
+
     if (connections.length === 0) {
       ctx.ellipse(hub.x, hub.y, 8, 4.2, 0, 0, Math.PI * 2);
       return;
@@ -810,9 +820,10 @@ export class TerrainTextures {
     screenCenterX: number,
     screenCenterY: number,
     tileX: number = 0,
-    tileY: number = 0
+    tileY: number = 0,
+    linearizeCorner: boolean = false
   ): void {
-    if (config < 0) {
+    if (ROAD_RENDERING_MODE === 'classic') {
       const col = config % ROAD_COLS;
       const row = Math.floor(config / ROAD_COLS);
       ctx.drawImage(
@@ -840,23 +851,23 @@ export class TerrainTextures {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    this.traceRoadPath(ctx, connections, tileX, tileY);
+    this.traceRoadPath(ctx, connections, tileX, tileY, linearizeCorner);
     ctx.strokeStyle = 'rgba(78, 54, 31, 0.34)';
     ctx.lineWidth = 13;
     ctx.stroke();
 
-    this.traceRoadPath(ctx, connections, tileX, tileY);
+    this.traceRoadPath(ctx, connections, tileX, tileY, linearizeCorner);
     ctx.strokeStyle = 'rgba(118, 82, 45, 0.74)';
     ctx.lineWidth = 10;
     ctx.stroke();
 
-    this.traceRoadPath(ctx, connections, tileX, tileY);
+    this.traceRoadPath(ctx, connections, tileX, tileY, linearizeCorner);
     const warm = this.roadHash(tileX, tileY, 90);
     ctx.strokeStyle = warm > 0.5 ? 'rgba(205, 171, 112, 0.96)' : 'rgba(190, 151, 96, 0.96)';
     ctx.lineWidth = 7;
     ctx.stroke();
 
-    this.traceRoadPath(ctx, connections, tileX, tileY);
+    this.traceRoadPath(ctx, connections, tileX, tileY, linearizeCorner);
     ctx.strokeStyle = 'rgba(244, 222, 176, 0.23)';
     ctx.lineWidth = 2.2;
     ctx.stroke();

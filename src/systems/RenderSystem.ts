@@ -31,6 +31,7 @@ import { RABBIT_JUMP_DURATION_MS, type WildRabbit } from '@/wildlife/WildlifeCoo
 import { territoryKey } from '@/map/TerritoryCoordinator';
 import { createChimneySmoke, type ChimneySmoke } from '@/rendering/chimneySmoke';
 import { createLoFiFire, type LoFiFire } from '@/rendering/loFiFire';
+import { ROAD_RENDERING_MODE } from '@/debug/debugFlags';
 import { isPlayerOwned } from '@/components/ownerUtils';
 
 /** World-space half-plane clip for long straight iso shores (same screen row / column of tile centers). */
@@ -1582,7 +1583,15 @@ export class RenderSystem extends System {
         if (!tile?.isExplored() || !tile.hasRoad) continue;
         const center = this.iso.gridToScreen(x, y);
         const config = this.getRoadConfig(x, y);
-        this.terrainTextures.drawRoad(this.ctx, config, center.x, center.y, x, y);
+        this.terrainTextures.drawRoad(
+          this.ctx,
+          config,
+          center.x,
+          center.y,
+          x,
+          y,
+          this.isLinearizedRoadCorner(x, y, config)
+        );
       }
     }
   }
@@ -1978,6 +1987,46 @@ export class RenderSystem extends System {
     return null;
   }
 
+  private isLinearizedRoadCorner(gx: number, gy: number, config: number = this.getRoadConfig(gx, gy)): boolean {
+    if (config === 9) {
+      return this.getRoadConfig(gx - 1, gy) === 6 || this.getRoadConfig(gx, gy + 1) === 6;
+    }
+    if (config === 6) {
+      return this.getRoadConfig(gx, gy - 1) === 9 || this.getRoadConfig(gx + 1, gy) === 9;
+    }
+    if (config === 3) {
+      return this.getRoadConfig(gx - 1, gy) === 12 || this.getRoadConfig(gx, gy - 1) === 12;
+    }
+    if (config === 12) {
+      return this.getRoadConfig(gx + 1, gy) === 3 || this.getRoadConfig(gx, gy + 1) === 3;
+    }
+    return false;
+  }
+
+  private roadEdgeLocalForBit(bit: number): { x: number; y: number } {
+    if (bit === 0) return { x: -16, y: -8 };
+    if (bit === 1) return { x: 16, y: -8 };
+    if (bit === 2) return { x: 16, y: 8 };
+    return { x: -16, y: 8 };
+  }
+
+  private getLinearizedRoadPoint(gx: number, gy: number): { x: number; y: number } | null {
+    const config = this.getRoadConfig(gx, gy);
+    if (!this.isLinearizedRoadCorner(gx, gy, config)) return null;
+    const bits: number[] = [];
+    for (let bit = 0; bit < 4; bit++) {
+      if (config & (1 << bit)) bits.push(bit);
+    }
+    if (bits.length !== 2) return null;
+    const a = this.roadEdgeLocalForBit(bits[0]!);
+    const b = this.roadEdgeLocalForBit(bits[1]!);
+    const center = this.iso.gridToScreen(gx, gy);
+    return {
+      x: center.x + (a.x + b.x) * 0.5,
+      y: center.y + (a.y + b.y) * 0.5,
+    };
+  }
+
   private quadraticPoint(
     a: { x: number; y: number },
     c: { x: number; y: number },
@@ -2031,8 +2080,11 @@ export class RenderSystem extends System {
     if (!movable.isMoving) return null;
     const target = movable.getCurrentTarget();
     if (!target) return null;
-    const sx = Math.floor(movable.segmentStartX);
-    const sy = Math.floor(movable.segmentStartY);
+    const segmentStart = movable.progress === 0 && movable.currentPathIndex > 0
+      ? movable.path[movable.currentPathIndex - 1]
+      : null;
+    const sx = Math.floor(segmentStart?.x ?? movable.segmentStartX);
+    const sy = Math.floor(segmentStart?.y ?? movable.segmentStartY);
     const tx = Math.floor(target.x);
     const ty = Math.floor(target.y);
     const dx = tx - sx;
@@ -2049,6 +2101,18 @@ export class RenderSystem extends System {
     const startHub = this.roadVisualHub(sx, sy);
     const targetHub = this.roadVisualHub(tx, ty);
     const p = Math.max(0, Math.min(1, movable.progress));
+    const linearStart = this.getLinearizedRoadPoint(sx, sy);
+    const linearTarget = this.getLinearizedRoadPoint(tx, ty);
+
+    if (linearStart || linearTarget) {
+      const a = linearStart ?? { x: startCenter.x + startHub.x, y: startCenter.y + startHub.y };
+      const b = linearTarget ?? { x: targetCenter.x + targetHub.x, y: targetCenter.y + targetHub.y };
+      return {
+        x: a.x + (b.x - a.x) * p,
+        y: a.y + (b.y - a.y) * p,
+      };
+    }
+
     const targetEdge = { x: -sharedEdge.x, y: -sharedEdge.y };
 
     const first = {
@@ -3226,7 +3290,7 @@ export class RenderSystem extends System {
     const renderY = (isSelected && this.dragPreviewPosition) ? this.dragPreviewPosition.y : pos.y;
 
     let screenPos = this.iso.gridToScreen(renderX, renderY);
-    if (!building && entity.hasComponent(Worker) && movableForRoad) {
+    if (ROAD_RENDERING_MODE === 'vector' && !building && entity.hasComponent(Worker) && movableForRoad) {
       screenPos = this.getRoadWalkScreenPosition(movableForRoad) ?? screenPos;
     }
     const offsetX = renderable.offsetX;

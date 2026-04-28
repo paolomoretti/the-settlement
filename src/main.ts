@@ -9,6 +9,7 @@ import { setupKeyboardShortcuts } from '@/input/KeyboardShortcuts';
 import { showToast, setupToastListener } from '@/ui/Toast';
 import { audioManager } from '@/audio/AudioManager';
 import { anySaveSlotsExist, GameSaveSession } from '@/save/GameSaveSession';
+import { setRoadRenderingMode, type RoadRenderingMode } from '@/debug/debugFlags';
 import tippy from 'tippy.js';
 import 'tippy.js/dist/tippy.css';
 
@@ -22,16 +23,43 @@ let inventoryActiveTab: 'resources' | 'workers' | 'production' | 'buildings' = '
 
 const OPTIONS_KEY = 'settler_options';
 
-function loadOptions(): { autosave: boolean; debugInfo: boolean; buildingLabels: boolean; navigator: boolean; soundEffects: boolean } {
-  const defaults = { autosave: true, debugInfo: true, buildingLabels: true, navigator: true, soundEffects: true };
+type GameOptions = {
+  autosave: boolean;
+  debugInfo: boolean;
+  buildingLabels: boolean;
+  navigator: boolean;
+  soundEffects: boolean;
+  roadRenderingMode: RoadRenderingMode;
+};
+
+function normalizeRoadRenderingMode(value: unknown): RoadRenderingMode {
+  return value === 'classic' ? 'classic' : 'vector';
+}
+
+function loadOptions(): GameOptions {
+  const defaults: GameOptions = {
+    autosave: true,
+    debugInfo: true,
+    buildingLabels: true,
+    navigator: true,
+    soundEffects: true,
+    roadRenderingMode: 'vector',
+  };
   try {
     const raw = localStorage.getItem(OPTIONS_KEY);
-    if (raw) return { ...defaults, ...JSON.parse(raw) };
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<GameOptions>;
+      return {
+        ...defaults,
+        ...parsed,
+        roadRenderingMode: normalizeRoadRenderingMode(parsed.roadRenderingMode),
+      };
+    }
   } catch {}
   return defaults;
 }
 
-function saveOptions(opts: { autosave: boolean; debugInfo: boolean; buildingLabels: boolean; navigator: boolean; soundEffects: boolean }): void {
+function saveOptions(opts: GameOptions): void {
   localStorage.setItem(OPTIONS_KEY, JSON.stringify(opts));
 }
 
@@ -436,13 +464,27 @@ function setupOptionsPanel(game: Game): void {
   const buildingLabelsToggle = document.getElementById('opt-building-labels') as HTMLInputElement;
   const navigatorToggle = document.getElementById('opt-navigator') as HTMLInputElement;
   const soundEffectsToggle = document.getElementById('opt-sound-effects') as HTMLInputElement;
-
+  const roadRenderingButtons = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('[data-road-rendering]')
+  );
   const opts = loadOptions();
+  let roadRenderingMode = opts.roadRenderingMode;
+  const syncRoadRenderingButtons = (): void => {
+    for (const btn of roadRenderingButtons) {
+      const active = btn.dataset.roadRendering === roadRenderingMode;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    }
+  };
+
   autosaveToggle.checked = opts.autosave;
   debugToggle.checked = opts.debugInfo;
   buildingLabelsToggle.checked = opts.buildingLabels;
   navigatorToggle.checked = opts.navigator;
   soundEffectsToggle.checked = opts.soundEffects;
+  roadRenderingMode = opts.roadRenderingMode;
+  setRoadRenderingMode(roadRenderingMode);
+  syncRoadRenderingButtons();
 
   if (!opts.debugInfo) document.getElementById('debug-info')!.style.display = 'none';
   if (!opts.buildingLabels) game.renderSystem.showBuildingLabels = false;
@@ -455,6 +497,7 @@ function setupOptionsPanel(game: Game): void {
     buildingLabels: buildingLabelsToggle.checked,
     navigator: navigatorToggle.checked,
     soundEffects: soundEffectsToggle.checked,
+    roadRenderingMode,
   });
 
   overlay.addEventListener('click', (e) => {
@@ -503,6 +546,15 @@ function setupOptionsPanel(game: Game): void {
     audioManager.toggle();
     persistAll();
   });
+
+  for (const btn of roadRenderingButtons) {
+    btn.addEventListener('click', () => {
+      roadRenderingMode = normalizeRoadRenderingMode(btn.dataset.roadRendering);
+      setRoadRenderingMode(roadRenderingMode);
+      syncRoadRenderingButtons();
+      persistAll();
+    });
+  }
 }
 
 function makeResourceIconHtml(resourceId: string, className = 'resource-icon'): string {

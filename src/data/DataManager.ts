@@ -13,7 +13,7 @@ import {
 
 import resourcesData from './resources.json';
 import buildingsData from './buildings.json';
-import gameConfigData from './game-config.json';
+import { GAME_CONFIG } from '@/config/gameConfig';
 
 export class DataManager {
   private static instance: DataManager;
@@ -44,8 +44,8 @@ export class DataManager {
       this.buildings.set(building.id as BuildingType, building as BuildingDefinition);
     });
 
-    // Load game config
-    this.gameConfig = gameConfigData as GameConfig;
+    // Load central gameplay tuning config
+    this.gameConfig = GAME_CONFIG;
 
     console.log(`📊 Data loaded: ${this.resources.size} resources, ${this.buildings.size} buildings`);
   }

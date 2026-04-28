@@ -442,19 +442,19 @@ Located in: `src/data/buildings.json`
 - All build costs use wood_plank (boards) and stone only, no wood_log in build costs
 
 #### Starting Resources
-Located in: `src/data/game-config.json`
+Located in: `src/config/gameConfig.ts`
 
-```json
-{
-  "starting": {
-    "baseCamp": {
-      "startingResources": {
-        "wood_log": 30,  // ← Adjust starting quantities
-        "stone": 30
-      }
+```typescript
+export const GAME_CONFIG = {
+  starting: {
+    baseCamp: {
+      startingResources: {
+        wood_plank: 48, // Adjust starting quantities here
+        stone: 48
+      },
     }
   }
-}
+} satisfies GameConfig;
 ```
 
 **Test Formula**:

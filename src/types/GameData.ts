@@ -319,7 +319,7 @@ export interface GameConfig {
       startingPopulation: number;
     };
     exploration: {
-      initialRadius: number; // Tiles to explore at start
+      initialRadius: number; // Chebyshev radius in map cells from each headquarters center
     };
   };
 

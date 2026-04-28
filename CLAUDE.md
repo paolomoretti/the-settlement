@@ -68,7 +68,8 @@ Not yet implemented: tool requirements for workers, mine food system (bread/fish
 - [Economics Runtime](.claude/ECONOMICS_RUNTIME.md) - **How production, storage, and transport work** — the core game economics system
 - [Transport & Road Workers](.claude/TRANSPORT.md) - **Road segments, worker assignment, item carrying, production buffer pickup** — segment graph, `tryStartTransport` / `Game.ts` pitfalls (junction vs `building` endpoints, `pendingBuildingPickups`, route healing)
 - [Economy Design](.claude/ECONOMY_DESIGN.md) - Game design goals, balance theory, production chains, tech progression
-- [Data System](.claude/DATA_SYSTEM.md) - JSON config layer: resources.json, buildings.json, game-config.json, DataManager
+- [Data System](.claude/DATA_SYSTEM.md) - Data layer: resources.json, buildings.json, `GAME_CONFIG`, DataManager
+- [Game Configuration](.claude/GAME_CONFIGURATION.md) - **Central gameplay tuning object** — starting resources, HQ territory radius, and convention for moving new balance knobs into `src/config/gameConfig.ts`
 - [Asset Guide](.claude/ASSET_GUIDE.md) - Comprehensive guide for creating game sprites
 - [AI Prompt Template](.claude/AI_PROMPT_TEMPLATE.txt) - Quick-reference template for AI image generation
 - [Performance Guidelines](.claude/PERFORMANCE.md) - Mandatory rules for rendering, textures, and canvas performance

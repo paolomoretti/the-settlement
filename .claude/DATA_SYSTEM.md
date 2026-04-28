@@ -4,7 +4,7 @@ This document explains the game's data layer: resources, buildings, economy, and
 
 ## Overview
 
-The Settlement uses a **data-driven design** where all game content (resources, buildings, costs, production chains) is defined in JSON configuration files with full TypeScript type safety.
+The Settlement uses a **data-driven design** where content data (resources, buildings, costs, production chains) is defined in JSON files with TypeScript type safety. Global gameplay tuning values live in a commented TypeScript config object so balance knobs can carry unit/semantics notes.
 
 ## Architecture
 
@@ -15,8 +15,9 @@ src/
 ├── data/
 │   ├── resources.json        # Resource definitions
 │   ├── buildings.json        # Building definitions  
-│   ├── game-config.json      # Game settings
 │   └── DataManager.ts        # Data loader and utilities
+├── config/
+│   └── gameConfig.ts         # Commented global gameplay tuning values
 ```
 
 ---
@@ -207,41 +208,28 @@ Iron Mine → Iron Ore + (Coal Mine → Coal) → Iron Smelter → Iron Bars →
 
 ## Game Configuration
 
-Game-wide settings in `src/data/game-config.json`.
+Game-wide tuning settings live in `src/config/gameConfig.ts` as the exported `GAME_CONFIG` object. Prefer this file for global balance knobs because TypeScript lets us leave comments next to values explaining units and semantics.
 
-```json
-{
+```typescript
+export const GAME_CONFIG = {
   "starting": {
-    "headquarters": {
-      "position": "center",  // or {x, y}
+    "baseCamp": {
+      "position": "center",
       "startingResources": {
-        "wood_log": 30,
-        "wood_plank": 20,
-        // ... starting inventory
+        "wood_plank": 48,
+        "stone": 48
       },
-      "startingPopulation": 10
+      "startingPopulation": 100
     },
     "exploration": {
-      "initialRadius": 25  // Tiles explored at start
+      // Chebyshev radius, in map cells, from the center of each headquarters.
+      "initialRadius": 12
     }
-  },
-  
-  "population": {
-    "maxPerHut": 3,
-    "maxPerHouse": 6,
-    "workerWalkSpeed": 2.5
-  },
-  
-  "economy": {
-    "baseProductionRate": 1.0,
-    "storageWarningThreshold": 0.8
-  },
-  
-  "world": {
-    "mapSize": { "width": 1000, "height": 1000 }
   }
-}
+} satisfies GameConfig;
 ```
+
+See `.claude/GAME_CONFIGURATION.md` for the convention: do not migrate every hard-coded value at once, but when touching a gameplay area, move relevant global tuning values into `GAME_CONFIG` if it is low risk and improves scanability.
 
 ---
 

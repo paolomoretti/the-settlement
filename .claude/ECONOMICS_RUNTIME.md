@@ -99,7 +99,7 @@ This means the inventory is always real-time. Opening a panel, checking affordab
 
 ### Starting Resources
 
-Starting resources (defined in `game-config.json`) are loaded into the base camp's Storage component during `initializeWorld()`.
+Starting resources (defined in `src/config/gameConfig.ts` → `GAME_CONFIG.starting.baseCamp.startingResources`) are loaded into the base camp's Storage component during `initializeWorld()`.
 
 ### Build Cost Deduction
 

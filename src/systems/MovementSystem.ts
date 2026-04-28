@@ -9,12 +9,17 @@ import { Movable } from '@/components/Movable';
 import { Worker } from '@/components/Worker';
 
 export class MovementSystem extends System {
+  constructor(private readonly shouldMoveEntity: (entity: Entity) => boolean = () => true) {
+    super();
+  }
+
   shouldProcessEntity(entity: Entity): boolean {
     return entity.hasComponent(Position) && entity.hasComponent(Movable);
   }
 
   update(deltaTime: number): void {
     this.entities.forEach(entity => {
+      if (!this.shouldMoveEntity(entity)) return;
       const position = entity.getComponent(Position)!;
       const movable = entity.getComponent(Movable)!;
 

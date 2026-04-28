@@ -151,7 +151,8 @@ export class ProductionSystem extends System {
     private readonly getTileMap: () => TileMap,
     private readonly getPathFinder: () => PathFinder,
     private readonly getWildlife?: () => WildlifeCoordinator,
-    private readonly getProductionPriorities?: () => ProductionPriorityState
+    private readonly getProductionPriorities?: () => ProductionPriorityState,
+    private readonly shouldSimulateEntity: (entity: Entity) => boolean = () => true
   ) {
     super();
   }
@@ -163,6 +164,7 @@ export class ProductionSystem extends System {
   update(deltaTime: number): void {
     for (const entity of this.entities) {
       if (!entity.active) continue;
+      if (!this.shouldSimulateEntity(entity)) continue;
       const playerOwned = isPlayerOwned(entity);
 
       const building = entity.getComponent(Building);

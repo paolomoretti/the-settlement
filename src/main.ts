@@ -22,6 +22,8 @@ let unregisterHoverFrameHook: (() => void) | null = null;
 let inventoryActiveTab: 'resources' | 'workers' | 'production' | 'buildings' = 'resources';
 
 const OPTIONS_KEY = 'settler_options';
+const NEW_GAME_LOADING_MESSAGE = 'Thinking about the land and placing rival villages...';
+const MIN_NEW_GAME_LOADING_MS = 900;
 
 type GameOptions = {
   autosave: boolean;
@@ -126,6 +128,24 @@ function showScreen(screen: 'welcome' | 'game'): void {
   }
 }
 
+function showLoadingScreen(message: string): void {
+  const welcomeScreen = document.getElementById('welcome-screen')!;
+  const gameContainer = document.getElementById('game-container')!;
+  const loadingScreen = document.getElementById('loading-screen')!;
+  loadingScreen.textContent = message;
+  loadingScreen.style.display = 'flex';
+  welcomeScreen.style.display = 'none';
+  gameContainer.style.display = 'none';
+}
+
+function nextFrame(): Promise<void> {
+  return new Promise(resolve => requestAnimationFrame(() => resolve()));
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise(resolve => window.setTimeout(resolve, ms));
+}
+
 function updateWelcomeLoadButton(): void {
   const btn = document.getElementById('btn-load-game-welcome') as HTMLButtonElement;
   if (btn) btn.disabled = !anySaveSlotsExist();
@@ -159,8 +179,16 @@ function manualSaveOrPickSlot(): void {
   saveSession.openSaveDialog(undefined, 'Save Game — pick a slot');
 }
 
-function launchGame(canvas: HTMLCanvasElement, saveData?: unknown): void {
-  showScreen('game');
+async function launchGame(canvas: HTMLCanvasElement, saveData?: unknown): Promise<void> {
+  const isNewGame = !saveData;
+  const loadingStartedAt = performance.now();
+
+  if (isNewGame) {
+    showLoadingScreen(NEW_GAME_LOADING_MESSAGE);
+    await nextFrame();
+  } else {
+    showScreen('game');
+  }
 
   if (!saveData) {
     saveSession.clearResumeAndSlot();
@@ -181,6 +209,12 @@ function launchGame(canvas: HTMLCanvasElement, saveData?: unknown): void {
     } else {
       game.resetForNewGame();
     }
+  }
+
+  if (isNewGame) {
+    const remaining = MIN_NEW_GAME_LOADING_MS - (performance.now() - loadingStartedAt);
+    if (remaining > 0) await wait(remaining);
+    showScreen('game');
   }
 
   game.start();

@@ -31,8 +31,8 @@ import { RABBIT_JUMP_DURATION_MS, type WildRabbit } from '@/wildlife/WildlifeCoo
 import { territoryKey } from '@/map/TerritoryCoordinator';
 import { createChimneySmoke, type ChimneySmoke } from '@/rendering/chimneySmoke';
 import { createLoFiFire, type LoFiFire } from '@/rendering/loFiFire';
-import { ROAD_RENDERING_MODE } from '@/debug/debugFlags';
-import { isPlayerOwned } from '@/components/ownerUtils';
+import { DEBUG, ROAD_RENDERING_MODE } from '@/debug/debugFlags';
+import { getEnemyFactionStyle, getEntityFaction, isPlayerOwned } from '@/components/ownerUtils';
 
 /** World-space half-plane clip for long straight iso shores (same screen row / column of tile centers). */
 type FlatShoreCut =
@@ -157,6 +157,7 @@ export class RenderSystem extends System {
   private minimapOffscreen: HTMLCanvasElement;
   private minimapOffscreenCtx: CanvasRenderingContext2D;
   private minimapScale: number;
+  private minimapFullWorldDirty = DEBUG;
 
   constructor(canvas: HTMLCanvasElement, private tileMap: TileMap) {
     super();
@@ -326,6 +327,7 @@ export class RenderSystem extends System {
     return false;
   }
 
+  /** Main-canvas visibility intentionally ignores DEBUG; navigator reveal must not render hidden world entities. */
   private isEntityVisibleByExploration(entity: Entity): boolean {
     const pos = entity.getComponent(Position);
     if (!pos) return false;
@@ -642,35 +644,53 @@ export class RenderSystem extends System {
       const tile = this.tileMap.getTile(x, y);
       if (!tile) continue;
 
-      const px = x * this.minimapScale;
-      const py = y * this.minimapScale;
-
-      if (!tile.isExplored()) {
-        this.minimapOffscreenCtx.fillStyle = '#1a1a1a';
-      } else if (tile.terrain === 'water') {
-        this.minimapOffscreenCtx.fillStyle = '#2196f3'; // Bright blue
-      } else if (tile.terrain === 'mountain') {
-        this.minimapOffscreenCtx.fillStyle = '#9e9e9e'; // Light grey
-      } else if (tile.terrain === 'forest') {
-        this.minimapOffscreenCtx.fillStyle = '#1b5e20'; // Very dark green
-      } else if (tile.terrain === 'tree') {
-        this.minimapOffscreenCtx.fillStyle = '#388e3c'; // Medium green
-      } else if (tile.terrain === 'hill') {
-        this.minimapOffscreenCtx.fillStyle = '#9ccc65'; // Light green
-      } else {
-        this.minimapOffscreenCtx.fillStyle = '#7cb342'; // Grass green
-      }
-
-      this.minimapOffscreenCtx.fillRect(px, py, Math.max(1, this.minimapScale), Math.max(1, this.minimapScale));
+      this.paintMinimapTile(tile);
     }
+  }
+
+  private paintMinimapTile(tile: Tile): void {
+    const px = tile.x * this.minimapScale;
+    const py = tile.y * this.minimapScale;
+
+    if (!DEBUG && !tile.isExplored()) {
+      this.minimapOffscreenCtx.fillStyle = '#1a1a1a';
+    } else if (tile.terrain === 'water') {
+      this.minimapOffscreenCtx.fillStyle = '#2196f3'; // Bright blue
+    } else if (tile.terrain === 'mountain') {
+      this.minimapOffscreenCtx.fillStyle = '#9e9e9e'; // Light grey
+    } else if (tile.terrain === 'forest') {
+      this.minimapOffscreenCtx.fillStyle = '#1b5e20'; // Very dark green
+    } else if (tile.terrain === 'tree') {
+      this.minimapOffscreenCtx.fillStyle = '#388e3c'; // Medium green
+    } else if (tile.terrain === 'hill') {
+      this.minimapOffscreenCtx.fillStyle = '#9ccc65'; // Light green
+    } else {
+      this.minimapOffscreenCtx.fillStyle = '#7cb342'; // Grass green
+    }
+
+    this.minimapOffscreenCtx.fillRect(px, py, Math.max(1, this.minimapScale), Math.max(1, this.minimapScale));
+  }
+
+  private rebuildFullWorldMinimap(): void {
+    for (let y = 0; y < this.tileMap.height; y++) {
+      for (let x = 0; x < this.tileMap.width; x++) {
+        const tile = this.tileMap.getTile(x, y);
+        if (tile) this.paintMinimapTile(tile);
+      }
+    }
+    this.minimapFullWorldDirty = false;
   }
 
   private renderMinimap(): void {
     const minimapSize = 200;
+    if (DEBUG && this.minimapFullWorldDirty) {
+      this.rebuildFullWorldMinimap();
+    }
 
     // Clear and copy the cached minimap
     this.minimapCtx.clearRect(0, 0, minimapSize, minimapSize);
     this.minimapCtx.drawImage(this.minimapOffscreen, 0, 0);
+    this.renderMinimapEntityMarkers();
 
     // Draw viewport indicator
     const viewportWidth = (this.canvas.width / this.camera.zoom) / this.iso.tileWidth;
@@ -687,6 +707,26 @@ export class RenderSystem extends System {
     this.minimapCtx.strokeStyle = '#ffff00';
     this.minimapCtx.lineWidth = 2;
     this.minimapCtx.strokeRect(vpX, vpY, vpW, vpH);
+  }
+
+  private renderMinimapEntityMarkers(): void {
+    const minSize = Math.max(2, this.minimapScale * 4);
+    for (const entity of this.entities) {
+      if (!entity.active) continue;
+      const pos = entity.getComponent(Position);
+      const building = entity.getComponent(Building);
+      if (!pos || !building) continue;
+      const visible = DEBUG || this.hasExploredBuildingFootprint(pos, building);
+      if (!visible) continue;
+
+      const factionId = getEntityFaction(entity);
+      this.minimapCtx.fillStyle = isPlayerOwned(entity) ? '#ffd54f' : getEnemyFactionStyle(factionId).minimap;
+      const x = pos.x * this.minimapScale;
+      const y = pos.y * this.minimapScale;
+      const w = Math.max(minSize, building.width * this.minimapScale);
+      const h = Math.max(minSize, building.height * this.minimapScale);
+      this.minimapCtx.fillRect(x, y, w, h);
+    }
   }
 
   private renderSelectionOutline(entity: Entity): void {
@@ -3349,7 +3389,7 @@ export class RenderSystem extends System {
         this.renderIsometricBuilding(building, renderable, isSelected, insightHighlight);
       }
       if (!isPlayerOwned(entity)) {
-        this.renderEnemyBuildingEntranceFlag(building);
+        this.renderEnemyBuildingEntranceFlag(building, getEntityFaction(entity));
       }
 
       const chimneyCfg = dataManager.getBuilding(building.buildingType)?.chimneySmoke;
@@ -3452,9 +3492,10 @@ export class RenderSystem extends System {
     this.ctx.restore();
   }
 
-  private renderEnemyBuildingEntranceFlag(building: Building): void {
+  private renderEnemyBuildingEntranceFlag(building: Building, factionId: ReturnType<typeof getEntityFaction>): void {
     const entrance = building.getEntranceOffset();
     if (!entrance) return;
+    const style = getEnemyFactionStyle(factionId);
 
     const tileW = this.iso.tileWidth;
     const tileH = this.iso.tileHeight;
@@ -3489,8 +3530,8 @@ export class RenderSystem extends System {
     this.ctx.lineTo(footX - 0.9 * s, topY + 1 * s);
     this.ctx.stroke();
 
-    this.ctx.fillStyle = 'rgba(155, 24, 31, 0.96)';
-    this.ctx.strokeStyle = 'rgba(80, 12, 16, 0.9)';
+    this.ctx.fillStyle = style.flag;
+    this.ctx.strokeStyle = style.flagStroke;
     this.ctx.lineWidth = 1.1 * s;
     this.ctx.beginPath();
     this.ctx.moveTo(footX + 1.5 * s, topY + 3 * s);
@@ -3500,7 +3541,7 @@ export class RenderSystem extends System {
     this.ctx.fill();
     this.ctx.stroke();
 
-    this.ctx.strokeStyle = 'rgba(255, 120, 110, 0.45)';
+    this.ctx.strokeStyle = style.flagHighlight;
     this.ctx.lineWidth = 1 * s;
     this.ctx.beginPath();
     this.ctx.moveTo(footX + 4 * s, topY + 5 * s);
@@ -4516,5 +4557,6 @@ export class RenderSystem extends System {
     this.minimapOffscreenCtx.fillStyle = '#1a1a1a';
     this.minimapOffscreenCtx.fillRect(0, 0, 200, 200);
     this.minimapScale = 200 / this.tileMap.width;
+    this.minimapFullWorldDirty = DEBUG;
   }
 }

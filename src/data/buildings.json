@@ -801,7 +801,7 @@
     "buildTime": 35,
     "requiresRoad": true,
     "population": { "requires": 1 },
-    "category": "production",
+    "category": "infrastructure",
     "tier": 2,
     "plotType": "medium"
   },

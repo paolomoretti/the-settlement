@@ -1,4 +1,6 @@
 import type { TileMap } from '@/map/TileMap';
+import type { EnemyFactionId } from '@/components/Owner';
+import { ENEMY_FACTIONS } from '@/components/ownerUtils';
 import { dataManager } from '@/data/DataManager';
 import type { BuildingType } from '@/types/GameData';
 
@@ -7,11 +9,15 @@ export type EnemyVillageBuildingPlan = {
   x: number;
   y: number;
   seedGarrison?: boolean;
+  garrisonFillRatio?: number;
+  garrisonRank?: 1 | 2 | 3;
 };
 
 export type EnemyVillagePlan = {
   id: string;
-  factionId: 'enemy_1';
+  factionId: EnemyFactionId;
+  difficulty: number;
+  activated?: boolean;
   bounds: { x: number; y: number; width: number; height: number };
   headquarters: EnemyVillageBuildingPlan;
   buildings: EnemyVillageBuildingPlan[];
@@ -20,26 +26,29 @@ export type EnemyVillagePlan = {
   revealCells: { x: number; y: number }[];
 };
 
-const VILLAGE_SIZE = 28;
-const EXTRA_SLOTS: Array<{ x: number; y: number }> = [
-  { x: 6, y: 7 },
-  { x: 19, y: 7 },
-  { x: 5, y: 20 },
-  { x: 19, y: 21 },
-  { x: 2, y: 13 },
-  { x: 22, y: 14 },
-  { x: 11, y: 23 },
-  { x: 12, y: 3 },
-];
+const ENEMY_VILLAGE_COUNT = 10;
+const MIN_VILLAGE_SIZE = 28;
+const MAX_VILLAGE_SIZE = 56;
+const MIN_SPACING_BETWEEN_VILLAGES = 12;
 
-const EXTRA_TYPES: BuildingType[] = [
+const CIVILIAN_TYPES: BuildingType[] = [
   'hut',
   'house',
   'lumberjack',
+  'sawmill',
+  'forester',
   'quarry',
   'well',
+  'farm',
+  'mill',
+  'bakery',
   'hunter',
+  'fisher',
 ];
+
+const EARLY_MILITARY_TYPES: BuildingType[] = ['barracks', 'guardhouse'];
+const MID_MILITARY_TYPES: BuildingType[] = ['barracks', 'guardhouse', 'watchtower'];
+const LATE_MILITARY_TYPES: BuildingType[] = ['guardhouse', 'watchtower', 'fortress'];
 
 function mulberry32(seed: number): () => number {
   let t = seed >>> 0;
@@ -61,6 +70,14 @@ function rectCells(x: number, y: number, width: number, height: number): string[
     for (let dx = 0; dx < width; dx++) cells.push(key(x + dx, y + dy));
   }
   return cells;
+}
+
+function centerOf(plan: EnemyVillageBuildingPlan): { x: number; y: number } {
+  const def = dataManager.getBuilding(plan.type)!;
+  return {
+    x: plan.x + Math.floor(def.size.width / 2),
+    y: plan.y + Math.floor(def.size.height / 2),
+  };
 }
 
 function getEntranceRoadCell(plan: EnemyVillageBuildingPlan, occupied: ReadonlySet<string>): { x: number; y: number } {
@@ -121,76 +138,171 @@ function addRoadPath(
   }
 }
 
-function areaHasOccupiedTile(tileMap: TileMap, x: number, y: number, size: number): boolean {
-  for (let dy = 0; dy < size; dy++) {
-    for (let dx = 0; dx < size; dx++) {
+function areaHasOccupiedTile(tileMap: TileMap, x: number, y: number, width: number, height: number): boolean {
+  for (let dy = 0; dy < height; dy++) {
+    for (let dx = 0; dx < width; dx++) {
       if (tileMap.getTile(x + dx, y + dy)?.isOccupied()) return true;
     }
   }
   return false;
 }
 
-export function planInitialEnemyVillage(tileMap: TileMap, playerCenter: { x: number; y: number }): EnemyVillagePlan | null {
-  const initialRadius = dataManager.getGameConfig().starting.exploration.initialRadius;
-  const offset = initialRadius + 4;
-  const candidates = [
-    { x: playerCenter.x + offset, y: playerCenter.y - Math.floor(VILLAGE_SIZE / 2) },
-    { x: playerCenter.x - offset - VILLAGE_SIZE, y: playerCenter.y - Math.floor(VILLAGE_SIZE / 2) },
-    { x: playerCenter.x - Math.floor(VILLAGE_SIZE / 2), y: playerCenter.y + offset },
-    { x: playerCenter.x - Math.floor(VILLAGE_SIZE / 2), y: playerCenter.y - offset - VILLAGE_SIZE },
-  ];
-
-  const bounds = candidates.find(c =>
-    c.x >= 2 &&
-    c.y >= 2 &&
-    c.x + VILLAGE_SIZE < tileMap.width - 2 &&
-    c.y + VILLAGE_SIZE < tileMap.height - 2 &&
-    !areaHasOccupiedTile(tileMap, c.x, c.y, VILLAGE_SIZE)
+function overlapsExistingBounds(
+  candidate: { x: number; y: number; width: number; height: number },
+  existing: readonly { x: number; y: number; width: number; height: number }[]
+): boolean {
+  return existing.some(bounds =>
+    candidate.x < bounds.x + bounds.width + MIN_SPACING_BETWEEN_VILLAGES &&
+    candidate.x + candidate.width + MIN_SPACING_BETWEEN_VILLAGES > bounds.x &&
+    candidate.y < bounds.y + bounds.height + MIN_SPACING_BETWEEN_VILLAGES &&
+    candidate.y + candidate.height + MIN_SPACING_BETWEEN_VILLAGES > bounds.y
   );
+}
+
+function createSlotGrid(bounds: { x: number; y: number; width: number; height: number }, random: () => number): Array<{ x: number; y: number }> {
+  const slots: Array<{ x: number; y: number }> = [];
+  for (let y = bounds.y + 3; y <= bounds.y + bounds.height - 6; y += 5) {
+    for (let x = bounds.x + 3; x <= bounds.x + bounds.width - 6; x += 5) {
+      const jitterX = Math.floor(random() * 3) - 1;
+      const jitterY = Math.floor(random() * 3) - 1;
+      slots.push({ x: x + jitterX, y: y + jitterY });
+    }
+  }
+  return slots.sort(() => random() - 0.5);
+}
+
+function chooseMilitaryTypes(difficulty: number, count: number): BuildingType[] {
+  const pool = difficulty >= 7 ? LATE_MILITARY_TYPES : difficulty >= 3 ? MID_MILITARY_TYPES : EARLY_MILITARY_TYPES;
+  const out: BuildingType[] = [];
+  for (let i = 0; i < count; i++) {
+    if (difficulty >= 6 && i % 4 === 0) out.push('fortress');
+    else out.push(pool[(i + difficulty) % pool.length]!);
+  }
+  return out;
+}
+
+function tryPlaceBuilding(
+  out: EnemyVillageBuildingPlan[],
+  occupied: Set<string>,
+  type: BuildingType,
+  slot: { x: number; y: number },
+  extra?: Pick<EnemyVillageBuildingPlan, 'seedGarrison' | 'garrisonFillRatio' | 'garrisonRank'>
+): boolean {
+  const def = dataManager.getBuilding(type);
+  if (!def) return false;
+  const plan: EnemyVillageBuildingPlan = { type, x: slot.x, y: slot.y, ...extra };
+  const cells = rectCells(plan.x, plan.y, def.size.width, def.size.height);
+  if (cells.some(c => occupied.has(c))) return false;
+  for (const cell of cells) occupied.add(cell);
+  out.push(plan);
+  return true;
+}
+
+function findVillageBounds(
+  tileMap: TileMap,
+  playerCenter: { x: number; y: number },
+  size: number,
+  villageIndex: number,
+  existing: readonly { x: number; y: number; width: number; height: number }[]
+): { x: number; y: number; width: number; height: number } | null {
+  const initialRadius = dataManager.getGameConfig().starting.exploration.initialRadius;
+  const margin = 2;
+  const candidates: Array<{ x: number; y: number; width: number; height: number }> = [];
+
+  if (villageIndex === 0) {
+    const offset = initialRadius + 4;
+    candidates.push(
+      { x: playerCenter.x + offset, y: playerCenter.y - Math.floor(size / 2), width: size, height: size },
+      { x: playerCenter.x - offset - size, y: playerCenter.y - Math.floor(size / 2), width: size, height: size },
+      { x: playerCenter.x - Math.floor(size / 2), y: playerCenter.y + offset, width: size, height: size },
+      { x: playerCenter.x - Math.floor(size / 2), y: playerCenter.y - offset - size, width: size, height: size },
+    );
+  } else {
+    const maxRadius = Math.min(tileMap.width, tileMap.height) * 0.46;
+    const minRadius = initialRadius + 80;
+    const radius = minRadius + ((maxRadius - minRadius) * villageIndex) / (ENEMY_VILLAGE_COUNT - 1);
+    const baseAngle = -Math.PI / 3 + villageIndex * 2.399963229728653;
+    for (let ring = 0; ring < 5; ring++) {
+      for (let step = 0; step < 10; step++) {
+        const angle = baseAngle + step * (Math.PI * 2 / 10) + ring * 0.19;
+        const r = radius + (ring - 2) * 34;
+        const cx = Math.round(playerCenter.x + Math.cos(angle) * r);
+        const cy = Math.round(playerCenter.y + Math.sin(angle) * r);
+        candidates.push({ x: cx - Math.floor(size / 2), y: cy - Math.floor(size / 2), width: size, height: size });
+      }
+    }
+  }
+
+  return candidates.find(c =>
+    c.x >= margin &&
+    c.y >= margin &&
+    c.x + c.width < tileMap.width - margin &&
+    c.y + c.height < tileMap.height - margin &&
+    !overlapsExistingBounds(c, existing) &&
+    !areaHasOccupiedTile(tileMap, c.x, c.y, c.width, c.height)
+  ) ?? null;
+}
+
+function planEnemyVillage(
+  tileMap: TileMap,
+  playerCenter: { x: number; y: number },
+  villageIndex: number,
+  existingBounds: readonly { x: number; y: number; width: number; height: number }[]
+): EnemyVillagePlan | null {
+  const difficulty = villageIndex;
+  const size = Math.min(MAX_VILLAGE_SIZE, MIN_VILLAGE_SIZE + difficulty * 3);
+  const bounds = findVillageBounds(tileMap, playerCenter, size, villageIndex, existingBounds);
   if (!bounds) return null;
 
-  const random = mulberry32(tileMap.getSeed() ^ 0xC0FFEE);
+  const factionId = ENEMY_FACTIONS[villageIndex] ?? (`enemy_${villageIndex + 1}` as EnemyFactionId);
+  const random = mulberry32(tileMap.getSeed() ^ 0xC0FFEE ^ (villageIndex * 0x9E3779B9));
   const headquarters: EnemyVillageBuildingPlan = {
     type: 'base_camp',
-    x: bounds.x + 10,
-    y: bounds.y + 10,
+    x: bounds.x + Math.floor(size / 2) - 2,
+    y: bounds.y + Math.floor(size / 2) - 2,
   };
-  const buildings: EnemyVillageBuildingPlan[] = [
-    { type: 'guardhouse', x: bounds.x + 4, y: bounds.y + 13, seedGarrison: true },
-    { type: 'watchtower', x: bounds.x + 12, y: bounds.y + 3, seedGarrison: true },
-    { type: 'barracks', x: bounds.x + 21, y: bounds.y + 15, seedGarrison: true },
-    { type: 'forester', x: bounds.x + 4, y: bounds.y + 5 },
-    { type: 'farm', x: bounds.x + 17, y: bounds.y + 5 },
-    { type: 'fisher', x: bounds.x + 8, y: bounds.y + 22 },
-  ];
+  const waterBase = { x: bounds.x + 3, y: bounds.y + bounds.height - 5 };
   const waterCells = [
-    { x: bounds.x + 4, y: bounds.y + 23 },
-    { x: bounds.x + 5, y: bounds.y + 23 },
-    { x: bounds.x + 4, y: bounds.y + 24 },
-    { x: bounds.x + 5, y: bounds.y + 24 },
-    { x: bounds.x + 6, y: bounds.y + 24 },
+    { x: waterBase.x, y: waterBase.y },
+    { x: waterBase.x + 1, y: waterBase.y },
+    { x: waterBase.x, y: waterBase.y + 1 },
+    { x: waterBase.x + 1, y: waterBase.y + 1 },
+    { x: waterBase.x + 2, y: waterBase.y + 1 },
   ];
 
-  const extraCount = Math.floor(random() * 9);
-  const shuffledSlots = [...EXTRA_SLOTS].sort(() => random() - 0.5);
-  const shuffledTypes = [...EXTRA_TYPES].sort(() => random() - 0.5);
   const occupied = new Set<string>();
-  for (const plan of [headquarters, ...buildings]) {
+  for (const plan of [headquarters]) {
     const def = dataManager.getBuilding(plan.type)!;
     for (const cell of rectCells(plan.x, plan.y, def.size.width, def.size.height)) occupied.add(cell);
   }
   for (const cell of waterCells) occupied.add(key(cell.x, cell.y));
 
-  for (let i = 0; i < extraCount && i < shuffledSlots.length; i++) {
-    const type = shuffledTypes[i % shuffledTypes.length];
-    const def = dataManager.getBuilding(type);
-    const slot = shuffledSlots[i];
-    if (!def) continue;
-    const plan = { type, x: bounds.x + slot.x, y: bounds.y + slot.y };
-    const cells = rectCells(plan.x, plan.y, def.size.width, def.size.height);
-    if (cells.some(c => occupied.has(c))) continue;
-    for (const cell of cells) occupied.add(cell);
-    buildings.push(plan);
+  const buildings: EnemyVillageBuildingPlan[] = [];
+  const slots = createSlotGrid(bounds, random)
+    .filter(slot => Math.abs(slot.x - headquarters.x) + Math.abs(slot.y - headquarters.y) > 7);
+  const militaryCount = Math.min(9, 1 + Math.floor(difficulty * 0.85));
+  const civilianCount = Math.min(slots.length - militaryCount, 4 + difficulty * 2);
+  const garrisonRank = (difficulty >= 7 ? 3 : difficulty >= 3 ? 2 : 1) as 1 | 2 | 3;
+  const garrisonFillRatio = Math.min(1, 0.45 + difficulty * 0.065);
+
+  let slotIndex = 0;
+  const militaryTypes = chooseMilitaryTypes(difficulty, militaryCount);
+  for (const type of militaryTypes) {
+    while (slotIndex < slots.length) {
+      if (tryPlaceBuilding(buildings, occupied, type, slots[slotIndex++]!, {
+        seedGarrison: true,
+        garrisonFillRatio,
+        garrisonRank,
+      })) break;
+    }
+  }
+
+  const shuffledCivilian = [...CIVILIAN_TYPES].sort(() => random() - 0.5);
+  for (let i = 0; i < civilianCount && slotIndex < slots.length; i++) {
+    const type = shuffledCivilian[i % shuffledCivilian.length]!;
+    while (slotIndex < slots.length) {
+      if (tryPlaceBuilding(buildings, occupied, type, slots[slotIndex++]!)) break;
+    }
   }
 
   const roads = new Map<string, { x: number; y: number }>();
@@ -198,41 +310,68 @@ export function planInitialEnemyVillage(tileMap: TileMap, playerCenter: { x: num
   roads.set(key(hqRoad.x, hqRoad.y), hqRoad);
   for (const building of buildings) {
     const road = getEntranceRoadCell(building, occupied);
-    addRoadPath(roads, occupied, hqRoad, road, { ...bounds, width: VILLAGE_SIZE, height: VILLAGE_SIZE });
+    addRoadPath(roads, occupied, hqRoad, road, bounds);
   }
 
   const military = buildings.filter(b => b.seedGarrison);
-  const nearestMilitary = military.reduce((best, cur) => {
-    const curDef = dataManager.getBuilding(cur.type)!;
-    const bestDef = dataManager.getBuilding(best.type)!;
-    const curCx = cur.x + Math.floor(curDef.size.width / 2);
-    const curCy = cur.y + Math.floor(curDef.size.height / 2);
-    const bestCx = best.x + Math.floor(bestDef.size.width / 2);
-    const bestCy = best.y + Math.floor(bestDef.size.height / 2);
-    const curD = Math.abs(curCx - playerCenter.x) + Math.abs(curCy - playerCenter.y);
-    const bestD = Math.abs(bestCx - playerCenter.x) + Math.abs(bestCy - playerCenter.y);
-    return curD < bestD ? cur : best;
-  }, military[0]!);
-  const nearestDef = dataManager.getBuilding(nearestMilitary.type)!;
-  const revealCx = nearestMilitary.x + Math.floor(nearestDef.size.width / 2);
-  const revealCy = nearestMilitary.y + Math.floor(nearestDef.size.height / 2);
+  const nearestMilitary = military.length > 0
+    ? military.reduce((best, cur) => {
+        const curCenter = centerOf(cur);
+        const bestCenter = centerOf(best);
+        const curD = Math.abs(curCenter.x - playerCenter.x) + Math.abs(curCenter.y - playerCenter.y);
+        const bestD = Math.abs(bestCenter.x - playerCenter.x) + Math.abs(bestCenter.y - playerCenter.y);
+        return curD < bestD ? cur : best;
+      }, military[0]!)
+    : headquarters;
+  const revealCenter = centerOf(nearestMilitary);
   const revealCells: { x: number; y: number }[] = [];
-  for (let y = revealCy - 7; y <= revealCy + 7; y++) {
-    for (let x = revealCx - 7; x <= revealCx + 7; x++) {
-      if (tileMap.isInBounds(x, y) && Math.max(Math.abs(x - revealCx), Math.abs(y - revealCy)) <= 7) {
-        revealCells.push({ x, y });
+  if (villageIndex === 0) {
+    for (let y = revealCenter.y - 7; y <= revealCenter.y + 7; y++) {
+      for (let x = revealCenter.x - 7; x <= revealCenter.x + 7; x++) {
+        if (tileMap.isInBounds(x, y) && Math.max(Math.abs(x - revealCenter.x), Math.abs(y - revealCenter.y)) <= 7) {
+          revealCells.push({ x, y });
+        }
       }
     }
   }
 
   return {
-    id: 'enemy_1_initial_village',
-    factionId: 'enemy_1',
-    bounds: { ...bounds, width: VILLAGE_SIZE, height: VILLAGE_SIZE },
+    id: `${factionId}_village`,
+    factionId,
+    difficulty,
+    bounds,
     headquarters,
     buildings,
     roads: [...roads.values()],
     waterCells,
     revealCells,
   };
+}
+
+export function planEnemyVillages(tileMap: TileMap, playerCenter: { x: number; y: number }): EnemyVillagePlan[] {
+  const plans: EnemyVillagePlan[] = [];
+  const bounds: Array<{ x: number; y: number; width: number; height: number }> = [];
+  for (let i = 0; i < ENEMY_VILLAGE_COUNT; i++) {
+    const plan = planEnemyVillage(tileMap, playerCenter, i, bounds);
+    if (!plan) {
+      console.warn(`Enemy village generation skipped for slot ${i + 1}: no valid site.`);
+      continue;
+    }
+    plans.push(plan);
+    bounds.push(plan.bounds);
+  }
+
+  return plans.sort((a, b) => {
+    const acx = a.bounds.x + a.bounds.width / 2;
+    const acy = a.bounds.y + a.bounds.height / 2;
+    const bcx = b.bounds.x + b.bounds.width / 2;
+    const bcy = b.bounds.y + b.bounds.height / 2;
+    const ad = Math.max(Math.abs(acx - playerCenter.x), Math.abs(acy - playerCenter.y));
+    const bd = Math.max(Math.abs(bcx - playerCenter.x), Math.abs(bcy - playerCenter.y));
+    return ad - bd;
+  });
+}
+
+export function planInitialEnemyVillage(tileMap: TileMap, playerCenter: { x: number; y: number }): EnemyVillagePlan | null {
+  return planEnemyVillages(tileMap, playerCenter)[0] ?? null;
 }

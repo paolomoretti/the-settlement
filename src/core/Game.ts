@@ -19,7 +19,15 @@ import { Building } from '@/components/Building';
 import { Production, type ProductionPriorityState } from '@/components/Production';
 import { Storage } from '@/components/Storage';
 import type { FactionId } from '@/components/Owner';
-import { FIRST_ENEMY_FACTION, PLAYER_FACTION, getEntityFaction, isPlayerOwned, setEntityFaction } from '@/components/ownerUtils';
+import {
+  ENEMY_FACTIONS,
+  PLAYER_FACTION,
+  getEnemyFactionStyle,
+  getEntityFaction,
+  isEnemyFactionId,
+  isPlayerOwned,
+  setEntityFaction,
+} from '@/components/ownerUtils';
 import { dataManager } from '@/data/DataManager';
 import { resourceManager } from '@/economics/ResourceManager';
 import { roadSegmentManager, RoadSegment } from '@/economics/RoadSegmentManager';
@@ -36,7 +44,7 @@ import { SurveyCoordinator } from '@/survey/SurveyCoordinator';
 import { ensureWellAquiferInitialized } from '@/map/wellAquifer';
 import { WildlifeCoordinator } from '@/wildlife/WildlifeCoordinator';
 import { TerritoryCoordinator } from '@/map/TerritoryCoordinator';
-import { planInitialEnemyVillage, type EnemyVillagePlan, type EnemyVillageBuildingPlan } from '@/world/EnemyVillageGenerator';
+import { planEnemyVillages, type EnemyVillagePlan, type EnemyVillageBuildingPlan } from '@/world/EnemyVillageGenerator';
 
 const DEMOLITION_FIRE_DURATION_MS = 30_000;
 const DEMOLITION_SCORCH_DURATION_MS = 60_000;
@@ -160,12 +168,13 @@ export class Game {
 
     // Initialize systems
     this.renderSystem = new RenderSystem(canvas, this.tileMap);
-    this.movementSystem = new MovementSystem();
+    this.movementSystem = new MovementSystem(entity => this.isEntitySimulationActive(entity));
     this.productionSystem = new ProductionSystem(
       () => this.tileMap,
       () => this.pathFinder,
       () => this.wildlife,
-      () => this.productionPriorities
+      () => this.productionPriorities,
+      entity => this.isEntitySimulationActive(entity)
     );
     this.inputSystem = new InputSystem(canvas, this.renderSystem);
     this.pathFinder = new PathFinder();
@@ -182,18 +191,21 @@ export class Game {
       if (playerLayer.frontier.size > 0) {
         layers.push({ frontier: playerLayer.frontier, unionU: playerLayer.unionU });
       }
-      const enemyLayer = this.territory.getLayer(FIRST_ENEMY_FACTION);
-      if (enemyLayer.frontier.size > 0) {
+      for (let i = 0; i < ENEMY_FACTIONS.length; i++) {
+        const factionId = ENEMY_FACTIONS[i]!;
+        const enemyLayer = this.territory.getLayer(factionId);
+        if (enemyLayer.frontier.size === 0) continue;
+        const style = getEnemyFactionStyle(factionId);
         layers.push({
           frontier: enemyLayer.frontier,
           unionU: enemyLayer.unionU,
           style: {
-            stickDark: 'rgba(80, 18, 18, 0.98)',
-            stickLight: 'rgba(155, 42, 42, 0.82)',
-            rope: 'rgba(190, 34, 42, 0.94)',
-            ropeHighlight: 'rgba(255, 135, 125, 0.58)',
-            offsetX: 2.5,
-            offsetY: -1.5,
+            stickDark: style.poleDark,
+            stickLight: style.poleLight,
+            rope: style.rope,
+            ropeHighlight: style.ropeHighlight,
+            offsetX: 2.5 + (i % 3) * 0.7,
+            offsetY: -1.5 - (i % 2) * 0.7,
           },
         });
       }
@@ -221,6 +233,7 @@ export class Game {
       claimToolSpecialistForDispatch: (tool: string) => this.claimToolSpecialistForDispatch(tool),
       returnToolSpecialistToHq: (tool: string) => this.addToolSpecialistToHqPool(tool, 1),
       onMilitarySpecialistReturnedToHq: () => this.addMilitarySpecialistToHqPool(1),
+      isEntitySimulationActive: entity => this.isEntitySimulationActive(entity),
     });
 
     this.surveys = new SurveyCoordinator({
@@ -473,7 +486,7 @@ export class Game {
     this.markTerritoryDirty();
     this.refreshTerritoryIfDirty();
 
-    this.seedInitialEnemyVillage(centerX + 3, centerY + 3);
+    this.seedEnemyVillages(centerX + 3, centerY + 3);
 
     this.wildlife.seedInitialRabbits(this.tileMap, centerX, centerY);
 
@@ -488,7 +501,40 @@ export class Game {
     if (!this.territoryDirty) return;
     this.territory.rebuildFrom(this.entities, this.baseCampEntity);
     this.territory.applyFogReveal(this.renderSystem);
+    this.updateEnemyRealmActivation();
     this.territoryDirty = false;
+  }
+
+  private isEnemyFactionActive(factionId: FactionId): boolean {
+    if (factionId === PLAYER_FACTION) return true;
+    return this.enemyRealms.some(realm => realm.factionId === factionId && realm.activated === true);
+  }
+
+  private isEntitySimulationActive(entity: Entity): boolean {
+    const factionId = getEntityFaction(entity);
+    return factionId === PLAYER_FACTION || this.isEnemyFactionActive(factionId);
+  }
+
+  private updateEnemyRealmActivation(): void {
+    const playerLayer = this.territory.getLayer(PLAYER_FACTION);
+    if (playerLayer.unionU.size === 0) return;
+    for (const realm of this.enemyRealms) {
+      if (realm.activated === true) continue;
+      if (!this.playerTerritoryTouchesRealm(realm, playerLayer.unionU)) continue;
+      realm.activated = true;
+      this.seedEnemyRealmDecorations(realm);
+      console.log(`${realm.factionId} activated as player territory reached the realm.`);
+    }
+  }
+
+  private playerTerritoryTouchesRealm(realm: EnemyVillagePlan, playerCells: ReadonlySet<string>): boolean {
+    const margin = 1;
+    for (let y = realm.bounds.y - margin; y < realm.bounds.y + realm.bounds.height + margin; y++) {
+      for (let x = realm.bounds.x - margin; x < realm.bounds.x + realm.bounds.width + margin; x++) {
+        if (playerCells.has(`${x},${y}`)) return true;
+      }
+    }
+    return false;
   }
 
   private isAreaExplored(x: number, y: number, width: number = 1, height: number = 1): boolean {
@@ -1192,13 +1238,22 @@ export class Game {
     console.log(`Population: ${this.population.current}/${this.population.max} (peasants / housing cap)`);
   }
 
-  private seedInitialEnemyVillage(playerCenterX: number, playerCenterY: number): void {
-    const plan = planInitialEnemyVillage(this.tileMap, { x: playerCenterX, y: playerCenterY });
-    if (!plan) {
-      console.warn('Enemy village generation skipped: no valid nearby site.');
+  private seedEnemyVillages(playerCenterX: number, playerCenterY: number): void {
+    const plans = planEnemyVillages(this.tileMap, { x: playerCenterX, y: playerCenterY });
+    if (plans.length === 0) {
+      console.warn('Enemy village generation skipped: no valid sites.');
       return;
     }
+    for (const plan of plans) {
+      this.seedEnemyVillage(plan);
+    }
+    this.enemyRealms = plans;
+    this.markTerritoryDirty();
+    this.refreshTerritoryIfDirty();
+    console.log(`${plans.length} enemy villages generated.`);
+  }
 
+  private seedEnemyVillage(plan: EnemyVillagePlan): void {
     this.flattenEnemyVillagePatch(plan.bounds);
     this.applyEnemyVillageWater(plan.waterCells);
     this.placeEnemyBuilding(plan.headquarters, plan.factionId, true);
@@ -1213,11 +1268,7 @@ export class Game {
     this.revealCells(plan.revealCells);
     roadSegmentManager.recalculate(this.tileMap);
     this.updateBuildingRoadConnections();
-    this.seedEnemyStreetWorkers(plan);
-    this.enemyRealms = [plan];
-    this.markTerritoryDirty();
-    this.refreshTerritoryIfDirty();
-    console.log(`Enemy village generated at (${plan.bounds.x}, ${plan.bounds.y})`);
+    console.log(`${plan.factionId} village generated at (${plan.bounds.x}, ${plan.bounds.y})`);
   }
 
   private flattenEnemyVillagePatch(bounds: { x: number; y: number; width: number; height: number }): void {
@@ -1264,10 +1315,6 @@ export class Game {
 
     this.addEntity(entity);
     this.occupyBuildingTiles(entity.id, plan.x, plan.y, building.width, building.height, building);
-    if (plan.type === 'farm') {
-      this.seedEnemyFarmWorker(entity, factionId);
-    }
-
     if (isHeadquarters) {
       const storage = entity.getComponent(Storage);
       if (storage) {
@@ -1297,9 +1344,11 @@ export class Game {
       const cap = dataManager.getBuilding(plan.type)?.military?.soldierCapacity;
       if (typeof cap === 'number' && cap > 0) {
         building.initMilitaryGarrison(cap);
-        const fillCount = Math.min(cap, Math.max(1, Math.ceil(cap / 2)));
+        const fillRatio = Math.max(0.1, Math.min(1, plan.garrisonFillRatio ?? 0.5));
+        const fillCount = Math.min(cap, Math.max(1, Math.ceil(cap * fillRatio)));
+        const rank = plan.garrisonRank ?? 1;
         for (let i = 0; i < fillCount; i++) {
-          const soldier = createMilitaryWorker(plan.x + 0.5, plan.y + 0.5, 1);
+          const soldier = createMilitaryWorker(plan.x + 0.5, plan.y + 0.5, rank);
           setEntityFaction(soldier, factionId);
           const worker = soldier.getComponent(Worker);
           if (worker) {
@@ -1308,6 +1357,9 @@ export class Game {
           }
           this.addEntity(soldier);
           building.assignMilitarySlot(i, soldier.id);
+          if (rank > 1 && building.militaryGarrison?.[i]) {
+            building.militaryGarrison[i] = { rank, workerEntityId: soldier.id };
+          }
         }
       }
     }
@@ -1369,16 +1421,20 @@ export class Game {
     }
   }
 
-  private seedLoadedEnemyDecorations(): void {
+  private seedEnemyRealmDecorations(realm: EnemyVillagePlan): void {
     for (const entity of this.entities) {
-      if (!entity.active || getEntityFaction(entity) === PLAYER_FACTION) continue;
+      if (!entity.active || getEntityFaction(entity) !== realm.factionId) continue;
       const building = entity.getComponent(Building);
       if (building?.buildingType === 'farm') {
-        this.seedEnemyFarmWorker(entity, getEntityFaction(entity));
+        this.seedEnemyFarmWorker(entity, realm.factionId);
       }
     }
+    this.seedEnemyStreetWorkers(realm);
+  }
+
+  private seedLoadedEnemyDecorations(): void {
     for (const realm of this.enemyRealms) {
-      this.seedEnemyStreetWorkers(realm);
+      if (realm.activated === true) this.seedEnemyRealmDecorations(realm);
     }
   }
 
@@ -1471,6 +1527,7 @@ export class Game {
     let n = 0;
     for (const e of this.entities) {
       if (!e.active) continue;
+      if (!isPlayerOwned(e)) continue;
       const b = e.getComponent(Building);
       if (b?.assignedToolSpecialist) n++;
     }
@@ -1493,6 +1550,7 @@ export class Game {
     let activeMilitaryWorkers = 0;
     for (const e of this.entities) {
       if (!e.active) continue;
+      if (!isPlayerOwned(e)) continue;
       const w = e.getComponent(Worker);
       if (w?.role === 'military') activeMilitaryWorkers++;
     }
@@ -1564,6 +1622,7 @@ export class Game {
     const toolAssigned: Record<string, number> = {};
     for (const e of this.entities) {
       if (!e.active) continue;
+      if (!isPlayerOwned(e)) continue;
       const b = e.getComponent(Building);
       if (!b?.assignedToolSpecialist) continue;
       toolAssigned[b.assignedToolSpecialist] = (toolAssigned[b.assignedToolSpecialist] || 0) + 1;
@@ -1603,7 +1662,7 @@ export class Game {
   public getAvailablePopulation(): number {
     return (
       this.population.current -
-      roadSegmentManager.getWorkerCount() -
+      this.workers.getPlayerRoadSegmentWorkerCount() -
       this.workers.getReservedPopulationCount() -
       this.getTotalToolSpecialistsCount() -
       this.getTotalMilitarySpecialistsCount()
@@ -4200,8 +4259,9 @@ export class Game {
         if (!buildingData.type || buildingData.x === undefined || buildingData.y === undefined) continue;
 
         const entity = createBuilding(buildingData.type, buildingData.x, buildingData.y);
-        const savedFaction: FactionId =
-          buildingData.factionId === FIRST_ENEMY_FACTION ? FIRST_ENEMY_FACTION : PLAYER_FACTION;
+        const savedFaction: FactionId = isEnemyFactionId(buildingData.factionId)
+          ? buildingData.factionId
+          : PLAYER_FACTION;
         setEntityFaction(entity, savedFaction);
 
         if (buildingData.type === 'base_camp' && savedFaction === PLAYER_FACTION) {

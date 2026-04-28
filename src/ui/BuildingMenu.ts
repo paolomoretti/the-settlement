@@ -8,11 +8,53 @@ import { BuildingDefinition, BuildingType } from '@/types/GameData';
 import '@fortawesome/fontawesome-free/css/fontawesome.min.css';
 import '@fortawesome/fontawesome-free/css/solid.min.css';
 
+type BuildingCategory = 'residential' | 'production' | 'military' | 'infrastructure';
+type ProductionGroupId = 'basic' | 'food' | 'mines' | 'processing' | 'tools';
+
+const PRODUCTION_GROUPS: Array<{
+  id: ProductionGroupId;
+  label: string;
+  icon: string;
+  buildings: readonly BuildingType[];
+}> = [
+  {
+    id: 'basic',
+    label: 'Basic',
+    icon: 'fa-tree',
+    buildings: ['lumberjack', 'forester', 'quarry', 'well'],
+  },
+  {
+    id: 'food',
+    label: 'Food',
+    icon: 'fa-wheat-awn',
+    buildings: ['fisher', 'hunter', 'farm', 'pig_farm', 'mill', 'bakery', 'brewery', 'slaughterhouse'],
+  },
+  {
+    id: 'mines',
+    label: 'Mines',
+    icon: 'fa-mountain',
+    buildings: ['coal_mine', 'iron_mine', 'gold_mine', 'granite_mine'],
+  },
+  {
+    id: 'processing',
+    label: 'Processing',
+    icon: 'fa-gears',
+    buildings: ['sawmill', 'iron_smelter', 'mint'],
+  },
+  {
+    id: 'tools',
+    label: 'Tools',
+    icon: 'fa-hammer',
+    buildings: ['metalworks', 'armory'],
+  },
+];
+
 export class BuildingMenu {
   private game: Game;
   private panel: HTMLElement | null = null;
   private overlay: HTMLElement | null = null;
-  private currentCategory: 'residential' | 'production' | 'military' | 'infrastructure' = 'production';
+  private currentCategory: BuildingCategory = 'production';
+  private currentProductionGroup: ProductionGroupId = 'basic';
 
   constructor(game: Game) {
     this.game = game;
@@ -82,12 +124,13 @@ export class BuildingMenu {
     if (!container) return;
 
     container.innerHTML = '';
+    this.renderProductionSubtabs(container);
 
     // Get buildings for current category
     const buildings = dataManager.getBuildingsByCategory(this.currentCategory);
 
     // Filter out base camp
-    const buildableBuildings = buildings.filter(b => !b.isHeadquarters);
+    const buildableBuildings = this.filterBuildingsForCurrentView(buildings.filter(b => !b.isHeadquarters));
 
     if (buildableBuildings.length === 0) {
       container.innerHTML = '<div style="padding: 20px; text-align: center; opacity: 0.6;">No buildings in this category yet</div>';
@@ -98,6 +141,42 @@ export class BuildingMenu {
       const card = this.createBuildingCard(building);
       container.appendChild(card);
     });
+  }
+
+  private filterBuildingsForCurrentView(buildings: BuildingDefinition[]): BuildingDefinition[] {
+    if (this.currentCategory !== 'production') return buildings;
+    const group = PRODUCTION_GROUPS.find(g => g.id === this.currentProductionGroup) ?? PRODUCTION_GROUPS[0]!;
+    const allowed = new Set<BuildingType>(group.buildings);
+    return buildings.filter(building => allowed.has(building.id));
+  }
+
+  private renderProductionSubtabs(container: HTMLElement): void {
+    const existing = document.getElementById('production-subtabs');
+    if (existing) existing.remove();
+    if (this.currentCategory !== 'production') return;
+
+    const tabs = document.createElement('div');
+    tabs.id = 'production-subtabs';
+    tabs.className = 'production-subtabs';
+    tabs.setAttribute('role', 'tablist');
+    tabs.setAttribute('aria-label', 'Production building groups');
+
+    for (const group of PRODUCTION_GROUPS) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `production-subtab${group.id === this.currentProductionGroup ? ' active' : ''}`;
+      button.setAttribute('role', 'tab');
+      button.setAttribute('aria-selected', group.id === this.currentProductionGroup ? 'true' : 'false');
+      button.appendChild(this.createInlineIcon(group.icon, group.label));
+      button.append(group.label);
+      button.addEventListener('click', () => {
+        this.currentProductionGroup = group.id;
+        this.refresh();
+      });
+      tabs.appendChild(button);
+    }
+
+    container.before(tabs);
   }
 
   private createBuildingCard(building: BuildingDefinition): HTMLElement {

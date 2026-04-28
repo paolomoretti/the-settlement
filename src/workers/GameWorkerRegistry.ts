@@ -102,10 +102,13 @@ export interface WorkerWorldAccess {
   returnToolSpecialistToHq(tool: string): void;
   /** A returning military specialist reached HQ and should be added to the persistent pool. */
   onMilitarySpecialistReturnedToHq(): void;
+  /** False for dormant computer villages; they should not spend per-frame work. */
+  isEntitySimulationActive(entity: Entity): boolean;
 }
 
 export class GameWorkerRegistry {
   private readonly returningWorkers = new Set<number>();
+  private readonly roadSegmentWorkers = new Set<number>();
   private readonly builderWorkers = new Map<number, number>();
   private readonly returningBuilders = new Set<number>();
   private readonly toolWorkers = new Map<number, { buildingId: number; tool: string }>();
@@ -150,14 +153,28 @@ export class GameWorkerRegistry {
 
   getReservedPopulationCount(): number {
     return (
-      this.returningWorkers.size +
-      this.builderWorkers.size +
-      this.returningBuilders.size +
-      this.toolWorkers.size +
-      this.militaryDispatchWorkers.size +
-      this.animationWorkers.size +
-      this.surveyorWorkers.size
+      this.countPlayerWorkerIds(this.returningWorkers) +
+      this.countPlayerWorkerIds(this.builderWorkers.keys()) +
+      this.countPlayerWorkerIds(this.returningBuilders) +
+      this.countPlayerWorkerIds(this.toolWorkers.keys()) +
+      this.countPlayerWorkerIds(this.militaryDispatchWorkers.keys()) +
+      this.countPlayerWorkerIds(this.animationWorkers.keys()) +
+      this.countPlayerWorkerIds(this.surveyorWorkers)
     );
+  }
+
+  getPlayerRoadSegmentWorkerCount(): number {
+    return this.countPlayerWorkerIds(this.roadSegmentWorkers);
+  }
+
+  private countPlayerWorkerIds(workerIds: Iterable<number>): number {
+    const entities = this.world.getEntities();
+    let count = 0;
+    for (const workerId of workerIds) {
+      const entity = entities.find(e => e.id === workerId && e.active);
+      if (entity && isPlayerOwned(entity)) count++;
+    }
+    return count;
   }
 
   beginMilitaryDispatch(workerEntityId: number, targetBuildingEntityId: number): void {
@@ -181,7 +198,10 @@ export class GameWorkerRegistry {
   /** In-transit required-tool specialists per tool id. */
   getToolDispatchCounts(): Record<string, number> {
     const counts: Record<string, number> = {};
-    for (const { tool } of this.toolWorkers.values()) {
+    const entities = this.world.getEntities();
+    for (const [workerId, { tool }] of this.toolWorkers) {
+      const entity = entities.find(e => e.id === workerId && e.active);
+      if (!entity || !isPlayerOwned(entity)) continue;
       counts[tool] = (counts[tool] || 0) + 1;
     }
     return counts;
@@ -560,6 +580,7 @@ export class GameWorkerRegistry {
 
     for (const entity of entities) {
       if (!entity.active) continue;
+      if (!this.world.isEntitySimulationActive(entity)) continue;
       const building = entity.getComponent(Building);
       if (!building || !building.isComplete() || building.hasOperator) continue;
       if (!building.isActive) continue;
@@ -667,6 +688,12 @@ export class GameWorkerRegistry {
         if (workerComp.concealedInBuildingId != null) continue;
 
         const buildingEntity = entities.find(e => e.id === state.buildingEntityId && e.active);
+        if (buildingEntity && !this.world.isEntitySimulationActive(buildingEntity)) {
+          workerComp.concealedInBuildingId = null;
+          this.world.removeEntity(workerEntity);
+          this.cleanupAnimationWorker(workerId, state);
+          continue;
+        }
         const building = buildingEntity?.getComponent(Building);
         const production = buildingEntity?.getComponent(Production);
         const buildingDef = building ? dataManager.getBuilding(building.buildingType) : null;
@@ -872,6 +899,11 @@ export class GameWorkerRegistry {
         if (!movable || !workerComp || !workerPos) continue;
 
         const buildingEntity = entities.find(e => e.id === plant.buildingEntityId && e.active);
+        if (buildingEntity && !this.world.isEntitySimulationActive(buildingEntity)) {
+          this.world.removeEntity(workerEntity);
+          this.cleanupAnimationWorker(workerId, plant);
+          continue;
+        }
         const building = buildingEntity?.getComponent(Building);
         const production = buildingEntity?.getComponent(Production);
         const buildingDef = building ? dataManager.getBuilding(building.buildingType) : undefined;
@@ -953,6 +985,11 @@ export class GameWorkerRegistry {
       if (!workerComp || !workerPos) continue;
 
       const buildingEntity = entities.find(e => e.id === gather.buildingEntityId && e.active);
+      if (buildingEntity && !this.world.isEntitySimulationActive(buildingEntity)) {
+        this.world.removeEntity(workerEntity);
+        this.cleanupAnimationWorker(workerId, gather);
+        continue;
+      }
 
       switch (gather.phase) {
         case 'to_target': {
@@ -1249,6 +1286,7 @@ export class GameWorkerRegistry {
 
     for (const entity of entities) {
       if (!entity.active) continue;
+      if (!this.world.isEntitySimulationActive(entity)) continue;
       const building = entity.getComponent(Building);
       const production = entity.getComponent(Production);
       if (!building || !production) continue;
@@ -1554,6 +1592,7 @@ export class GameWorkerRegistry {
 
   resetState(): void {
     this.returningWorkers.clear();
+    this.roadSegmentWorkers.clear();
     this.builderWorkers.clear();
     this.returningBuilders.clear();
     this.toolWorkers.clear();
@@ -1565,14 +1604,13 @@ export class GameWorkerRegistry {
   }
 
   private spawnSegmentWorker(segment: RoadSegment): number | null {
-    if (this.world.getAvailablePeasantSlotCount() <= 0) {
-      console.warn('No available population for road worker');
-      return null;
-    }
-
     const connectedRoads = this.world.getBaseCampConnectedRoads();
     const isConnected = segment.tiles.some(t => connectedRoads.has(`${t.x},${t.y}`));
     if (!isConnected) {
+      return null;
+    }
+    if (this.world.getAvailablePeasantSlotCount() <= 0) {
+      console.warn('No available population for road worker');
       return null;
     }
 
@@ -1615,10 +1653,12 @@ export class GameWorkerRegistry {
     }
 
     console.log(`Road worker spawned for segment #${segment.id} at (${spawnX},${spawnY}) → rest (${rest.x},${rest.y})`);
+    this.roadSegmentWorkers.add(worker.id);
     return worker.id;
   }
 
   private freeSegmentWorker(workerId: number): void {
+    this.roadSegmentWorkers.delete(workerId);
     const entities = [...this.world.getEntities()];
     const entity = entities.find(e => e.id === workerId && e.active);
     if (!entity) return;

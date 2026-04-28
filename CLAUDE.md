@@ -59,6 +59,8 @@ Working: terrain generation, isometric rendering, camera pan/zoom, building plac
 
 Not yet implemented: tool requirements for workers, mine food system (bread/fish/ham OR-input), metalworks tool priority system, production UX indicators (stop/pickup icons, progress bars), worker job assignment to buildings, resource consumption (food), trading, audio, building upgrades, weather/seasons.
 
+**Enemy realms:** new games show a loader while the world is created and seed 10 color-coded enemy villages; farther villages have larger cities, more military buildings, fuller garrisons, and higher soldier ranks. `src/debug/debugFlags.ts` has the generic `DEBUG` flag; when enabled it reveals the whole world in the navigator for code-level QA — see [.claude/ENEMY_REALMS.md](.claude/ENEMY_REALMS.md).
+
 **Military (partial):** HQ assembly + march to fort, garrison slots, alternating armory sword/shield, gold payroll promotions, territory gated on garrison for soldier posts — see [.claude/MILITARY.md](.claude/MILITARY.md).
 
 ## Documentation

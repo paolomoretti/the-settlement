@@ -134,7 +134,7 @@ export class RoadSegmentManager {
     const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
     for (const [dx, dy] of dirs) {
       const tile = tileMap.getTile(x + dx, y + dy);
-      if (tile && tile.isOccupied() && tile.hasRoad) {
+      if (tile && tile.isOccupied()) {
         return tile.occupiedBy;
       }
     }
@@ -155,7 +155,7 @@ export class RoadSegmentManager {
     if (neighbors.length === 1) {
       return { x, y, type: adjacentBuildingId !== undefined ? 'building' : 'dead_end', entityId: adjacentBuildingId };
     }
-    // Same as the 2-neighbor case: intersections next to a building entrance must
+    // Same as the 2-neighbor case: intersections next to a building footprint must
     // keep entityId so transport can seed computeRoutesToBuilding; otherwise
     // construction materials never get a direction map and sit at base camp forever
     // while the builder still arrives via off-road A*.

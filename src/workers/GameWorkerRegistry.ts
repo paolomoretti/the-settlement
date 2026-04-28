@@ -1757,6 +1757,21 @@ export class GameWorkerRegistry {
     return null;
   }
 
+  private findFootprintAdjacentNetworkRoadTile(
+    pos: Position,
+    building: Building,
+    tileMap: TileMap,
+    connected: Set<string>
+  ): { x: number; y: number } | null {
+    for (let dy = 0; dy < building.height; dy++) {
+      for (let dx = 0; dx < building.width; dx++) {
+        const adjacent = this.findAdjacentNetworkRoadTile(pos.x + dx, pos.y + dy, tileMap, connected);
+        if (adjacent) return adjacent;
+      }
+    }
+    return null;
+  }
+
   private findBaseCampSpawnTile(): { x: number; y: number } | null {
     const baseCampEntity = this.world.getBaseCampEntity();
     if (!baseCampEntity) return null;
@@ -1791,10 +1806,10 @@ export class GameWorkerRegistry {
       const ey = pos.y + entrance.dy;
       const adjacent = this.findAdjacentNetworkRoadTile(ex, ey, tileMap, connected);
       if (adjacent) return adjacent;
-      return { x: ex, y: ey };
+      return this.findFootprintAdjacentNetworkRoadTile(pos, building, tileMap, connected) ?? { x: ex, y: ey };
     }
 
-    return this.findAdjacentNetworkRoadTile(pos.x, pos.y, tileMap, connected);
+    return this.findFootprintAdjacentNetworkRoadTile(pos, building, tileMap, connected);
   }
 
   private spawnBuilder(buildingEntity: Entity): void {

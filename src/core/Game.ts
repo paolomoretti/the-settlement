@@ -1024,23 +1024,28 @@ export class Game {
   }
 
   private hasBuildingConnectedRoad(pos: Position, building: Building, connectedRoads: Set<string>): boolean {
+    const hasConnectedRoadAt = (x: number, y: number): boolean => connectedRoads.has(`${x},${y}`);
     const entrance = building.getEntranceOffset();
     if (entrance) {
       const ex = pos.x + entrance.dx;
       const ey = pos.y + entrance.dy;
       const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
       for (const [dx, dy] of dirs) {
-        const key = `${ex + dx},${ey + dy}`;
-        if (connectedRoads.has(key)) return true;
+        if (hasConnectedRoadAt(ex + dx, ey + dy)) return true;
       }
-      return false;
     }
 
-    // Fallback for 1x1 buildings: any cardinal adjacent connected road
+    // Players read a building as connected when a road touches any side of its footprint.
+    // The formal entrance tile still seeds transport, but connection status should match the visible edge.
     const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-    for (const [dx, dy] of dirs) {
-      const key = `${pos.x + dx},${pos.y + dy}`;
-      if (connectedRoads.has(key)) return true;
+    for (let dy = 0; dy < building.height; dy++) {
+      for (let dx = 0; dx < building.width; dx++) {
+        const x = pos.x + dx;
+        const y = pos.y + dy;
+        for (const [ox, oy] of dirs) {
+          if (hasConnectedRoadAt(x + ox, y + oy)) return true;
+        }
+      }
     }
     return false;
   }
@@ -1048,10 +1053,21 @@ export class Game {
   private hasBuildingAdjacentRoad(pos: Position, building: Building): boolean {
     const entrance = building.getEntranceOffset();
     const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-    const baseX = entrance ? pos.x + entrance.dx : pos.x;
-    const baseY = entrance ? pos.y + entrance.dy : pos.y;
-    for (const [dx, dy] of dirs) {
-      if (this.tileMap.getTile(baseX + dx, baseY + dy)?.hasRoad) return true;
+    if (entrance) {
+      const baseX = pos.x + entrance.dx;
+      const baseY = pos.y + entrance.dy;
+      for (const [dx, dy] of dirs) {
+        if (this.tileMap.getTile(baseX + dx, baseY + dy)?.hasRoad) return true;
+      }
+    }
+    for (let dy = 0; dy < building.height; dy++) {
+      for (let dx = 0; dx < building.width; dx++) {
+        const x = pos.x + dx;
+        const y = pos.y + dy;
+        for (const [ox, oy] of dirs) {
+          if (this.tileMap.getTile(x + ox, y + oy)?.hasRoad) return true;
+        }
+      }
     }
     return false;
   }

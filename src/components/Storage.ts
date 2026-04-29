@@ -8,11 +8,7 @@ export class Storage extends Component {
   public isHeadquarters: boolean;
   public isProductionStorage: boolean = false;
 
-  constructor(
-    capacity: number,
-    isHeadquarters: boolean = false,
-    accepts?: ResourceType[]
-  ) {
+  constructor(capacity: number, isHeadquarters: boolean = false, accepts?: ResourceType[]) {
     super();
     this.capacity = capacity;
     this.isHeadquarters = isHeadquarters;

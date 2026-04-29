@@ -2,54 +2,44 @@
  * Render System - handles all rendering to canvas
  */
 
-import { System } from "@/core/System";
-import { Entity } from "@/core/Entity";
-import { getSimulationNowMs } from "@/core/simulationClock";
-import { Position } from "@/components/Position";
-import { Renderable } from "@/components/Renderable";
-import { Building } from "@/components/Building";
-import { Worker, IdleAnim } from "@/components/Worker";
-import { Movable } from "@/components/Movable";
-import { TileMap } from "@/map/TileMap";
-import { Isometric } from "@/utils/Isometric";
-import { Tile } from "@/map/Tile";
-import { Production } from "@/components/Production";
-import { dataManager } from "@/data/DataManager";
-import { BuildingType, ResourceType } from "@/types/GameData";
-import { TerrainTextures } from "@/rendering/TerrainTextures";
-import { transportManager } from "@/economics/TransportManager";
-import type { SurveyOverlayForRender } from "@/survey/SurveyCoordinator";
+import { System } from '@/core/System';
+import { Entity } from '@/core/Entity';
+import { getSimulationNowMs } from '@/core/simulationClock';
+import { Position } from '@/components/Position';
+import { Renderable } from '@/components/Renderable';
+import { Building } from '@/components/Building';
+import { Worker, IdleAnim } from '@/components/Worker';
+import { Movable } from '@/components/Movable';
+import { TileMap } from '@/map/TileMap';
+import { Isometric } from '@/utils/Isometric';
+import { Tile } from '@/map/Tile';
+import { Production } from '@/components/Production';
+import { dataManager } from '@/data/DataManager';
+import { BuildingType, ResourceType } from '@/types/GameData';
+import { TerrainTextures } from '@/rendering/TerrainTextures';
+import { transportManager } from '@/economics/TransportManager';
+import type { SurveyOverlayForRender } from '@/survey/SurveyCoordinator';
 import {
   BUILDING_CONSTRUCTION_SPRITES,
   BUILDING_PRODUCTION_SPRITE_ANIMATION,
   BUILDING_PRODUCTION_SPRITES,
   collectAllCataloguedBuildingSpritePaths,
-} from "@/catalog/buildingSprites";
+} from '@/catalog/buildingSprites';
 import {
   paintWorkerSpriteBody as paintWorkerBodyToCanvas,
   paintWorkerFloorNap,
-} from "@/rendering/WorkerSpritePainter";
-import {
-  RABBIT_JUMP_DURATION_MS,
-  type WildRabbit,
-} from "@/wildlife/WildlifeCoordinator";
-import { territoryKey } from "@/map/TerritoryCoordinator";
-import {
-  createChimneySmoke,
-  type ChimneySmoke,
-} from "@/rendering/chimneySmoke";
-import { createLoFiFire, type LoFiFire } from "@/rendering/loFiFire";
-import { DEBUG, ROAD_RENDERING_MODE } from "@/debug/debugFlags";
-import {
-  getEnemyFactionStyle,
-  getEntityFaction,
-  isPlayerOwned,
-} from "@/components/ownerUtils";
+} from '@/rendering/WorkerSpritePainter';
+import { RABBIT_JUMP_DURATION_MS, type WildRabbit } from '@/wildlife/WildlifeCoordinator';
+import { territoryKey } from '@/map/TerritoryCoordinator';
+import { createChimneySmoke, type ChimneySmoke } from '@/rendering/chimneySmoke';
+import { createLoFiFire, type LoFiFire } from '@/rendering/loFiFire';
+import { DEBUG, ROAD_RENDERING_MODE } from '@/debug/debugFlags';
+import { getEnemyFactionStyle, getEntityFaction, isPlayerOwned } from '@/components/ownerUtils';
 
 /** World-space half-plane clip for long straight iso shores (same screen row / column of tile centers). */
 type FlatShoreCut =
-  | { axis: "horizontal"; worldY: number; grassHalf: "upper" | "lower" }
-  | { axis: "vertical"; worldX: number; grassHalf: "left" | "right" };
+  | { axis: 'horizontal'; worldY: number; grassHalf: 'upper' | 'lower' }
+  | { axis: 'vertical'; worldX: number; grassHalf: 'left' | 'right' };
 
 type GridPoint = { x: number; y: number };
 type ShorelineSegment = { a: GridPoint; b: GridPoint };
@@ -68,15 +58,12 @@ const DEMOLITION_FIRE_DURATION_MS = 30_000;
 const DEMOLITION_SCORCH_DURATION_MS = 60_000;
 
 function nextFishSpawnGapMs(): number {
-  return (
-    FISH_SPAWN_GAP_MIN_MS +
-    Math.random() * (FISH_SPAWN_GAP_MAX_MS - FISH_SPAWN_GAP_MIN_MS)
-  );
+  return FISH_SPAWN_GAP_MIN_MS + Math.random() * (FISH_SPAWN_GAP_MAX_MS - FISH_SPAWN_GAP_MIN_MS);
 }
 
 type ConstructionSmokeState = {
   smoke: ChimneySmoke;
-  phase: "on" | "off";
+  phase: 'on' | 'off';
   phaseRemainingSec: number;
 };
 
@@ -120,7 +107,7 @@ export class RenderSystem extends System {
       gx: number,
       gy: number,
       w: number,
-      h: number,
+      h: number
     ) => boolean;
     canPlaceRoadPreview?: (gx: number, gy: number) => boolean;
   } = {};
@@ -135,7 +122,7 @@ export class RenderSystem extends System {
     /** Straight row preview (Shift + road drag): all tiles that would be built. */
     roadLineTiles?: { x: number; y: number }[];
     /** Locked while dragging a road stroke; otherwise inferred from tile under cursor (matches `Game.buildRoad`). */
-    roadDragIntent?: "create" | "delete";
+    roadDragIntent?: 'create' | 'delete';
   } | null = null;
   public selectedEntityId: number | null = null;
   public dragPreviewPosition: { x: number; y: number } | null = null;
@@ -159,8 +146,7 @@ export class RenderSystem extends System {
   } | null = null;
   private fishJumps: Array<{ x: number; y: number; startTime: number }> = [];
   private nextFishSpawn: number = 0;
-  private eraseSmokePuffs: Array<{ gx: number; gy: number; start: number }> =
-    [];
+  private eraseSmokePuffs: Array<{ gx: number; gy: number; start: number }> = [];
   /** Per-building chimney smoke (entity id → instance). */
   private chimneySmokes = new Map<number, ChimneySmoke>();
   /** Per-building construction smoke with on/off pulse phases. */
@@ -190,31 +176,29 @@ export class RenderSystem extends System {
 
   constructor(
     canvas: HTMLCanvasElement,
-    private tileMap: TileMap,
+    private tileMap: TileMap
   ) {
     super();
     this.canvas = canvas;
-    this.ctx = canvas.getContext("2d")!;
+    this.ctx = canvas.getContext('2d')!;
     this.iso = new Isometric(64, 32);
     this.terrainTextures = new TerrainTextures();
     this.resizeCanvas();
-    window.addEventListener("resize", () => this.resizeCanvas());
+    window.addEventListener('resize', () => this.resizeCanvas());
 
     // Setup minimap with offscreen canvas for caching
-    this.minimapCanvas = document.getElementById(
-      "minimap-canvas",
-    ) as HTMLCanvasElement;
-    this.minimapCtx = this.minimapCanvas.getContext("2d")!;
+    this.minimapCanvas = document.getElementById('minimap-canvas') as HTMLCanvasElement;
+    this.minimapCtx = this.minimapCanvas.getContext('2d')!;
 
     // Create offscreen canvas for minimap caching
-    this.minimapOffscreen = document.createElement("canvas");
+    this.minimapOffscreen = document.createElement('canvas');
     this.minimapOffscreen.width = 200;
     this.minimapOffscreen.height = 200;
-    this.minimapOffscreenCtx = this.minimapOffscreen.getContext("2d")!;
+    this.minimapOffscreenCtx = this.minimapOffscreen.getContext('2d')!;
     this.minimapScale = 200 / this.tileMap.width;
 
     // Initialize minimap with black (unexplored)
-    this.minimapOffscreenCtx.fillStyle = "#1a1a1a";
+    this.minimapOffscreenCtx.fillStyle = '#1a1a1a';
     this.minimapOffscreenCtx.fillRect(0, 0, 200, 200);
 
     // Minimap click & drag navigation
@@ -229,46 +213,46 @@ export class RenderSystem extends System {
 
     // Preload all known resource sprites (for production bubbles)
     this.preloadSprites([
-      "/assets/resources/wood_log.png",
-      "/assets/resources/wood_plank.png",
-      "/assets/resources/stone.png",
-      "/assets/resources/coal.png",
-      "/assets/resources/iron_ore.png",
-      "/assets/resources/gold_ore.png",
-      "/assets/resources/iron_bar.png",
-      "/assets/resources/gold_coin.png",
-      "/assets/resources/grain.png",
-      "/assets/resources/flour.png",
-      "/assets/resources/bread.png",
-      "/assets/resources/water.png",
-      "/assets/resources/fish.png",
-      "/assets/resources/meat.png",
-      "/assets/resources/ham.png",
-      "/assets/resources/beer.png",
-      "/assets/resources/hammer.png",
-      "/assets/resources/axe.png",
-      "/assets/resources/saw.png",
-      "/assets/resources/pickaxe.png",
-      "/assets/resources/shovel.png",
-      "/assets/resources/fishing_rod.png",
-      "/assets/resources/scythe.png",
-      "/assets/resources/rolling_pin.png",
-      "/assets/resources/crucible.png",
-      "/assets/resources/tongs.png",
-      "/assets/resources/cleaver.png",
-      "/assets/resources/sword.png",
-      "/assets/resources/shield.png",
-      "/assets/resources/bow.png",
+      '/assets/resources/wood_log.png',
+      '/assets/resources/wood_plank.png',
+      '/assets/resources/stone.png',
+      '/assets/resources/coal.png',
+      '/assets/resources/iron_ore.png',
+      '/assets/resources/gold_ore.png',
+      '/assets/resources/iron_bar.png',
+      '/assets/resources/gold_coin.png',
+      '/assets/resources/grain.png',
+      '/assets/resources/flour.png',
+      '/assets/resources/bread.png',
+      '/assets/resources/water.png',
+      '/assets/resources/fish.png',
+      '/assets/resources/meat.png',
+      '/assets/resources/ham.png',
+      '/assets/resources/beer.png',
+      '/assets/resources/hammer.png',
+      '/assets/resources/axe.png',
+      '/assets/resources/saw.png',
+      '/assets/resources/pickaxe.png',
+      '/assets/resources/shovel.png',
+      '/assets/resources/fishing_rod.png',
+      '/assets/resources/scythe.png',
+      '/assets/resources/rolling_pin.png',
+      '/assets/resources/crucible.png',
+      '/assets/resources/tongs.png',
+      '/assets/resources/cleaver.png',
+      '/assets/resources/sword.png',
+      '/assets/resources/shield.png',
+      '/assets/resources/bow.png',
     ]);
 
     // Preload terrain sprites
     this.preloadSprites([
-      "/assets/terrain/tree_single.png",
-      "/assets/terrain/tree_forest.png",
-      "/assets/terrain/rock_single_0.png",
-      "/assets/terrain/rock_single_1.png",
-      "/assets/terrain/rock_single_2.png",
-      "/assets/terrain/mountain.png",
+      '/assets/terrain/tree_single.png',
+      '/assets/terrain/tree_forest.png',
+      '/assets/terrain/rock_single_0.png',
+      '/assets/terrain/rock_single_1.png',
+      '/assets/terrain/rock_single_2.png',
+      '/assets/terrain/mountain.png',
     ]);
   }
 
@@ -282,8 +266,7 @@ export class RenderSystem extends System {
 
   private loadSprite(path: string): HTMLImageElement | null {
     const cached = this.spriteCache.get(path);
-    if (cached)
-      return cached.complete && cached.naturalWidth > 0 ? cached : null;
+    if (cached) return cached.complete && cached.naturalWidth > 0 ? cached : null;
 
     const img = new Image();
     img.src = path;
@@ -303,10 +286,7 @@ export class RenderSystem extends System {
       const targetGridX = clickX / scale;
       const targetGridY = clickY / scale;
 
-      const currentCenter = this.screenToWorld(
-        this.canvas.width / 2,
-        this.canvas.height / 2,
-      );
+      const currentCenter = this.screenToWorld(this.canvas.width / 2, this.canvas.height / 2);
       const deltaX = targetGridX - currentCenter.x;
       const deltaY = targetGridY - currentCenter.y;
 
@@ -316,18 +296,18 @@ export class RenderSystem extends System {
       this.camera.y -= (deltaWorld.y - origin.y) * this.camera.zoom;
     };
 
-    this.minimapCanvas.addEventListener("mousedown", (e) => {
+    this.minimapCanvas.addEventListener('mousedown', e => {
       e.preventDefault();
       dragging = true;
       navigateToMinimapPos(e);
     });
 
-    window.addEventListener("mousemove", (e) => {
+    window.addEventListener('mousemove', e => {
       if (!dragging) return;
       navigateToMinimapPos(e);
     });
 
-    window.addEventListener("mouseup", () => {
+    window.addEventListener('mouseup', () => {
       dragging = false;
     });
   }
@@ -343,10 +323,7 @@ export class RenderSystem extends System {
   }
 
   private centerCamera(): void {
-    const mapCenter = this.iso.gridToScreen(
-      this.tileMap.width / 2,
-      this.tileMap.height / 2,
-    );
+    const mapCenter = this.iso.gridToScreen(this.tileMap.width / 2, this.tileMap.height / 2);
     this.camera.x = this.canvas.width / 2 - mapCenter.x;
     this.camera.y = this.canvas.height / 2 - mapCenter.y - 100;
   }
@@ -355,10 +332,7 @@ export class RenderSystem extends System {
     return entity.hasComponent(Position) && entity.hasComponent(Renderable);
   }
 
-  private hasExploredBuildingFootprint(
-    pos: Position,
-    building: Building,
-  ): boolean {
+  private hasExploredBuildingFootprint(pos: Position, building: Building): boolean {
     for (let dy = 0; dy < building.height; dy++) {
       for (let dx = 0; dx < building.width; dx++) {
         const tile = this.tileMap.getTile(pos.x + dx, pos.y + dy);
@@ -411,24 +385,18 @@ export class RenderSystem extends System {
       }
 
       const isBuildReady =
-        building.isComplete() &&
-        building.state === "complete" &&
-        building.isActive;
+        building.isComplete() && building.state === 'complete' && building.isActive;
       let shouldEmit = false;
       if (isBuildReady && cfg.schedule) {
         const everySec = Math.max(0.01, cfg.schedule.everySec);
         const onSec = Math.max(0, Math.min(cfg.schedule.onSec, everySec));
         const phaseOffsetSec = cfg.schedule.phaseOffsetSec ?? 0;
         const nowSec = performance.now() / 1000;
-        const cyclePos =
-          (((nowSec + phaseOffsetSec) % everySec) + everySec) % everySec;
+        const cyclePos = (((nowSec + phaseOffsetSec) % everySec) + everySec) % everySec;
         shouldEmit = cyclePos < onSec;
       } else {
         const production = entity.getComponent(Production) ?? null;
-        shouldEmit =
-          isBuildReady &&
-          production !== null &&
-          production.status === "producing";
+        shouldEmit = isBuildReady && production !== null && production.status === 'producing';
       }
 
       if (shouldEmit) {
@@ -469,7 +437,7 @@ export class RenderSystem extends System {
     const viewportBounds = this.getViewportBounds();
 
     // Filter entities to only those in or near viewport
-    const visibleEntities = this.entities.filter((entity) => {
+    const visibleEntities = this.entities.filter(entity => {
       const pos = entity.getComponent(Position);
       if (!pos) return false;
       if (!this.isEntityVisibleByExploration(entity)) return false;
@@ -487,21 +455,14 @@ export class RenderSystem extends System {
     });
 
     // Sort entities by isometric draw depth (float); workers tie-break on top of buildings
-    const sortedEntities = visibleEntities.sort((a, b) =>
-      this.compareEntityDrawOrder(a, b),
-    );
+    const sortedEntities = visibleEntities.sort((a, b) => this.compareEntityDrawOrder(a, b));
 
     // Render road stubs for disconnected buildings (before depth-sorted pass)
     for (const entity of visibleEntities) {
       const building = entity.getComponent(Building);
       if (!building || building.isActive) continue;
       const pos = entity.getComponent(Position)!;
-      this.renderDisconnectedBuildingRoadHints(
-        pos.x,
-        pos.y,
-        building.width,
-        building.height,
-      );
+      this.renderDisconnectedBuildingRoadHints(pos.x, pos.y, building.width, building.height);
     }
 
     // Render junction items on road tiles
@@ -512,9 +473,7 @@ export class RenderSystem extends System {
 
     // Render selection outline for selected entity
     if (this.selectedEntityId !== null) {
-      const selectedEntity = sortedEntities.find(
-        (e) => e.id === this.selectedEntityId,
-      );
+      const selectedEntity = sortedEntities.find(e => e.id === this.selectedEntityId);
       if (selectedEntity) {
         this.renderSelectionOutline(selectedEntity);
       }
@@ -543,8 +502,7 @@ export class RenderSystem extends System {
   private nextConstructionSmokeOffSec(): number {
     return (
       CONSTRUCTION_SMOKE_OFF_MIN_SEC +
-      Math.random() *
-        (CONSTRUCTION_SMOKE_OFF_MAX_SEC - CONSTRUCTION_SMOKE_OFF_MIN_SEC)
+      Math.random() * (CONSTRUCTION_SMOKE_OFF_MAX_SEC - CONSTRUCTION_SMOKE_OFF_MIN_SEC)
     );
   }
 
@@ -572,7 +530,7 @@ export class RenderSystem extends System {
       if (!entity.active) continue;
       const building = entity.getComponent(Building);
       if (!building) continue;
-      if (building.state !== "under_construction") continue;
+      if (building.state !== 'under_construction') continue;
 
       validIds.add(entity.id);
       const origin = this.getConstructionSmokeOrigin(building);
@@ -586,7 +544,7 @@ export class RenderSystem extends System {
         });
         state = {
           smoke,
-          phase: "on",
+          phase: 'on',
           phaseRemainingSec: CONSTRUCTION_SMOKE_ON_SEC,
         };
         this.constructionSmokes.set(entity.id, state);
@@ -594,7 +552,7 @@ export class RenderSystem extends System {
 
       state.smoke.setPosition(origin.x, origin.y);
 
-      if (state.phase === "on") {
+      if (state.phase === 'on') {
         if (!state.smoke.emitting) state.smoke.start();
       } else {
         state.smoke.stop();
@@ -604,12 +562,12 @@ export class RenderSystem extends System {
       state.phaseRemainingSec -= dt;
 
       if (state.phaseRemainingSec <= 0) {
-        if (state.phase === "on") {
-          state.phase = "off";
+        if (state.phase === 'on') {
+          state.phase = 'off';
           state.phaseRemainingSec = this.nextConstructionSmokeOffSec();
           state.smoke.stop();
         } else {
-          state.phase = "on";
+          state.phase = 'on';
           state.phaseRemainingSec = CONSTRUCTION_SMOKE_ON_SEC;
           state.smoke.start();
         }
@@ -622,8 +580,8 @@ export class RenderSystem extends System {
   }
 
   setDemolitionSites(sites: DemolitionSiteVisual[]): void {
-    this.demolitionSites = sites.map((site) => ({ ...site }));
-    const validIds = new Set(this.demolitionSites.map((site) => site.id));
+    this.demolitionSites = sites.map(site => ({ ...site }));
+    const validIds = new Set(this.demolitionSites.map(site => site.id));
     for (const id of this.demolitionFires.keys()) {
       if (!validIds.has(id)) this.demolitionFires.delete(id);
     }
@@ -708,26 +666,26 @@ export class RenderSystem extends System {
     const py = tile.y * this.minimapScale;
 
     if (!DEBUG && !tile.isExplored()) {
-      this.minimapOffscreenCtx.fillStyle = "#1a1a1a";
-    } else if (tile.terrain === "water") {
-      this.minimapOffscreenCtx.fillStyle = "#2196f3"; // Bright blue
-    } else if (tile.terrain === "mountain") {
-      this.minimapOffscreenCtx.fillStyle = "#9e9e9e"; // Light grey
-    } else if (tile.terrain === "forest") {
-      this.minimapOffscreenCtx.fillStyle = "#1b5e20"; // Very dark green
-    } else if (tile.terrain === "tree") {
-      this.minimapOffscreenCtx.fillStyle = "#388e3c"; // Medium green
-    } else if (tile.terrain === "hill") {
-      this.minimapOffscreenCtx.fillStyle = "#9ccc65"; // Light green
+      this.minimapOffscreenCtx.fillStyle = '#1a1a1a';
+    } else if (tile.terrain === 'water') {
+      this.minimapOffscreenCtx.fillStyle = '#2196f3'; // Bright blue
+    } else if (tile.terrain === 'mountain') {
+      this.minimapOffscreenCtx.fillStyle = '#9e9e9e'; // Light grey
+    } else if (tile.terrain === 'forest') {
+      this.minimapOffscreenCtx.fillStyle = '#1b5e20'; // Very dark green
+    } else if (tile.terrain === 'tree') {
+      this.minimapOffscreenCtx.fillStyle = '#388e3c'; // Medium green
+    } else if (tile.terrain === 'hill') {
+      this.minimapOffscreenCtx.fillStyle = '#9ccc65'; // Light green
     } else {
-      this.minimapOffscreenCtx.fillStyle = "#7cb342"; // Grass green
+      this.minimapOffscreenCtx.fillStyle = '#7cb342'; // Grass green
     }
 
     this.minimapOffscreenCtx.fillRect(
       px,
       py,
       Math.max(1, this.minimapScale),
-      Math.max(1, this.minimapScale),
+      Math.max(1, this.minimapScale)
     );
   }
 
@@ -753,23 +711,18 @@ export class RenderSystem extends System {
     this.renderMinimapEntityMarkers();
 
     // Draw viewport indicator
-    const viewportWidth =
-      this.canvas.width / this.camera.zoom / this.iso.tileWidth;
-    const viewportHeight =
-      this.canvas.height / this.camera.zoom / this.iso.tileHeight;
+    const viewportWidth = this.canvas.width / this.camera.zoom / this.iso.tileWidth;
+    const viewportHeight = this.canvas.height / this.camera.zoom / this.iso.tileHeight;
 
     // Get current center of view
-    const centerGridPos = this.screenToWorld(
-      this.canvas.width / 2,
-      this.canvas.height / 2,
-    );
+    const centerGridPos = this.screenToWorld(this.canvas.width / 2, this.canvas.height / 2);
 
     const vpX = (centerGridPos.x - viewportWidth / 2) * this.minimapScale;
     const vpY = (centerGridPos.y - viewportHeight / 2) * this.minimapScale;
     const vpW = viewportWidth * this.minimapScale;
     const vpH = viewportHeight * this.minimapScale;
 
-    this.minimapCtx.strokeStyle = "#ffff00";
+    this.minimapCtx.strokeStyle = '#ffff00';
     this.minimapCtx.lineWidth = 2;
     this.minimapCtx.strokeRect(vpX, vpY, vpW, vpH);
   }
@@ -786,7 +739,7 @@ export class RenderSystem extends System {
 
       const factionId = getEntityFaction(entity);
       this.minimapCtx.fillStyle = isPlayerOwned(entity)
-        ? "#ffd54f"
+        ? '#ffd54f'
         : getEnemyFactionStyle(factionId).minimap;
       const x = pos.x * this.minimapScale;
       const y = pos.y * this.minimapScale;
@@ -815,14 +768,14 @@ export class RenderSystem extends System {
 
         this.ctx.beginPath();
         this.ctx.moveTo(corners[0].x, corners[0].y);
-        corners.forEach((corner) => this.ctx.lineTo(corner.x, corner.y));
+        corners.forEach(corner => this.ctx.lineTo(corner.x, corner.y));
         this.ctx.closePath();
 
-        this.ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
         this.ctx.lineWidth = 1.5;
         this.ctx.stroke();
 
-        this.ctx.fillStyle = "rgba(255, 255, 255, 0.06)";
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
         this.ctx.fill();
       }
     }
@@ -833,26 +786,21 @@ export class RenderSystem extends System {
     gridX: number;
     gridY: number;
     roadLineTiles?: { x: number; y: number }[];
-    roadDragIntent?: "create" | "delete";
+    roadDragIntent?: 'create' | 'delete';
   }): void {
     const { mode, gridX, gridY, roadLineTiles, roadDragIntent } = preview;
 
-    if (mode === "build_road") {
-      this.renderRoadPreview(
-        gridX,
-        gridY,
-        roadLineTiles,
-        roadDragIntent ?? "create",
-      );
+    if (mode === 'build_road') {
+      this.renderRoadPreview(gridX, gridY, roadLineTiles, roadDragIntent ?? 'create');
       return;
     }
 
-    if (mode === "erase") {
+    if (mode === 'erase') {
       this.renderErasePreview(gridX, gridY);
       return;
     }
 
-    const buildingType = mode.replace("build_", "");
+    const buildingType = mode.replace('build_', '');
     const buildingDef = dataManager.getBuilding(buildingType as any);
     if (!buildingDef) return;
 
@@ -860,12 +808,7 @@ export class RenderSystem extends System {
     const spritePath = `/assets/buildings/${buildingType}.png`;
     const sprite = this.loadSprite(spritePath);
 
-    const canPlace = this.canPlacePreview(
-      gridX,
-      gridY,
-      size.width,
-      size.height,
-    );
+    const canPlace = this.canPlacePreview(gridX, gridY, size.width, size.height);
 
     if (sprite) {
       this.renderSpritePreview(
@@ -877,7 +820,7 @@ export class RenderSystem extends System {
         buildingType,
         visual.offsetX ?? 0,
         visual.offsetY ?? 0,
-        canPlace,
+        canPlace
       );
     } else {
       this.renderBuildingPreview(
@@ -889,18 +832,12 @@ export class RenderSystem extends System {
         visual.color,
         visual.offsetX ?? 0,
         visual.offsetY ?? 0,
-        canPlace,
+        canPlace
       );
     }
 
     if (buildingDef.requiresRoad) {
-      this.renderBuildingConnectionPreview(
-        gridX,
-        gridY,
-        size.width,
-        size.height,
-        canPlace,
-      );
+      this.renderBuildingConnectionPreview(gridX, gridY, size.width, size.height, canPlace);
     }
   }
 
@@ -913,11 +850,9 @@ export class RenderSystem extends System {
     buildingType?: string,
     offsetX: number = 0,
     offsetY: number = 0,
-    canPlace: boolean = this.canPlacePreview(gridX, gridY, width, depth),
+    canPlace: boolean = this.canPlacePreview(gridX, gridY, width, depth)
   ): void {
-    const tileHighlight = canPlace
-      ? "rgba(255, 255, 255, 0.2)"
-      : "rgba(200, 50, 50, 0.35)";
+    const tileHighlight = canPlace ? 'rgba(255, 255, 255, 0.2)' : 'rgba(200, 50, 50, 0.35)';
 
     this.highlightTiles(gridX, gridY, width, depth, tileHighlight);
 
@@ -927,11 +862,8 @@ export class RenderSystem extends System {
 
     this.ctx.save();
     this.ctx.globalAlpha = canPlace ? 0.6 : 0.4;
-    if (!canPlace) this.ctx.filter = "saturate(0.3) brightness(0.8)";
-    this.ctx.translate(
-      screenPos.x + offsetX,
-      screenPos.y - this.iso.tileHeight / 2 + offsetY,
-    );
+    if (!canPlace) this.ctx.filter = 'saturate(0.3) brightness(0.8)';
+    this.ctx.translate(screenPos.x + offsetX, screenPos.y - this.iso.tileHeight / 2 + offsetY);
 
     if (width > 1 || depth > 1) {
       const cx = ((width - depth) * tileW) / 4;
@@ -945,19 +877,13 @@ export class RenderSystem extends System {
 
     const footprintW = ((width + depth) * tileW) / 2;
     const scale = footprintW / sprite.naturalWidth;
-    const extra = this.getBuildingSpriteVisualScale(buildingType ?? "");
+    const extra = this.getBuildingSpriteVisualScale(buildingType ?? '');
     const drawW = sprite.naturalWidth * scale * extra;
     const drawH = sprite.naturalHeight * scale * extra;
     const centerX = ((width - depth) * tileW) / 4;
     const frontY = ((width + depth) * tileH) / 2;
 
-    this.ctx.drawImage(
-      sprite,
-      centerX - drawW / 2,
-      frontY - drawH,
-      drawW,
-      drawH,
-    );
+    this.ctx.drawImage(sprite, centerX - drawW / 2, frontY - drawH, drawW, drawH);
     this.ctx.restore();
   }
 
@@ -970,15 +896,12 @@ export class RenderSystem extends System {
   }
 
   private findBuildingAtGrid(gx: number, gy: number): Entity | null {
-    const hit = this.entities.find((entity) => {
+    const hit = this.entities.find(entity => {
       const pos = entity.getComponent(Position);
       const building = entity.getComponent(Building);
       if (!pos || !building) return false;
       return (
-        gx >= pos.x &&
-        gx < pos.x + building.width &&
-        gy >= pos.y &&
-        gy < pos.y + building.height
+        gx >= pos.x && gx < pos.x + building.width && gy >= pos.y && gy < pos.y + building.height
       );
     });
     return hit ?? null;
@@ -995,27 +918,17 @@ export class RenderSystem extends System {
     if (entity) {
       const building = entity.getComponent(Building);
       const pos = entity.getComponent(Position);
-      const def = building
-        ? dataManager.getBuilding(building.buildingType)
-        : null;
+      const def = building ? dataManager.getBuilding(building.buildingType) : null;
       if (def?.isHeadquarters || !building || !pos) {
         this.strokeEraseTile(gridX, gridY, false);
         return;
       }
-      this.highlightTiles(
-        pos.x,
-        pos.y,
-        building.width,
-        building.height,
-        "rgba(220, 70, 70, 0.38)",
-      );
+      this.highlightTiles(pos.x, pos.y, building.width, building.height, 'rgba(220, 70, 70, 0.38)');
       return;
     }
 
     const canErase =
-      (tile.hasRoad && !tile.isOccupied()) ||
-      tile.terrain === "tree" ||
-      tile.terrain === "forest";
+      (tile.hasRoad && !tile.isOccupied()) || tile.terrain === 'tree' || tile.terrain === 'forest';
     this.strokeEraseTile(gridX, gridY, canErase);
   }
 
@@ -1023,16 +936,16 @@ export class RenderSystem extends System {
     const corners = this.iso.getTileCorners(gridX, gridY);
     this.ctx.beginPath();
     this.ctx.moveTo(corners[0].x, corners[0].y);
-    corners.forEach((c) => this.ctx.lineTo(c.x, c.y));
+    corners.forEach(c => this.ctx.lineTo(c.x, c.y));
     this.ctx.closePath();
     if (valid) {
-      this.ctx.fillStyle = "rgba(230, 80, 80, 0.35)";
+      this.ctx.fillStyle = 'rgba(230, 80, 80, 0.35)';
       this.ctx.fill();
-      this.ctx.strokeStyle = "rgba(255, 140, 120, 0.95)";
+      this.ctx.strokeStyle = 'rgba(255, 140, 120, 0.95)';
     } else {
-      this.ctx.fillStyle = "rgba(80, 40, 40, 0.25)";
+      this.ctx.fillStyle = 'rgba(80, 40, 40, 0.25)';
       this.ctx.fill();
-      this.ctx.strokeStyle = "rgba(120, 80, 80, 0.6)";
+      this.ctx.strokeStyle = 'rgba(120, 80, 80, 0.6)';
     }
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
@@ -1061,14 +974,14 @@ export class RenderSystem extends System {
     if (this.surveyWorkerDrawOnTopIds.size === 0) return;
     const ids = [...this.surveyWorkerDrawOnTopIds];
     ids.sort((a, b) => {
-      const ea = this.entities.find((e) => e.id === a);
-      const eb = this.entities.find((e) => e.id === b);
+      const ea = this.entities.find(e => e.id === a);
+      const eb = this.entities.find(e => e.id === b);
       if (!ea) return 1;
       if (!eb) return -1;
       return this.compareEntityDrawOrder(ea, eb);
     });
     for (const id of ids) {
-      const ent = this.entities.find((e) => e.id === id && e.active);
+      const ent = this.entities.find(e => e.id === id && e.active);
       if (ent && this.isEntityVisibleByExploration(ent)) this.renderEntity(ent);
     }
   }
@@ -1084,12 +997,7 @@ export class RenderSystem extends System {
       if (!pt) return;
       const px = pt.x;
       const py = pt.y;
-      if (
-        px < vb.minX - pad ||
-        px > vb.maxX + pad ||
-        py < vb.minY - pad ||
-        py > vb.maxY + pad
-      )
+      if (px < vb.minX - pad || px > vb.maxX + pad || py < vb.minY - pad || py > vb.maxY + pad)
         return;
       const t = this.tileMap.getTile(px, py);
       if (!t?.isExplored()) return;
@@ -1097,14 +1005,14 @@ export class RenderSystem extends System {
       const c = this.iso.gridToScreen(px, py);
       const r = th * 0.2;
       this.ctx.save();
-      this.ctx.fillStyle = "rgba(245, 236, 220, 0.96)";
-      this.ctx.strokeStyle = "rgba(78, 52, 34, 0.95)";
+      this.ctx.fillStyle = 'rgba(245, 236, 220, 0.96)';
+      this.ctx.strokeStyle = 'rgba(78, 52, 34, 0.95)';
       this.ctx.lineWidth = 1.5;
       this.ctx.beginPath();
       this.ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
       this.ctx.fill();
       this.ctx.stroke();
-      this.ctx.fillStyle = "rgba(62, 39, 24, 0.92)";
+      this.ctx.fillStyle = 'rgba(62, 39, 24, 0.92)';
       const dotR = r * 0.12;
       const gap = r * 0.28;
       for (let i = -1; i <= 1; i++) {
@@ -1134,10 +1042,10 @@ export class RenderSystem extends System {
             this.ctx.lineTo(corners[i].x, corners[i].y);
           }
           this.ctx.closePath();
-          this.ctx.strokeStyle = "rgba(139, 90, 43, 0.92)";
+          this.ctx.strokeStyle = 'rgba(139, 90, 43, 0.92)';
           this.ctx.lineWidth = 2.5;
           this.ctx.stroke();
-          this.ctx.fillStyle = "rgba(101, 67, 33, 0.14)";
+          this.ctx.fillStyle = 'rgba(101, 67, 33, 0.14)';
           this.ctx.fill();
           this.ctx.restore();
         }
@@ -1163,10 +1071,10 @@ export class RenderSystem extends System {
             this.ctx.lineTo(corners[i].x, corners[i].y);
           }
           this.ctx.closePath();
-          this.ctx.strokeStyle = "rgba(255, 220, 120, 0.95)";
+          this.ctx.strokeStyle = 'rgba(255, 220, 120, 0.95)';
           this.ctx.lineWidth = 3;
           this.ctx.stroke();
-          this.ctx.fillStyle = "rgba(255, 210, 90, 0.12)";
+          this.ctx.fillStyle = 'rgba(255, 210, 90, 0.12)';
           this.ctx.fill();
           this.ctx.restore();
         }
@@ -1192,20 +1100,20 @@ export class RenderSystem extends System {
 
       const c = this.iso.gridToScreen(f.x, f.y);
       this.ctx.save();
-      this.ctx.strokeStyle = "#5c4030";
+      this.ctx.strokeStyle = '#5c4030';
       this.ctx.lineWidth = 2;
       this.ctx.beginPath();
       this.ctx.moveTo(c.x, c.y + th * 0.1);
       this.ctx.lineTo(c.x, c.y - th * 0.55);
       this.ctx.stroke();
-      this.ctx.fillStyle = "#c62828";
+      this.ctx.fillStyle = '#c62828';
       this.ctx.beginPath();
       this.ctx.moveTo(c.x + 1, c.y - th * 0.85);
       this.ctx.lineTo(c.x + th * 0.35, c.y - th * 0.55);
       this.ctx.lineTo(c.x + 1, c.y - th * 0.38);
       this.ctx.closePath();
       this.ctx.fill();
-      this.ctx.strokeStyle = "#3e2723";
+      this.ctx.strokeStyle = '#3e2723';
       this.ctx.lineWidth = 1;
       this.ctx.stroke();
       this.ctx.restore();
@@ -1227,22 +1135,16 @@ export class RenderSystem extends System {
         const bx = c.x - barW / 2;
         const by = c.y - th * 1.15;
         this.ctx.save();
-        this.ctx.fillStyle = "rgba(0,0,0,0.45)";
-        this.ctx.strokeStyle = "rgba(255,255,255,0.35)";
+        this.ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        this.ctx.strokeStyle = 'rgba(255,255,255,0.35)';
         this.ctx.lineWidth = 1;
         this.ctx.beginPath();
         this.ctx.roundRect(bx, by, barW, barH, 3);
         this.ctx.fill();
         this.ctx.stroke();
-        this.ctx.fillStyle = "rgba(120, 200, 255, 0.85)";
+        this.ctx.fillStyle = 'rgba(120, 200, 255, 0.85)';
         this.ctx.beginPath();
-        this.ctx.roundRect(
-          bx + 1,
-          by + 1,
-          (barW - 2) * pr.progress01,
-          barH - 2,
-          2,
-        );
+        this.ctx.roundRect(bx + 1, by + 1, (barW - 2) * pr.progress01, barH - 2, 2);
         this.ctx.fill();
         this.ctx.restore();
       }
@@ -1264,7 +1166,7 @@ export class RenderSystem extends System {
             this.ctx.lineTo(corners[i].x, corners[i].y);
           }
           this.ctx.closePath();
-          this.ctx.strokeStyle = "rgba(100, 200, 255, 0.75)";
+          this.ctx.strokeStyle = 'rgba(100, 200, 255, 0.75)';
           this.ctx.lineWidth = 2.5;
           this.ctx.stroke();
           this.ctx.restore();
@@ -1301,17 +1203,17 @@ export class RenderSystem extends System {
       const tagCx = ground.x;
       const tagCy = ground.y - stickAbove;
       this.ctx.save();
-      this.ctx.strokeStyle = "#5d4037";
+      this.ctx.strokeStyle = '#5d4037';
       this.ctx.lineWidth = 1.75;
-      this.ctx.lineCap = "round";
+      this.ctx.lineCap = 'round';
       this.ctx.beginPath();
       this.ctx.moveTo(tagCx, tagCy + tagH * 0.45);
       this.ctx.lineTo(ground.x, ground.y - th * 0.04);
       this.ctx.stroke();
       const rx = tagCx - tagW / 2;
       const ry = tagCy - tagH / 2;
-      this.ctx.fillStyle = "#f3ebe0";
-      this.ctx.strokeStyle = "rgba(78, 52, 34, 0.88)";
+      this.ctx.fillStyle = '#f3ebe0';
+      this.ctx.strokeStyle = 'rgba(78, 52, 34, 0.88)';
       this.ctx.lineWidth = 1;
       this.ctx.beginPath();
       this.ctx.roundRect(rx, ry, tagW, tagH, 2.5);
@@ -1322,7 +1224,7 @@ export class RenderSystem extends System {
         const ih = tagH - 5;
         this.ctx.drawImage(img, tagCx - iw / 2, tagCy - ih / 2, iw, ih);
       } else {
-        this.ctx.fillStyle = "#b08d55";
+        this.ctx.fillStyle = '#b08d55';
         this.ctx.fillRect(tagCx - 4, tagCy - 4, 8, 8);
       }
       this.ctx.restore();
@@ -1335,9 +1237,7 @@ export class RenderSystem extends System {
     const now = performance.now();
     const lifeMs = 480;
     const risePx = 40;
-    this.eraseSmokePuffs = this.eraseSmokePuffs.filter(
-      (p) => now - p.start < lifeMs,
-    );
+    this.eraseSmokePuffs = this.eraseSmokePuffs.filter(p => now - p.start < lifeMs);
 
     for (const p of this.eraseSmokePuffs) {
       const t = (now - p.start) / lifeMs;
@@ -1352,16 +1252,9 @@ export class RenderSystem extends System {
       for (let i = 0; i < offsets.length; i++) {
         const ox = offsets[i];
         const radius = 4 + t * 4 + (i === 1 ? 1 : 0);
-        this.ctx.fillStyle =
-          i === 1 ? "rgba(85, 85, 90, 0.95)" : "rgba(110, 105, 100, 0.75)";
+        this.ctx.fillStyle = i === 1 ? 'rgba(85, 85, 90, 0.95)' : 'rgba(110, 105, 100, 0.75)';
         this.ctx.beginPath();
-        this.ctx.arc(
-          base.x + ox,
-          base.y - lift - t * 8,
-          radius,
-          0,
-          Math.PI * 2,
-        );
+        this.ctx.arc(base.x + ox, base.y - lift - t * 8, radius, 0, Math.PI * 2);
         this.ctx.fill();
       }
       this.ctx.restore();
@@ -1372,39 +1265,34 @@ export class RenderSystem extends System {
     gridX: number,
     gridY: number,
     roadLineTiles: { x: number; y: number }[] | undefined,
-    roadDragIntent: "create" | "delete",
+    roadDragIntent: 'create' | 'delete'
   ): void {
     const addKeys = new Set<string>();
     const removeKeys = new Set<string>();
 
-    if (roadDragIntent === "delete") {
+    if (roadDragIntent === 'delete') {
       removeKeys.add(`${gridX},${gridY}`);
     } else {
       const tiles =
-        roadLineTiles && roadLineTiles.length > 0
-          ? roadLineTiles
-          : [{ x: gridX, y: gridY }];
+        roadLineTiles && roadLineTiles.length > 0 ? roadLineTiles : [{ x: gridX, y: gridY }];
       for (const t of tiles) {
         addKeys.add(`${t.x},${t.y}`);
       }
     }
 
-    const topologyKeys = this.collectRoadTopologyPreviewKeys(
-      addKeys,
-      removeKeys,
-    );
+    const topologyKeys = this.collectRoadTopologyPreviewKeys(addKeys, removeKeys);
 
     // Ghost road atlas on preview topology (neighbors included so T-junctions read correctly).
     // Only tiles in `addKeys` are visually emphasized (rim below); neighbor overlays stay softer.
     for (const key of topologyKeys) {
-      const [x, y] = key.split(",").map(Number);
+      const [x, y] = key.split(',').map(Number);
       if (!this.tileMap.isInBounds(x, y)) continue;
       if (!this.effectiveRoadForPreview(x, y, addKeys, removeKeys)) continue;
       const mask = this.getRoadMaskForPreview(x, y, addKeys, removeKeys);
       const center = this.iso.gridToScreen(x, y);
       const inAdd = addKeys.has(key);
       let alpha: number;
-      if (roadDragIntent === "delete") {
+      if (roadDragIntent === 'delete') {
         alpha = 0.88;
       } else {
         alpha = inAdd ? 0.94 : 0.74;
@@ -1416,26 +1304,26 @@ export class RenderSystem extends System {
     }
 
     // Gold rim only on tiles you are placing (hover or shift row), not on adjacent retiles.
-    if (roadDragIntent === "create") {
+    if (roadDragIntent === 'create') {
       for (const key of addKeys) {
-        const [x, y] = key.split(",").map(Number);
+        const [x, y] = key.split(',').map(Number);
         if (!this.tileMap.isInBounds(x, y)) continue;
         if (!this.effectiveRoadForPreview(x, y, addKeys, removeKeys)) continue;
         const corners = this.iso.getTileCorners(x, y);
         this.ctx.beginPath();
         this.ctx.moveTo(corners[0].x, corners[0].y);
-        corners.forEach((c) => this.ctx.lineTo(c.x, c.y));
+        corners.forEach(c => this.ctx.lineTo(c.x, c.y));
         this.ctx.closePath();
-        this.ctx.strokeStyle = "rgba(255, 224, 150, 0.92)";
+        this.ctx.strokeStyle = 'rgba(255, 224, 150, 0.92)';
         this.ctx.lineWidth = 2.6;
-        this.ctx.lineJoin = "round";
+        this.ctx.lineJoin = 'round';
         this.ctx.stroke();
       }
     }
 
-    if (roadDragIntent === "create") {
+    if (roadDragIntent === 'create') {
       for (const key of addKeys) {
-        const [x, y] = key.split(",").map(Number);
+        const [x, y] = key.split(',').map(Number);
         if (!this.tileMap.isInBounds(x, y)) continue;
         if (this.canPreviewAddRoadAt(x, y)) continue;
         this.strokeRoadPreviewInvalidTile(x, y);
@@ -1447,7 +1335,7 @@ export class RenderSystem extends System {
 
   private collectRoadTopologyPreviewKeys(
     addKeys: Set<string>,
-    removeKeys: Set<string>,
+    removeKeys: Set<string>
   ): Set<string> {
     const out = new Set<string>();
     const add = (gx: number, gy: number): void => {
@@ -1464,11 +1352,11 @@ export class RenderSystem extends System {
       }
     };
     for (const k of addKeys) {
-      const [sx, sy] = k.split(",").map(Number);
+      const [sx, sy] = k.split(',').map(Number);
       add(sx, sy);
     }
     for (const k of removeKeys) {
-      const [sx, sy] = k.split(",").map(Number);
+      const [sx, sy] = k.split(',').map(Number);
       add(sx, sy);
     }
     return out;
@@ -1482,8 +1370,8 @@ export class RenderSystem extends System {
         tile &&
         tile.isExplored() &&
         !tile.hasRoad &&
-        tile.terrain !== "water" &&
-        tile.terrain !== "mountain" &&
+        tile.terrain !== 'water' &&
+        tile.terrain !== 'mountain' &&
         !tile.isOccupied()
       )
     ) {
@@ -1498,7 +1386,7 @@ export class RenderSystem extends System {
     x: number,
     y: number,
     addKeys: Set<string>,
-    removeKeys: Set<string>,
+    removeKeys: Set<string>
   ): boolean {
     const key = `${x},${y}`;
     const tile = this.tileMap.getTile(x, y);
@@ -1515,7 +1403,7 @@ export class RenderSystem extends System {
     gx: number,
     gy: number,
     addKeys: Set<string>,
-    removeKeys: Set<string>,
+    removeKeys: Set<string>
   ): number {
     const hasRoadAt = (nx: number, ny: number): boolean =>
       this.effectiveRoadForPreview(nx, ny, addKeys, removeKeys);
@@ -1531,11 +1419,11 @@ export class RenderSystem extends System {
     const corners = this.iso.getTileCorners(gridX, gridY);
     this.ctx.beginPath();
     this.ctx.moveTo(corners[0].x, corners[0].y);
-    corners.forEach((c) => this.ctx.lineTo(c.x, c.y));
+    corners.forEach(c => this.ctx.lineTo(c.x, c.y));
     this.ctx.closePath();
-    this.ctx.fillStyle = "rgba(200, 50, 50, 0.22)";
+    this.ctx.fillStyle = 'rgba(200, 50, 50, 0.22)';
     this.ctx.fill();
-    this.ctx.strokeStyle = "rgba(200, 50, 50, 0.85)";
+    this.ctx.strokeStyle = 'rgba(200, 50, 50, 0.85)';
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
   }
@@ -1549,21 +1437,16 @@ export class RenderSystem extends System {
     const corners = this.iso.getTileCorners(gridX, gridY);
     this.ctx.beginPath();
     this.ctx.moveTo(corners[0].x, corners[0].y);
-    corners.forEach((c) => this.ctx.lineTo(c.x, c.y));
+    corners.forEach(c => this.ctx.lineTo(c.x, c.y));
     this.ctx.closePath();
-    this.ctx.fillStyle = "rgba(220, 60, 60, 0.18)";
+    this.ctx.fillStyle = 'rgba(220, 60, 60, 0.18)';
     this.ctx.fill();
-    this.ctx.strokeStyle = "rgba(255, 120, 110, 0.95)";
+    this.ctx.strokeStyle = 'rgba(255, 120, 110, 0.95)';
     this.ctx.lineWidth = 2.5;
     this.ctx.stroke();
   }
 
-  private canPlacePreview(
-    gridX: number,
-    gridY: number,
-    width: number,
-    depth: number,
-  ): boolean {
+  private canPlacePreview(gridX: number, gridY: number, width: number, depth: number): boolean {
     for (let dy = 0; dy < depth; dy++) {
       for (let dx = 0; dx < width; dx++) {
         const tile = this.tileMap.getTile(gridX + dx, gridY + dy);
@@ -1571,8 +1454,8 @@ export class RenderSystem extends System {
       }
     }
     const mode = this.buildPreview?.mode;
-    if (mode && mode.startsWith("build_")) {
-      const type = mode.slice("build_".length);
+    if (mode && mode.startsWith('build_')) {
+      const type = mode.slice('build_'.length);
       const hook = this.placementPreviewHooks.canPlaceBuildingPreview;
       if (hook && !hook(type, gridX, gridY, width, depth)) return false;
     }
@@ -1583,7 +1466,7 @@ export class RenderSystem extends System {
     gridX: number,
     gridY: number,
     width: number,
-    depth: number,
+    depth: number
   ): GridPoint[] {
     const entranceRow = Math.ceil((depth - 1) / 2);
     const entranceColumn = Math.max(0, width - 1);
@@ -1592,23 +1475,17 @@ export class RenderSystem extends System {
       { x: gridX + entranceColumn, y: gridY + depth },
     ];
     const seen = new Set<string>();
-    return candidates.filter((cell) => {
+    return candidates.filter(cell => {
       const key = `${cell.x},${cell.y}`;
-      if (seen.has(key) || !this.tileMap.isInBounds(cell.x, cell.y))
-        return false;
+      if (seen.has(key) || !this.tileMap.isInBounds(cell.x, cell.y)) return false;
       seen.add(key);
       return true;
     });
   }
 
-  private getRoadMaskWithExtraConnections(
-    cell: GridPoint,
-    connectionCells: GridPoint[],
-  ): number {
+  private getRoadMaskWithExtraConnections(cell: GridPoint, connectionCells: GridPoint[]): number {
     const isConnectionCell = (x: number, y: number): boolean =>
-      connectionCells.some(
-        (candidate) => candidate.x === x && candidate.y === y,
-      );
+      connectionCells.some(candidate => candidate.x === x && candidate.y === y);
     let mask = this.getRoadConfig(cell.x, cell.y);
     if (isConnectionCell(cell.x - 1, cell.y)) mask |= 1;
     if (isConnectionCell(cell.x, cell.y - 1)) mask |= 2;
@@ -1622,35 +1499,22 @@ export class RenderSystem extends System {
     gridY: number,
     width: number,
     depth: number,
-    buildingCanPlace: boolean,
+    buildingCanPlace: boolean
   ): void {
-    const connectionCells = this.getBuildingRoadConnectionCells(
-      gridX,
-      gridY,
-      width,
-      depth,
-    );
+    const connectionCells = this.getBuildingRoadConnectionCells(gridX, gridY, width, depth);
     for (const cell of connectionCells) {
       const tile = this.tileMap.getTile(cell.x, cell.y);
       if (!tile) continue;
       const roadAlreadyThere = tile.hasRoad && !tile.isOccupied();
       const canAddRoad = this.canPreviewAddRoadAt(cell.x, cell.y);
-      const validConnection =
-        buildingCanPlace && (roadAlreadyThere || canAddRoad);
+      const validConnection = buildingCanPlace && (roadAlreadyThere || canAddRoad);
       const center = this.iso.gridToScreen(cell.x, cell.y);
       const mask = this.getRoadMaskWithExtraConnections(cell, connectionCells);
 
       if (roadAlreadyThere || canAddRoad) {
         this.ctx.save();
         this.ctx.globalAlpha = validConnection ? 0.9 : 0.4;
-        this.terrainTextures.drawRoad(
-          this.ctx,
-          mask,
-          center.x,
-          center.y,
-          cell.x,
-          cell.y,
-        );
+        this.terrainTextures.drawRoad(this.ctx, mask, center.x, center.y, cell.x, cell.y);
         this.ctx.restore();
       }
 
@@ -1662,34 +1526,18 @@ export class RenderSystem extends System {
     gridX: number,
     gridY: number,
     width: number,
-    depth: number,
+    depth: number
   ): void {
-    const connectionCells = this.getBuildingRoadConnectionCells(
-      gridX,
-      gridY,
-      width,
-      depth,
-    );
+    const connectionCells = this.getBuildingRoadConnectionCells(gridX, gridY, width, depth);
     for (const cell of connectionCells) {
       const center = this.iso.gridToScreen(cell.x, cell.y);
       const mask = this.getRoadMaskWithExtraConnections(cell, connectionCells);
-      this.terrainTextures.drawRoad(
-        this.ctx,
-        mask,
-        center.x,
-        center.y,
-        cell.x,
-        cell.y,
-      );
-      this.fillConnectionHintTile(cell.x, cell.y, "rgba(200, 60, 60, 0.2)");
+      this.terrainTextures.drawRoad(this.ctx, mask, center.x, center.y, cell.x, cell.y);
+      this.fillConnectionHintTile(cell.x, cell.y, 'rgba(200, 60, 60, 0.2)');
     }
   }
 
-  private fillConnectionHintTile(
-    gridX: number,
-    gridY: number,
-    fillStyle: string,
-  ): void {
+  private fillConnectionHintTile(gridX: number, gridY: number, fillStyle: string): void {
     const corners = this.iso.getTileCorners(gridX, gridY);
     this.ctx.beginPath();
     this.ctx.moveTo(corners[0].x, corners[0].y);
@@ -1701,26 +1549,20 @@ export class RenderSystem extends System {
     this.ctx.fill();
   }
 
-  private strokeConnectionHintTile(
-    gridX: number,
-    gridY: number,
-    valid: boolean,
-  ): void {
+  private strokeConnectionHintTile(gridX: number, gridY: number, valid: boolean): void {
     this.fillConnectionHintTile(
       gridX,
       gridY,
-      valid ? "rgba(255, 224, 150, 0.16)" : "rgba(200, 50, 50, 0.2)",
+      valid ? 'rgba(255, 224, 150, 0.16)' : 'rgba(200, 50, 50, 0.2)'
     );
     const corners = this.iso.getTileCorners(gridX, gridY);
     this.ctx.beginPath();
     this.ctx.moveTo(corners[0].x, corners[0].y);
-    corners.forEach((corner) => this.ctx.lineTo(corner.x, corner.y));
+    corners.forEach(corner => this.ctx.lineTo(corner.x, corner.y));
     this.ctx.closePath();
-    this.ctx.strokeStyle = valid
-      ? "rgba(255, 224, 150, 0.92)"
-      : "rgba(200, 50, 50, 0.8)";
+    this.ctx.strokeStyle = valid ? 'rgba(255, 224, 150, 0.92)' : 'rgba(200, 50, 50, 0.8)';
     this.ctx.lineWidth = 2.4;
-    this.ctx.lineJoin = "round";
+    this.ctx.lineJoin = 'round';
     this.ctx.stroke();
   }
 
@@ -1733,15 +1575,11 @@ export class RenderSystem extends System {
     color: string,
     offsetX: number = 0,
     offsetY: number = 0,
-    canPlace: boolean = this.canPlacePreview(gridX, gridY, width, depth),
+    canPlace: boolean = this.canPlacePreview(gridX, gridY, width, depth)
   ): void {
-    const previewColor = canPlace ? color : "#cc3333";
-    const tileHighlight = canPlace
-      ? "rgba(255, 255, 255, 0.2)"
-      : "rgba(200, 50, 50, 0.35)";
-    const outlineColor = canPlace
-      ? "rgba(255, 255, 255, 0.8)"
-      : "rgba(255, 80, 80, 0.9)";
+    const previewColor = canPlace ? color : '#cc3333';
+    const tileHighlight = canPlace ? 'rgba(255, 255, 255, 0.2)' : 'rgba(200, 50, 50, 0.35)';
+    const outlineColor = canPlace ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 80, 80, 0.9)';
 
     // Highlight tiles underneath
     this.highlightTiles(gridX, gridY, width, depth, tileHighlight);
@@ -1753,10 +1591,7 @@ export class RenderSystem extends System {
 
     this.ctx.save();
     this.ctx.globalAlpha = canPlace ? 0.6 : 0.5;
-    this.ctx.translate(
-      screenPos.x + offsetX,
-      screenPos.y - this.iso.tileHeight / 2 + offsetY,
-    );
+    this.ctx.translate(screenPos.x + offsetX, screenPos.y - this.iso.tileHeight / 2 + offsetY);
 
     if (width > 1 || depth > 1) {
       const cx = ((width - depth) * tileW) / 4;
@@ -1777,7 +1612,7 @@ export class RenderSystem extends System {
     ];
 
     // Calculate top corners
-    const topCorners = baseCorners.map((c) => ({
+    const topCorners = baseCorners.map(c => ({
       x: c.x,
       y: c.y - height,
     }));
@@ -1829,7 +1664,7 @@ export class RenderSystem extends System {
     startY: number,
     width: number,
     height: number,
-    color: string,
+    color: string
   ): void {
     for (let dy = 0; dy < height; dy++) {
       for (let dx = 0; dx < width; dx++) {
@@ -1842,12 +1677,12 @@ export class RenderSystem extends System {
 
           this.ctx.beginPath();
           this.ctx.moveTo(corners[0].x, corners[0].y);
-          corners.forEach((corner) => this.ctx.lineTo(corner.x, corner.y));
+          corners.forEach(corner => this.ctx.lineTo(corner.x, corner.y));
           this.ctx.closePath();
 
           this.ctx.fillStyle = color;
           this.ctx.fill();
-          this.ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+          this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
           this.ctx.lineWidth = 2;
           this.ctx.stroke();
         }
@@ -1873,8 +1708,7 @@ export class RenderSystem extends System {
       }
 
       const ageMs = now - site.startedAt;
-      if (ageMs >= DEMOLITION_FIRE_DURATION_MS + DEMOLITION_SCORCH_DURATION_MS)
-        continue;
+      if (ageMs >= DEMOLITION_FIRE_DURATION_MS + DEMOLITION_SCORCH_DURATION_MS) continue;
 
       const scorchAgeMs = Math.max(0, ageMs - DEMOLITION_FIRE_DURATION_MS);
       const fade =
@@ -1885,10 +1719,7 @@ export class RenderSystem extends System {
     }
   }
 
-  private renderScorchedFootprint(
-    site: DemolitionSiteVisual,
-    alpha: number,
-  ): void {
+  private renderScorchedFootprint(site: DemolitionSiteVisual, alpha: number): void {
     const centerGridX = site.x + (site.width - 1) / 2;
     const centerGridY = site.y + (site.height - 1) / 2;
     const center = this.iso.gridToScreen(centerGridX, centerGridY);
@@ -1903,7 +1734,7 @@ export class RenderSystem extends System {
     const gradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
     gradient.addColorStop(0, `rgba(24, 18, 14, ${alpha})`);
     gradient.addColorStop(0.48, `rgba(39, 28, 21, ${alpha * 0.55})`);
-    gradient.addColorStop(1, "rgba(39, 28, 21, 0)");
+    gradient.addColorStop(1, 'rgba(39, 28, 21, 0)');
     this.ctx.fillStyle = gradient;
     this.ctx.beginPath();
     this.ctx.arc(0, 0, 1, 0, Math.PI * 2);
@@ -1942,7 +1773,7 @@ export class RenderSystem extends System {
         for (let x = viewportBounds.minX; x <= viewportBounds.maxX; x++) {
           const tile = this.tileMap.getTile(x, y);
           if (!tile || !tile.isExplored()) continue;
-          if (tile.terrain === "water") continue;
+          if (tile.terrain === 'water') continue;
           const corners = this.iso.getTileCorners(x, y);
           this.ctx.beginPath();
           this.ctx.moveTo(corners[0].x, corners[0].y);
@@ -1970,14 +1801,12 @@ export class RenderSystem extends System {
     const polylines = this.buildContourPolylines(segments);
     if (polylines.length === 0) return;
     const screenContours = polylines
-      .map((line) =>
-        this.jitterClosedShoreline(this.simplifyShorelinePolyline(line, 12)),
-      )
-      .filter((line) => line.length >= 2);
+      .map(line => this.jitterClosedShoreline(this.simplifyShorelinePolyline(line, 12)))
+      .filter(line => line.length >= 2);
 
     this.ctx.save();
-    this.ctx.lineCap = "round";
-    this.ctx.lineJoin = "round";
+    this.ctx.lineCap = 'round';
+    this.ctx.lineJoin = 'round';
 
     const drawContourPath = (source: GridPoint[][] = screenContours): void => {
       this.ctx.beginPath();
@@ -1987,20 +1816,18 @@ export class RenderSystem extends System {
       }
     };
 
-    const closedContours = screenContours.filter((line) =>
-      this.isClosedScreenContour(line),
-    );
+    const closedContours = screenContours.filter(line => this.isClosedScreenContour(line));
     if (closedContours.length > 0) {
       drawContourPath(closedContours);
-      this.ctx.strokeStyle = "rgba(66, 112, 42, 0.58)";
+      this.ctx.strokeStyle = 'rgba(66, 112, 42, 0.58)';
       this.ctx.lineWidth = 6;
       this.ctx.stroke();
 
       drawContourPath(closedContours);
       if (!this.terrainTextures.useWaterTextureFill(this.ctx)) {
-        this.ctx.fillStyle = "#3484d6";
+        this.ctx.fillStyle = '#3484d6';
       }
-      this.ctx.fill("evenodd");
+      this.ctx.fill('evenodd');
 
       this.renderWaterDepthContourFills(viewportBounds);
     }
@@ -2015,29 +1842,25 @@ export class RenderSystem extends System {
     maxY: number;
   }): void {
     const depthBands = [
-      { minDepth: 2, color: "rgba(27, 101, 190, 0.17)" },
-      { minDepth: 3, color: "rgba(21, 86, 172, 0.145)" },
-      { minDepth: 4, color: "rgba(16, 72, 154, 0.12)" },
-      { minDepth: 5, color: "rgba(11, 60, 136, 0.095)" },
-      { minDepth: 6, color: "rgba(8, 50, 118, 0.075)" },
-      { minDepth: 7, color: "rgba(6, 42, 101, 0.06)" },
-      { minDepth: 8, color: "rgba(4, 34, 84, 0.05)" },
+      { minDepth: 2, color: 'rgba(27, 101, 190, 0.17)' },
+      { minDepth: 3, color: 'rgba(21, 86, 172, 0.145)' },
+      { minDepth: 4, color: 'rgba(16, 72, 154, 0.12)' },
+      { minDepth: 5, color: 'rgba(11, 60, 136, 0.095)' },
+      { minDepth: 6, color: 'rgba(8, 50, 118, 0.075)' },
+      { minDepth: 7, color: 'rgba(6, 42, 101, 0.06)' },
+      { minDepth: 8, color: 'rgba(4, 34, 84, 0.05)' },
     ];
 
     for (const band of depthBands) {
       const segments = this.collectContourSegments(viewportBounds, (x, y) => {
         const tile = this.tileMap.getTile(x, y);
-        return (
-          !!tile?.isExplored() &&
-          tile.terrain === "water" &&
-          tile.waterDepth >= band.minDepth
-        );
+        return !!tile?.isExplored() && tile.terrain === 'water' && tile.waterDepth >= band.minDepth;
       });
       if (segments.length === 0) continue;
 
       const contours = this.buildContourPolylines(segments)
-        .map((line) => this.simplifyShorelinePolyline(line, 16))
-        .filter((line) => line.length >= 2 && this.isClosedScreenContour(line));
+        .map(line => this.simplifyShorelinePolyline(line, 16))
+        .filter(line => line.length >= 2 && this.isClosedScreenContour(line));
       if (contours.length === 0) continue;
 
       this.ctx.beginPath();
@@ -2045,7 +1868,7 @@ export class RenderSystem extends System {
         this.traceSmoothedScreenContour(contour);
       }
       this.ctx.fillStyle = band.color;
-      this.ctx.fill("evenodd");
+      this.ctx.fill('evenodd');
     }
   }
 
@@ -2053,9 +1876,7 @@ export class RenderSystem extends System {
     if (points.length < 4) return false;
     const first = points[0]!;
     const last = points[points.length - 1]!;
-    return (
-      Math.abs(first.x - last.x) < 0.001 && Math.abs(first.y - last.y) < 0.001
-    );
+    return Math.abs(first.x - last.x) < 0.001 && Math.abs(first.y - last.y) < 0.001;
   }
 
   private traceSmoothedScreenContour(points: GridPoint[]): void {
@@ -2071,9 +1892,7 @@ export class RenderSystem extends System {
       return;
     }
 
-    const corner = (
-      index: number,
-    ): { entry: GridPoint; control: GridPoint; exit: GridPoint } => {
+    const corner = (index: number): { entry: GridPoint; control: GridPoint; exit: GridPoint } => {
       const prev = ring[(index - 1 + ring.length) % ring.length]!;
       const current = ring[index]!;
       const next = ring[(index + 1) % ring.length]!;
@@ -2085,18 +1904,13 @@ export class RenderSystem extends System {
       const nextLen = Math.hypot(nextDx, nextDy) || 1;
       const dot = Math.max(
         -1,
-        Math.min(1, (prevDx * nextDx + prevDy * nextDy) / (prevLen * nextLen)),
+        Math.min(1, (prevDx * nextDx + prevDy * nextDy) / (prevLen * nextLen))
       );
       const angle = Math.acos(dot);
       const sharpness = 1 - angle / Math.PI;
       const factor = 0.5 + sharpness * 1.1;
       const rawDistance = Math.min(prevLen, nextLen, 34) * factor;
-      const distance = Math.min(
-        rawDistance,
-        prevLen * 0.48,
-        nextLen * 0.48,
-        54,
-      );
+      const distance = Math.min(rawDistance, prevLen * 0.48, nextLen * 0.48, 54);
 
       return {
         entry: {
@@ -2124,7 +1938,7 @@ export class RenderSystem extends System {
         firstCorner.control.x,
         firstCorner.control.y,
         firstCorner.exit.x,
-        firstCorner.exit.y,
+        firstCorner.exit.y
       );
       this.ctx.closePath();
       return;
@@ -2151,10 +1965,7 @@ export class RenderSystem extends System {
       const len = Math.hypot(dx, dy) || 1;
       const normal = { x: -dy / len, y: dx / len };
       const n1 = this.shorelineNoise(point.x * 0.035, point.y * 0.035);
-      const n2 = this.shorelineNoise(
-        point.x * 0.085 + 17.3,
-        point.y * 0.085 - 41.7,
-      );
+      const n2 = this.shorelineNoise(point.x * 0.085 + 17.3, point.y * 0.085 - 41.7);
       const amount = (n1 - 0.5) * 5.2 + (n2 - 0.5) * 1.8;
       return {
         x: point.x + normal.x * amount,
@@ -2178,13 +1989,13 @@ export class RenderSystem extends System {
   }): ShorelineSegment[] {
     return this.collectContourSegments(viewportBounds, (x, y) => {
       const tile = this.tileMap.getTile(x, y);
-      return !!tile?.isExplored() && tile.terrain === "water";
+      return !!tile?.isExplored() && tile.terrain === 'water';
     });
   }
 
   private collectContourSegments(
     viewportBounds: { minX: number; maxX: number; minY: number; maxY: number },
-    isInside: (x: number, y: number) => boolean,
+    isInside: (x: number, y: number) => boolean
   ): ShorelineSegment[] {
     const segments: ShorelineSegment[] = [];
     const add = (a: GridPoint, b: GridPoint): void => {
@@ -2226,11 +2037,7 @@ export class RenderSystem extends System {
     const keyOf = (p: GridPoint): string => `${p.x},${p.y}`;
     const pointByKey = new Map<string, GridPoint>();
     const adjacency = new Map<string, number[]>();
-    const addEndpoint = (
-      key: string,
-      point: GridPoint,
-      segmentIndex: number,
-    ): void => {
+    const addEndpoint = (key: string, point: GridPoint, segmentIndex: number): void => {
       pointByKey.set(key, point);
       const list = adjacency.get(key);
       if (list) list.push(segmentIndex);
@@ -2252,7 +2059,7 @@ export class RenderSystem extends System {
       line.push(startPoint);
 
       while (true) {
-        const nextSegmentIndex = adjacency.get(currentKey)?.find((index) => {
+        const nextSegmentIndex = adjacency.get(currentKey)?.find(index => {
           if (!unused.has(index)) return false;
           const segment = segments[index]!;
           const aKey = keyOf(segment.a);
@@ -2260,7 +2067,7 @@ export class RenderSystem extends System {
           const otherKey = aKey === currentKey ? bKey : aKey;
           return (
             otherKey !== previousKey ||
-            adjacency.get(currentKey)!.every((other) => !unused.has(other))
+            adjacency.get(currentKey)!.every(other => !unused.has(other))
           );
         });
         if (nextSegmentIndex == null) break;
@@ -2282,10 +2089,7 @@ export class RenderSystem extends System {
 
     const polylines: GridPoint[][] = [];
     for (const [key, connected] of adjacency.entries()) {
-      if (
-        connected.length === 1 &&
-        connected.some((index) => unused.has(index))
-      ) {
+      if (connected.length === 1 && connected.some(index => unused.has(index))) {
         const line = consume(key);
         if (line.length >= 2) polylines.push(line);
       }
@@ -2301,21 +2105,14 @@ export class RenderSystem extends System {
     return polylines;
   }
 
-  private simplifyShorelinePolyline(
-    points: GridPoint[],
-    tolerance: number,
-  ): GridPoint[] {
-    const screenPoints = points.map((point) =>
-      this.iso.gridToScreen(point.x, point.y),
-    );
+  private simplifyShorelinePolyline(points: GridPoint[], tolerance: number): GridPoint[] {
+    const screenPoints = points.map(point => this.iso.gridToScreen(point.x, point.y));
     if (screenPoints.length <= 2) return screenPoints;
 
     const closed =
       screenPoints.length > 3 &&
-      Math.abs(screenPoints[0]!.x - screenPoints[screenPoints.length - 1]!.x) <
-        0.001 &&
-      Math.abs(screenPoints[0]!.y - screenPoints[screenPoints.length - 1]!.y) <
-        0.001;
+      Math.abs(screenPoints[0]!.x - screenPoints[screenPoints.length - 1]!.x) < 0.001 &&
+      Math.abs(screenPoints[0]!.y - screenPoints[screenPoints.length - 1]!.y) < 0.001;
     if (!closed) return this.simplifyScreenPolyline(screenPoints, tolerance);
 
     const ring = screenPoints.slice(0, -1);
@@ -2326,9 +2123,7 @@ export class RenderSystem extends System {
     let opposite = anchor;
     let bestDistance = 0;
     for (let i = 0; i < ring.length; i++) {
-      const d =
-        (ring[i]!.x - ring[anchor]!.x) ** 2 +
-        (ring[i]!.y - ring[anchor]!.y) ** 2;
+      const d = (ring[i]!.x - ring[anchor]!.x) ** 2 + (ring[i]!.y - ring[anchor]!.y) ** 2;
       if (d > bestDistance) {
         bestDistance = d;
         opposite = i;
@@ -2348,26 +2143,16 @@ export class RenderSystem extends System {
     return [...a, ...b.slice(1), a[0]!];
   }
 
-  private simplifyScreenPolyline(
-    points: GridPoint[],
-    tolerance: number,
-  ): GridPoint[] {
+  private simplifyScreenPolyline(points: GridPoint[], tolerance: number): GridPoint[] {
     if (points.length <= 2) return points;
     const sqTolerance = tolerance * tolerance;
-    const sqSegmentDistance = (
-      p: GridPoint,
-      a: GridPoint,
-      b: GridPoint,
-    ): number => {
+    const sqSegmentDistance = (p: GridPoint, a: GridPoint, b: GridPoint): number => {
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       if (dx === 0 && dy === 0) return (p.x - a.x) ** 2 + (p.y - a.y) ** 2;
       const t = Math.max(
         0,
-        Math.min(
-          1,
-          ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy),
-        ),
+        Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy))
       );
       const x = a.x + dx * t;
       const y = a.y + dy * t;
@@ -2386,10 +2171,7 @@ export class RenderSystem extends System {
     }
     if (maxDistance <= sqTolerance) return [points[0]!, points[last]!];
 
-    const left = this.simplifyScreenPolyline(
-      points.slice(0, index + 1),
-      tolerance,
-    );
+    const left = this.simplifyScreenPolyline(points.slice(0, index + 1), tolerance);
     const right = this.simplifyScreenPolyline(points.slice(index), tolerance);
     return [...left.slice(0, -1), ...right];
   }
@@ -2413,7 +2195,7 @@ export class RenderSystem extends System {
           center.y,
           x,
           y,
-          this.isLinearizedRoadCorner(x, y, config),
+          this.isLinearizedRoadCorner(x, y, config)
         );
       }
     }
@@ -2426,7 +2208,7 @@ export class RenderSystem extends System {
     maxY: number;
   }): void {
     this.ctx.save();
-    this.ctx.fillStyle = "#050607";
+    this.ctx.fillStyle = '#050607';
     for (let y = viewportBounds.minY; y <= viewportBounds.maxY; y++) {
       for (let x = viewportBounds.minX; x <= viewportBounds.maxX; x++) {
         const tile = this.tileMap.getTile(x, y);
@@ -2448,7 +2230,7 @@ export class RenderSystem extends System {
     gx: number,
     gy: number,
     offset: { x: number; y: number } = { x: 0, y: 0 },
-    style?: CordonRenderStyle,
+    style?: CordonRenderStyle
   ): {
     foot: { x: number; y: number };
     top: { x: number; y: number };
@@ -2464,52 +2246,36 @@ export class RenderSystem extends System {
     gx: number,
     gy: number,
     offset: { x: number; y: number },
-    style?: CordonRenderStyle,
+    style?: CordonRenderStyle
   ): void {
     const zoom = Math.max(0.35, this.camera.zoom);
     const { foot, top } = this.cordonStickFootAndTop(gx, gy, offset, style);
     this.ctx.save();
-    this.ctx.lineCap = "round";
-    this.ctx.fillStyle = "rgba(0, 0, 0, 0.18)";
+    this.ctx.lineCap = 'round';
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
     this.ctx.beginPath();
-    this.ctx.ellipse(
-      foot.x,
-      foot.y + 1.5 / zoom,
-      4.5 / zoom,
-      2.2 / zoom,
-      0,
-      0,
-      Math.PI * 2,
-    );
+    this.ctx.ellipse(foot.x, foot.y + 1.5 / zoom, 4.5 / zoom, 2.2 / zoom, 0, 0, Math.PI * 2);
     this.ctx.fill();
 
-    this.ctx.strokeStyle = style?.stickDark ?? "rgba(48, 30, 14, 0.96)";
+    this.ctx.strokeStyle = style?.stickDark ?? 'rgba(48, 30, 14, 0.96)';
     this.ctx.lineWidth = 5 / zoom;
     this.ctx.beginPath();
     this.ctx.moveTo(foot.x, foot.y);
     this.ctx.lineTo(top.x, top.y);
     this.ctx.stroke();
 
-    this.ctx.strokeStyle = style?.stickLight ?? "rgba(110, 72, 38, 0.75)";
+    this.ctx.strokeStyle = style?.stickLight ?? 'rgba(110, 72, 38, 0.75)';
     this.ctx.lineWidth = 1.8 / zoom;
     this.ctx.beginPath();
     this.ctx.moveTo(foot.x - 1.1 / zoom, foot.y - 1 / zoom);
     this.ctx.lineTo(top.x - 1.1 / zoom, top.y + 1 / zoom);
     this.ctx.stroke();
 
-    this.ctx.fillStyle = style?.stickLight ?? "rgba(110, 72, 38, 0.85)";
-    this.ctx.strokeStyle = style?.stickDark ?? "rgba(48, 30, 14, 0.96)";
+    this.ctx.fillStyle = style?.stickLight ?? 'rgba(110, 72, 38, 0.85)';
+    this.ctx.strokeStyle = style?.stickDark ?? 'rgba(48, 30, 14, 0.96)';
     this.ctx.lineWidth = 1 / zoom;
     this.ctx.beginPath();
-    this.ctx.ellipse(
-      top.x,
-      top.y - 1.2 / zoom,
-      3.8 / zoom,
-      2.5 / zoom,
-      0,
-      0,
-      Math.PI * 2,
-    );
+    this.ctx.ellipse(top.x, top.y - 1.2 / zoom, 3.8 / zoom, 2.5 / zoom, 0, 0, Math.PI * 2);
     this.ctx.fill();
     this.ctx.stroke();
     this.ctx.restore();
@@ -2523,7 +2289,7 @@ export class RenderSystem extends System {
     by: number,
     aOffset: { x: number; y: number },
     bOffset: { x: number; y: number },
-    style?: CordonRenderStyle,
+    style?: CordonRenderStyle
   ): void {
     const zoom = Math.max(0.35, this.camera.zoom);
     const a = this.cordonStickFootAndTop(ax, ay, aOffset, style).top;
@@ -2534,23 +2300,23 @@ export class RenderSystem extends System {
     const nx = -dy / dist;
     const ny = dx / dist;
     this.ctx.save();
-    this.ctx.lineCap = "round";
-    this.ctx.lineJoin = "round";
-    this.ctx.strokeStyle = "rgba(28, 18, 10, 0.35)";
+    this.ctx.lineCap = 'round';
+    this.ctx.lineJoin = 'round';
+    this.ctx.strokeStyle = 'rgba(28, 18, 10, 0.35)';
     this.ctx.lineWidth = 4.6 / zoom;
     this.ctx.beginPath();
     this.ctx.moveTo(a.x, a.y + 1 / zoom);
     this.ctx.lineTo(b.x, b.y + 1 / zoom);
     this.ctx.stroke();
 
-    this.ctx.strokeStyle = style?.rope ?? "rgba(101, 67, 33, 0.92)";
+    this.ctx.strokeStyle = style?.rope ?? 'rgba(101, 67, 33, 0.92)';
     this.ctx.lineWidth = 3.2 / zoom;
     this.ctx.beginPath();
     this.ctx.moveTo(a.x, a.y);
     this.ctx.lineTo(b.x, b.y);
     this.ctx.stroke();
 
-    this.ctx.strokeStyle = style?.ropeHighlight ?? "rgba(205, 155, 92, 0.55)";
+    this.ctx.strokeStyle = style?.ropeHighlight ?? 'rgba(205, 155, 92, 0.55)';
     this.ctx.lineWidth = 1.1 / zoom;
     this.ctx.beginPath();
     this.ctx.moveTo(a.x + (nx * 1.1) / zoom, a.y + (ny * 1.1) / zoom);
@@ -2558,7 +2324,7 @@ export class RenderSystem extends System {
     this.ctx.stroke();
 
     const tickCount = Math.max(1, Math.floor(dist / (9 / zoom)));
-    this.ctx.strokeStyle = "rgba(48, 30, 14, 0.42)";
+    this.ctx.strokeStyle = 'rgba(48, 30, 14, 0.42)';
     this.ctx.lineWidth = 0.85 / zoom;
     for (let i = 1; i < tickCount; i++) {
       const t = i / tickCount;
@@ -2569,7 +2335,7 @@ export class RenderSystem extends System {
       this.ctx.moveTo(cx - (nx * 2.3) / zoom, cy - (ny * 2.3) / zoom);
       this.ctx.lineTo(
         cx + (nx * 2.3) / zoom + ((dx / dist) * twist * 1.2) / zoom,
-        cy + (ny * 2.3) / zoom + ((dy / dist) * twist * 1.2) / zoom,
+        cy + (ny * 2.3) / zoom + ((dy / dist) * twist * 1.2) / zoom
       );
       this.ctx.stroke();
     }
@@ -2584,12 +2350,12 @@ export class RenderSystem extends System {
     key: string,
     frontier: ReadonlySet<string>,
     unionU: ReadonlySet<string>,
-    suppressKeys: ReadonlySet<string>,
+    suppressKeys: ReadonlySet<string>
   ): boolean {
     if (suppressKeys.has(key)) return false;
     if (!unionU.has(key)) return true;
 
-    const [xs, ys] = key.split(",");
+    const [xs, ys] = key.split(',');
     const x = Number(xs);
     const y = Number(ys);
     const cardinals: readonly [number, number][] = [
@@ -2605,11 +2371,7 @@ export class RenderSystem extends System {
     return true;
   }
 
-  private getCordonExposedMask(
-    x: number,
-    y: number,
-    ownedCells: ReadonlySet<string>,
-  ): number {
+  private getCordonExposedMask(x: number, y: number, ownedCells: ReadonlySet<string>): number {
     let mask = 0;
     const dirs: readonly { dx: number; dy: number; bit: number }[] = [
       { dx: -1, dy: 0, bit: 1 },
@@ -2623,11 +2385,7 @@ export class RenderSystem extends System {
     return mask;
   }
 
-  private getCordonPostOffset(
-    x: number,
-    y: number,
-    exposedMask: number,
-  ): { x: number; y: number } {
+  private getCordonPostOffset(x: number, y: number, exposedMask: number): { x: number; y: number } {
     let vx = 0;
     let vy = 0;
     const dirs: readonly { dx: number; dy: number; bit: number }[] = [
@@ -2657,7 +2415,7 @@ export class RenderSystem extends System {
   private buildCordonGeometry(
     frontier: ReadonlySet<string>,
     unionU: ReadonlySet<string>,
-    suppressKeys: ReadonlySet<string> = new Set<string>(),
+    suppressKeys: ReadonlySet<string> = new Set<string>()
   ): {
     poleOffsets: Map<string, { x: number; y: number }>;
     ropes: Array<{
@@ -2671,8 +2429,7 @@ export class RenderSystem extends System {
     const poleOffsets = new Map<string, { x: number; y: number }>();
     const renderableFrontier = new Set<string>();
     for (const k of frontier) {
-      if (!this.isRenderableCordonCell(k, frontier, unionU, suppressKeys))
-        continue;
+      if (!this.isRenderableCordonCell(k, frontier, unionU, suppressKeys)) continue;
       renderableFrontier.add(k);
     }
 
@@ -2681,7 +2438,7 @@ export class RenderSystem extends System {
 
     const exposedMasks = new Map<string, number>();
     for (const k of renderableFrontier) {
-      const [xs, ys] = k.split(",");
+      const [xs, ys] = k.split(',');
       const x = Number(xs);
       const y = Number(ys);
       const exposedMask = this.getCordonExposedMask(x, y, ownedCells);
@@ -2704,12 +2461,7 @@ export class RenderSystem extends System {
       dBack: number;
     }> = [];
     const seenEdge = new Set<string>();
-    const edgeKey = (
-      x0: number,
-      y0: number,
-      x1: number,
-      y1: number,
-    ): string => {
+    const edgeKey = (x0: number, y0: number, x1: number, y1: number): string => {
       const a = territoryKey(x0, y0);
       const b = territoryKey(x1, y1);
       return a < b ? `${a}|${b}` : `${b}|${a}`;
@@ -2725,7 +2477,7 @@ export class RenderSystem extends System {
       mask: number,
       neighborMask: number,
       dx: number,
-      dy: number,
+      dy: number
     ): boolean => {
       const xSide = sideBit(dx, 0);
       const ySide = sideBit(0, dy);
@@ -2740,7 +2492,7 @@ export class RenderSystem extends System {
       mask: number,
       neighborMask: number,
       dx: number,
-      dy: number,
+      dy: number
     ): boolean => {
       if ((mask & neighborMask) !== 0) return true;
       if (Math.abs(dx) + Math.abs(dy) !== 2) return false;
@@ -2755,7 +2507,7 @@ export class RenderSystem extends System {
     ];
     for (const k of frontier) {
       if (poleOffsets.has(k) || suppressKeys.has(k)) continue;
-      const [xs, ys] = k.split(",");
+      const [xs, ys] = k.split(',');
       const x = Number(xs);
       const y = Number(ys);
       let bridgeMask = 0;
@@ -2778,7 +2530,7 @@ export class RenderSystem extends System {
 
     for (const k of frontier) {
       if (!poleOffsets.has(k)) continue;
-      const [xs, ys] = k.split(",");
+      const [xs, ys] = k.split(',');
       const x = Number(xs);
       const y = Number(ys);
       const mask = exposedMasks.get(k) ?? 0;
@@ -2792,12 +2544,8 @@ export class RenderSystem extends System {
         if (Math.abs(dx) + Math.abs(dy) === 2) {
           const viaA = territoryKey(x + dx, y);
           const viaB = territoryKey(x, y + dy);
-          const viaAMask = poleOffsets.has(viaA)
-            ? (exposedMasks.get(viaA) ?? 0)
-            : 0;
-          const viaBMask = poleOffsets.has(viaB)
-            ? (exposedMasks.get(viaB) ?? 0)
-            : 0;
+          const viaAMask = poleOffsets.has(viaA) ? (exposedMasks.get(viaA) ?? 0) : 0;
+          const viaBMask = poleOffsets.has(viaB) ? (exposedMasks.get(viaB) ?? 0) : 0;
           const viaAConnects =
             viaAMask !== 0 &&
             canConnectMasks(mask, viaAMask, dx, 0) &&
@@ -2820,7 +2568,7 @@ export class RenderSystem extends System {
     // Bridge only that short span with rope; do not add poles or alter the normal boundary graph.
     for (const [k, mask] of exposedMasks) {
       if (!poleOffsets.has(k)) continue;
-      const [xs, ys] = k.split(",");
+      const [xs, ys] = k.split(',');
       const x = Number(xs);
       const y = Number(ys);
       for (const [dx, dy] of directions) {
@@ -2868,10 +2616,7 @@ export class RenderSystem extends System {
     };
   }
 
-  private roadEdgeLocalForStep(
-    dx: number,
-    dy: number,
-  ): { x: number; y: number } | null {
+  private roadEdgeLocalForStep(dx: number, dy: number): { x: number; y: number } | null {
     if (dx < 0 && dy === 0) return { x: -16, y: -8 };
     if (dx === 0 && dy < 0) return { x: 16, y: -8 };
     if (dx > 0 && dy === 0) return { x: 16, y: 8 };
@@ -2882,31 +2627,19 @@ export class RenderSystem extends System {
   private isLinearizedRoadCorner(
     gx: number,
     gy: number,
-    config: number = this.getRoadConfig(gx, gy),
+    config: number = this.getRoadConfig(gx, gy)
   ): boolean {
     if (config === 9) {
-      return (
-        this.getRoadConfig(gx - 1, gy) === 6 ||
-        this.getRoadConfig(gx, gy + 1) === 6
-      );
+      return this.getRoadConfig(gx - 1, gy) === 6 || this.getRoadConfig(gx, gy + 1) === 6;
     }
     if (config === 6) {
-      return (
-        this.getRoadConfig(gx, gy - 1) === 9 ||
-        this.getRoadConfig(gx + 1, gy) === 9
-      );
+      return this.getRoadConfig(gx, gy - 1) === 9 || this.getRoadConfig(gx + 1, gy) === 9;
     }
     if (config === 3) {
-      return (
-        this.getRoadConfig(gx - 1, gy) === 12 ||
-        this.getRoadConfig(gx, gy - 1) === 12
-      );
+      return this.getRoadConfig(gx - 1, gy) === 12 || this.getRoadConfig(gx, gy - 1) === 12;
     }
     if (config === 12) {
-      return (
-        this.getRoadConfig(gx + 1, gy) === 3 ||
-        this.getRoadConfig(gx, gy + 1) === 3
-      );
+      return this.getRoadConfig(gx + 1, gy) === 3 || this.getRoadConfig(gx, gy + 1) === 3;
     }
     return false;
   }
@@ -2918,10 +2651,7 @@ export class RenderSystem extends System {
     return { x: -16, y: 8 };
   }
 
-  private getLinearizedRoadPoint(
-    gx: number,
-    gy: number,
-  ): { x: number; y: number } | null {
+  private getLinearizedRoadPoint(gx: number, gy: number): { x: number; y: number } | null {
     const config = this.getRoadConfig(gx, gy);
     if (!this.isLinearizedRoadCorner(gx, gy, config)) return null;
     const bits: number[] = [];
@@ -2942,7 +2672,7 @@ export class RenderSystem extends System {
     a: { x: number; y: number },
     c: { x: number; y: number },
     b: { x: number; y: number },
-    t: number,
+    t: number
   ): { x: number; y: number } {
     const u = 1 - t;
     return {
@@ -2956,11 +2686,12 @@ export class RenderSystem extends System {
     c: { x: number; y: number },
     b: { x: number; y: number },
     distance: number,
-    steps: number = 10,
+    steps: number = 10
   ): { point: { x: number; y: number }; length: number } {
     let prev = a;
-    const samples: Array<{ point: { x: number; y: number }; length: number }> =
-      [{ point: a, length: 0 }];
+    const samples: Array<{ point: { x: number; y: number }; length: number }> = [
+      { point: a, length: 0 },
+    ];
     let total = 0;
     for (let i = 1; i <= steps; i++) {
       const point = this.quadraticPoint(a, c, b, i / steps);
@@ -2988,9 +2719,7 @@ export class RenderSystem extends System {
     return { point: b, length: total };
   }
 
-  private getRoadWalkScreenPosition(
-    movable: Movable,
-  ): { x: number; y: number } | null {
+  private getRoadWalkScreenPosition(movable: Movable): { x: number; y: number } | null {
     if (!movable.isMoving) return null;
     const target = movable.getCurrentTarget();
     if (!target) return null;
@@ -3053,29 +2782,13 @@ export class RenderSystem extends System {
       b: { x: targetCenter.x + targetHub.x, y: targetCenter.y + targetHub.y },
     };
 
-    const firstLen = this.sampleQuadraticByLength(
-      first.a,
-      first.c,
-      first.b,
-      Infinity,
-    ).length;
-    const secondLen = this.sampleQuadraticByLength(
-      second.a,
-      second.c,
-      second.b,
-      Infinity,
-    ).length;
+    const firstLen = this.sampleQuadraticByLength(first.a, first.c, first.b, Infinity).length;
+    const secondLen = this.sampleQuadraticByLength(second.a, second.c, second.b, Infinity).length;
     const travel = p * (firstLen + secondLen);
     if (travel <= firstLen) {
-      return this.sampleQuadraticByLength(first.a, first.c, first.b, travel)
-        .point;
+      return this.sampleQuadraticByLength(first.a, first.c, first.b, travel).point;
     }
-    return this.sampleQuadraticByLength(
-      second.a,
-      second.c,
-      second.b,
-      travel - firstLen,
-    ).point;
+    return this.sampleQuadraticByLength(second.a, second.c, second.b, travel - firstLen).point;
   }
 
   private findMountainBlocks(viewportBounds: {
@@ -3092,21 +2805,13 @@ export class RenderSystem extends System {
     const startY = Math.floor(viewportBounds.minY / blockSize) * blockSize;
     const startX = Math.floor(viewportBounds.minX / blockSize) * blockSize;
 
-    for (
-      let y = startY;
-      y <= viewportBounds.maxY - blockSize + 1;
-      y += blockSize
-    ) {
-      for (
-        let x = startX;
-        x <= viewportBounds.maxX - blockSize + 1;
-        x += blockSize
-      ) {
+    for (let y = startY; y <= viewportBounds.maxY - blockSize + 1; y += blockSize) {
+      for (let x = startX; x <= viewportBounds.maxX - blockSize + 1; x += blockSize) {
         let allMountain = true;
         for (let dy = 0; dy < blockSize && allMountain; dy++) {
           for (let dx = 0; dx < blockSize && allMountain; dx++) {
             const tile = this.tileMap.getTile(x + dx, y + dy);
-            if (!tile || tile.terrain !== "mountain") allMountain = false;
+            if (!tile || tile.terrain !== 'mountain') allMountain = false;
           }
         }
         if (allMountain) {
@@ -3123,7 +2828,7 @@ export class RenderSystem extends System {
   }
 
   private renderMountainBlock(blockX: number, blockY: number): void {
-    const sprite = this.loadSprite("/assets/terrain/mountain.png");
+    const sprite = this.loadSprite('/assets/terrain/mountain.png');
     if (!sprite || sprite.naturalWidth === 0) return;
 
     const blockSize = 4;
@@ -3140,7 +2845,7 @@ export class RenderSystem extends System {
       screen.x - drawW / 2,
       screen.y - drawH + this.iso.tileHeight * 0.5,
       drawW,
-      drawH,
+      drawH
     );
   }
 
@@ -3226,37 +2931,29 @@ export class RenderSystem extends System {
   }
 
   private compareEntityOrRabbitDrawOrder(
-    a:
-      | { kind: "entity"; entity: Entity }
-      | { kind: "rabbit"; rabbit: WildRabbit },
-    b:
-      | { kind: "entity"; entity: Entity }
-      | { kind: "rabbit"; rabbit: WildRabbit },
+    a: { kind: 'entity'; entity: Entity } | { kind: 'rabbit'; rabbit: WildRabbit },
+    b: { kind: 'entity'; entity: Entity } | { kind: 'rabbit'; rabbit: WildRabbit }
   ): number {
     const da =
-      a.kind === "entity"
+      a.kind === 'entity'
         ? this.getEntityDrawDepthForSort(a.entity)
         : this.getWildRabbitDrawDepthForSort(a.rabbit);
     const db =
-      b.kind === "entity"
+      b.kind === 'entity'
         ? this.getEntityDrawDepthForSort(b.entity)
         : this.getWildRabbitDrawDepthForSort(b.rabbit);
     if (da < db) return -1;
     if (da > db) return 1;
     if (a.kind !== b.kind) {
       // Tie: draw rabbits before entities so workers/buildings stay visually in front when co-depth.
-      if (a.kind === "rabbit" && b.kind === "entity") return -1;
+      if (a.kind === 'rabbit' && b.kind === 'entity') return -1;
       return 1;
     }
-    if (a.kind === "entity" && b.kind === "entity") {
+    if (a.kind === 'entity' && b.kind === 'entity') {
       return this.compareEntityDrawOrder(a.entity, b.entity);
     }
-    if (a.kind === "rabbit" && b.kind === "rabbit") {
-      return (
-        a.rabbit.x - b.rabbit.x ||
-        a.rabbit.y - b.rabbit.y ||
-        a.rabbit.id - b.rabbit.id
-      );
+    if (a.kind === 'rabbit' && b.kind === 'rabbit') {
+      return a.rabbit.x - b.rabbit.x || a.rabbit.y - b.rabbit.y || a.rabbit.id - b.rabbit.id;
     }
     return 0;
   }
@@ -3282,17 +2979,9 @@ export class RenderSystem extends System {
     const cy = base.y + jumpArcPx - this.iso.tileHeight * 0.12;
 
     const bodyFill =
-      rabbit.variant === "white"
-        ? "#ebe4dc"
-        : rabbit.variant === "beige"
-          ? "#c9b89a"
-          : "#7a5e3d";
+      rabbit.variant === 'white' ? '#ebe4dc' : rabbit.variant === 'beige' ? '#c9b89a' : '#7a5e3d';
     const footFill =
-      rabbit.variant === "white"
-        ? "#cfc7be"
-        : rabbit.variant === "beige"
-          ? "#a8987a"
-          : "#5c472e";
+      rabbit.variant === 'white' ? '#cfc7be' : rabbit.variant === 'beige' ? '#a8987a' : '#5c472e';
 
     let leftLift = 0;
     let rightLift = 0;
@@ -3304,8 +2993,7 @@ export class RenderSystem extends System {
       rightLift = -kick;
     }
 
-    const mirrorHead =
-      Math.floor(nowMs / 680 + rabbit.animSeed * 0.37) % 2 === 0;
+    const mirrorHead = Math.floor(nowMs / 680 + rabbit.animSeed * 0.37) % 2 === 0;
     const RABBIT_VISUAL_SCALE = 0.7;
     const tailOnRight = (Math.floor(rabbit.animSeed * 7.13) & 1) === 0;
     /** Nose sits on this side of the muzzle (suggests head turned); flips with mirror. */
@@ -3328,11 +3016,11 @@ export class RenderSystem extends System {
     const tailCx = tailOnRight ? bodyRx + 2.5 : -bodyRx - 2.5;
     const tailCy = bodyCy + bodyRy * 0.35;
     const fluff: Array<[number, number, number, string]> = [
-      [0, 0, 4.2, "rgba(255,248,245,0.92)"],
-      [-2.2, 1.1, 3.2, "rgba(255,230,235,0.75)"],
-      [2.4, 0.8, 3.4, "rgba(248,236,255,0.7)"],
-      [-1.2, -2.0, 2.6, "rgba(255,255,255,0.55)"],
-      [1.8, -1.4, 2.8, "rgba(255,220,230,0.65)"],
+      [0, 0, 4.2, 'rgba(255,248,245,0.92)'],
+      [-2.2, 1.1, 3.2, 'rgba(255,230,235,0.75)'],
+      [2.4, 0.8, 3.4, 'rgba(248,236,255,0.7)'],
+      [-1.2, -2.0, 2.6, 'rgba(255,255,255,0.55)'],
+      [1.8, -1.4, 2.8, 'rgba(255,220,230,0.65)'],
     ];
     for (const [ox, oy, rad, col] of fluff) {
       ctx.fillStyle = col;
@@ -3376,7 +3064,7 @@ export class RenderSystem extends System {
     ctx.arc(0, -2.2, 5.4, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = "#2a2218";
+    ctx.fillStyle = '#2a2218';
     ctx.beginPath();
     ctx.arc(-1.55, -0.2, 0.95, 0, Math.PI * 2);
     ctx.arc(1.55, -0.2, 0.95, 0, Math.PI * 2);
@@ -3384,7 +3072,7 @@ export class RenderSystem extends System {
 
     const nx = noseSide * 2.85;
     const ny = 2.1;
-    ctx.fillStyle = "#f4a8c8";
+    ctx.fillStyle = '#f4a8c8';
     ctx.beginPath();
     ctx.moveTo(nx, ny);
     ctx.lineTo(nx - 1.35, ny + 2.35);
@@ -3430,15 +3118,15 @@ export class RenderSystem extends System {
   private renderDepthSorted(
     sortedEntities: Entity[],
     viewportBounds: { minX: number; maxX: number; minY: number; maxY: number },
-    cordonPack: TerritoryCordonOverlay | null,
+    cordonPack: TerritoryCordonOverlay | null
   ): void {
     const minDepth = viewportBounds.minX + viewportBounds.minY;
     const maxDepth = viewportBounds.maxX + viewportBounds.maxY;
 
     const cordonLayers = cordonPack?.layers ?? [];
     const cordonGeos = cordonLayers
-      .filter((layer) => layer.frontier.size > 0)
-      .map((layer) => ({
+      .filter(layer => layer.frontier.size > 0)
+      .map(layer => ({
         ...this.buildCordonGeometry(layer.frontier, layer.unionU),
         style: layer.style,
         layer,
@@ -3501,8 +3189,7 @@ export class RenderSystem extends System {
       for (let x = xMin; x <= xMax; x++) {
         const y = d - x;
         const tile = this.tileMap.getTile(x, y);
-        if (!tile || !tile.isExplored() || tile.terrain !== "mountain")
-          continue;
+        if (!tile || !tile.isExplored() || tile.terrain !== 'mountain') continue;
         if (mountainCovered.has(`${x},${y}`)) continue;
         this.renderMountainTile(x, y);
       }
@@ -3535,14 +3222,14 @@ export class RenderSystem extends System {
         const y = d - x;
         const tile = this.tileMap.getTile(x, y);
         if (!tile || !tile.isExplored()) continue;
-        if (tile.terrain !== "tree" && tile.terrain !== "forest") continue;
+        if (tile.terrain !== 'tree' && tile.terrain !== 'forest') continue;
         if (tile.isOccupied() || tile.hasRoad) continue;
 
         const center = this.iso.gridToScreen(x, y);
         const flatGrass = this.getGrassFlatShoreCut(x, y);
         if (flatGrass) this.ctx.save();
         if (flatGrass) this.applyFlatShoreGrassClip(flatGrass);
-        if (tile.terrain === "tree") {
+        if (tile.terrain === 'tree') {
           this.renderSingleTree(center.x, center.y, x, y);
         } else {
           this.renderForestCluster(center.x, center.y, x, y);
@@ -3555,12 +3242,14 @@ export class RenderSystem extends System {
         for (const cordonGeo of cordonGeos) {
           for (const seg of cordonGeo.ropes) {
             if (seg.dBack !== d) continue;
-            const aOffset = cordonGeo.poleOffsets.get(
-              territoryKey(seg.ax, seg.ay),
-            ) ?? { x: 0, y: 0 };
-            const bOffset = cordonGeo.poleOffsets.get(
-              territoryKey(seg.bx, seg.by),
-            ) ?? { x: 0, y: 0 };
+            const aOffset = cordonGeo.poleOffsets.get(territoryKey(seg.ax, seg.ay)) ?? {
+              x: 0,
+              y: 0,
+            };
+            const bOffset = cordonGeo.poleOffsets.get(territoryKey(seg.bx, seg.by)) ?? {
+              x: 0,
+              y: 0,
+            };
             this.renderCordonRopeBetweenCellTops(
               seg.ax,
               seg.ay,
@@ -3568,7 +3257,7 @@ export class RenderSystem extends System {
               seg.by,
               aOffset,
               bOffset,
-              cordonGeo.style,
+              cordonGeo.style
             );
           }
         }
@@ -3578,24 +3267,23 @@ export class RenderSystem extends System {
       const entities = entitiesByDepth.get(d);
       const rabbitsHere = rabbitsByDepth.get(d);
       const merged: Array<
-        | { kind: "entity"; entity: Entity }
-        | { kind: "rabbit"; rabbit: WildRabbit }
+        { kind: 'entity'; entity: Entity } | { kind: 'rabbit'; rabbit: WildRabbit }
       > = [];
       if (entities) {
         for (const entity of entities) {
           if (this.surveyWorkerDrawOnTopIds.has(entity.id)) continue;
-          merged.push({ kind: "entity", entity });
+          merged.push({ kind: 'entity', entity });
         }
       }
       if (rabbitsHere) {
         for (const rabbit of rabbitsHere) {
-          merged.push({ kind: "rabbit", rabbit });
+          merged.push({ kind: 'rabbit', rabbit });
         }
       }
       if (merged.length > 0) {
         merged.sort((a, b) => this.compareEntityOrRabbitDrawOrder(a, b));
         for (const item of merged) {
-          if (item.kind === "entity") this.renderEntity(item.entity);
+          if (item.kind === 'entity') this.renderEntity(item.entity);
           else this.renderWildRabbit(item.rabbit);
         }
       }
@@ -3615,9 +3303,7 @@ export class RenderSystem extends System {
 
   private getMountainHeight(tileX: number, tileY: number): number {
     const neighbors = this.tileMap.getNeighbors(tileX, tileY);
-    const mountainNeighbors = neighbors.filter(
-      (t) => t.terrain === "mountain",
-    ).length;
+    const mountainNeighbors = neighbors.filter(t => t.terrain === 'mountain').length;
     if (mountainNeighbors <= 1) return 10;
     if (mountainNeighbors <= 3) return 16;
     return 22 + mountainNeighbors * 2;
@@ -3640,13 +3326,7 @@ export class RenderSystem extends System {
       const scale = 1.6;
       const drawW = tileW * scale;
       const drawH = (sprite.naturalHeight / sprite.naturalWidth) * drawW;
-      ctx.drawImage(
-        sprite,
-        cx - drawW / 2,
-        cy - drawH / 2 - tileH * 0.15,
-        drawW,
-        drawH,
-      );
+      ctx.drawImage(sprite, cx - drawW / 2, cy - drawH / 2 - tileH * 0.15, drawW, drawH);
       return;
     }
 
@@ -3655,7 +3335,7 @@ export class RenderSystem extends System {
 
     // Shadow at base
     ctx.globalAlpha = 0.2;
-    ctx.fillStyle = "#000";
+    ctx.fillStyle = '#000';
     ctx.beginPath();
     ctx.ellipse(cx + 2, cy + 2, radiusX, radiusY, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -3675,15 +3355,7 @@ export class RenderSystem extends System {
 
     // Main boulder body — full ellipse shifted up for dome effect
     ctx.beginPath();
-    ctx.ellipse(
-      cx,
-      cy - h * 0.25,
-      radiusX,
-      radiusY + h * 0.5,
-      0,
-      0,
-      Math.PI * 2,
-    );
+    ctx.ellipse(cx, cy - h * 0.25, radiusX, radiusY + h * 0.5, 0, 0, Math.PI * 2);
     ctx.closePath();
     ctx.fillStyle = `rgb(${baseR * 0.78}, ${baseG * 0.75}, ${baseB * 0.7})`;
     ctx.fill();
@@ -3697,7 +3369,7 @@ export class RenderSystem extends System {
       radiusY + h * 0.3,
       0,
       0,
-      Math.PI * 2,
+      Math.PI * 2
     );
     ctx.closePath();
     ctx.fillStyle = `rgb(${baseR * 0.88}, ${baseG * 0.85}, ${baseB * 0.82})`;
@@ -3712,7 +3384,7 @@ export class RenderSystem extends System {
       (radiusY + h * 0.15) * 0.6,
       0,
       0,
-      Math.PI * 2,
+      Math.PI * 2
     );
     ctx.closePath();
     ctx.fillStyle = `rgb(${Math.min(255, baseR + 25)}, ${Math.min(255, baseG + 22)}, ${Math.min(255, baseB + 18)})`;
@@ -3733,19 +3405,14 @@ export class RenderSystem extends System {
         dSize * 0.5,
         this.tileHash(tileX, tileY, 150 + i) * Math.PI,
         0,
-        Math.PI * 2,
+        Math.PI * 2
       );
       ctx.fill();
     }
   }
 
-  private renderSingleTree(
-    cx: number,
-    cy: number,
-    tileX: number,
-    tileY: number,
-  ): void {
-    const sprite = this.loadSprite("/assets/terrain/tree_single.png");
+  private renderSingleTree(cx: number, cy: number, tileX: number, tileY: number): void {
+    const sprite = this.loadSprite('/assets/terrain/tree_single.png');
     if (sprite && sprite.naturalWidth > 0) {
       const count = 1 + Math.floor(this.tileHash(tileX, tileY, 1) * 3);
       const tileW = this.iso.tileWidth;
@@ -3766,13 +3433,8 @@ export class RenderSystem extends System {
     this.renderTreePlaceholder(cx + offsetX, cy + offsetY, scale, h);
   }
 
-  private renderForestCluster(
-    cx: number,
-    cy: number,
-    tileX: number,
-    tileY: number,
-  ): void {
-    const sprite = this.loadSprite("/assets/terrain/tree_single.png");
+  private renderForestCluster(cx: number, cy: number, tileX: number, tileY: number): void {
+    const sprite = this.loadSprite('/assets/terrain/tree_single.png');
     if (sprite && sprite.naturalWidth > 0) {
       const count = 3 + Math.floor(this.tileHash(tileX, tileY, 10) * 3);
       const tileW = this.iso.tileWidth;
@@ -3802,49 +3464,31 @@ export class RenderSystem extends System {
     }
   }
 
-  private renderTreeSprite(
-    cx: number,
-    cy: number,
-    sprite: HTMLImageElement,
-    scale: number,
-  ): void {
+  private renderTreeSprite(cx: number, cy: number, sprite: HTMLImageElement, scale: number): void {
     const drawW = this.iso.tileWidth * scale;
     const drawH = (sprite.naturalHeight / sprite.naturalWidth) * drawW;
-    this.ctx.drawImage(
-      sprite,
-      cx - drawW / 2,
-      cy - drawH + this.iso.tileHeight / 2,
-      drawW,
-      drawH,
-    );
+    this.ctx.drawImage(sprite, cx - drawW / 2, cy - drawH + this.iso.tileHeight / 2, drawW, drawH);
   }
 
-  private renderTreePlaceholder(
-    x: number,
-    y: number,
-    scale: number,
-    shade: number,
-  ): void {
+  private renderTreePlaceholder(x: number, y: number, scale: number, shade: number): void {
     const ctx = this.ctx;
     const s = scale;
 
     // Shadow
     ctx.globalAlpha = 0.15;
-    ctx.fillStyle = "#000";
+    ctx.fillStyle = '#000';
     ctx.beginPath();
     ctx.ellipse(x, y, 5 * s, 2.5 * s, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
 
     // Trunk
-    ctx.fillStyle = shade > 0.5 ? "#5d4037" : "#4e342e";
+    ctx.fillStyle = shade > 0.5 ? '#5d4037' : '#4e342e';
     ctx.fillRect(x - 1.5 * s, y - 10 * s, 3 * s, 10 * s);
 
     // Canopy: three stacked triangle layers
     const greens =
-      shade > 0.5
-        ? ["#1b5e20", "#2e7d32", "#388e3c"]
-        : ["#194d19", "#256b25", "#2e8b2e"];
+      shade > 0.5 ? ['#1b5e20', '#2e7d32', '#388e3c'] : ['#194d19', '#256b25', '#2e8b2e'];
 
     for (let i = 0; i < 3; i++) {
       const layerBottom = y - (8 + i * 6) * s;
@@ -3892,31 +3536,24 @@ export class RenderSystem extends System {
     const topLeft = this.screenToWorld(0, 0);
     const topRight = this.screenToWorld(this.canvas.width, 0);
     const bottomLeft = this.screenToWorld(0, this.canvas.height);
-    const bottomRight = this.screenToWorld(
-      this.canvas.width,
-      this.canvas.height,
-    );
+    const bottomRight = this.screenToWorld(this.canvas.width, this.canvas.height);
 
     // Find min/max grid coordinates
     const minX = Math.max(
       0,
-      Math.floor(Math.min(topLeft.x, topRight.x, bottomLeft.x, bottomRight.x)) -
-        padding,
+      Math.floor(Math.min(topLeft.x, topRight.x, bottomLeft.x, bottomRight.x)) - padding
     );
     const maxX = Math.min(
       this.tileMap.width - 1,
-      Math.ceil(Math.max(topLeft.x, topRight.x, bottomLeft.x, bottomRight.x)) +
-        padding,
+      Math.ceil(Math.max(topLeft.x, topRight.x, bottomLeft.x, bottomRight.x)) + padding
     );
     const minY = Math.max(
       0,
-      Math.floor(Math.min(topLeft.y, topRight.y, bottomLeft.y, bottomRight.y)) -
-        padding,
+      Math.floor(Math.min(topLeft.y, topRight.y, bottomLeft.y, bottomRight.y)) - padding
     );
     const maxY = Math.min(
       this.tileMap.height - 1,
-      Math.ceil(Math.max(topLeft.y, topRight.y, bottomLeft.y, bottomRight.y)) +
-        padding,
+      Math.ceil(Math.max(topLeft.y, topRight.y, bottomLeft.y, bottomRight.y)) + padding
     );
 
     // Cache the result
@@ -3947,13 +3584,13 @@ export class RenderSystem extends System {
   private getWaterCardinalsMask(x: number, y: number): number {
     let mask = 0;
     const nw = this.tileMap.getTile(x - 1, y);
-    if (nw?.terrain === "water") mask |= 1;
+    if (nw?.terrain === 'water') mask |= 1;
     const ne = this.tileMap.getTile(x, y - 1);
-    if (ne?.terrain === "water") mask |= 2;
+    if (ne?.terrain === 'water') mask |= 2;
     const se = this.tileMap.getTile(x + 1, y);
-    if (se?.terrain === "water") mask |= 4;
+    if (se?.terrain === 'water') mask |= 4;
     const sw = this.tileMap.getTile(x, y + 1);
-    if (sw?.terrain === "water") mask |= 8;
+    if (sw?.terrain === 'water') mask |= 8;
     return mask;
   }
 
@@ -3961,19 +3598,19 @@ export class RenderSystem extends System {
     let config = this.getWaterCardinalsMask(x, y);
     if ((config & 3) === 3) {
       const d = this.tileMap.getTile(x - 1, y - 1);
-      if (d?.terrain === "water") config |= 16;
+      if (d?.terrain === 'water') config |= 16;
     }
     if ((config & 6) === 6) {
       const d = this.tileMap.getTile(x + 1, y - 1);
-      if (d?.terrain === "water") config |= 32;
+      if (d?.terrain === 'water') config |= 32;
     }
     if ((config & 12) === 12) {
       const d = this.tileMap.getTile(x + 1, y + 1);
-      if (d?.terrain === "water") config |= 64;
+      if (d?.terrain === 'water') config |= 64;
     }
     if ((config & 9) === 9) {
       const d = this.tileMap.getTile(x - 1, y + 1);
-      if (d?.terrain === "water") config |= 128;
+      if (d?.terrain === 'water') config |= 128;
     }
     return config;
   }
@@ -3995,20 +3632,20 @@ export class RenderSystem extends System {
     y: number,
     card: number,
     dirs: readonly (readonly [number, number])[],
-    maxSpan: number = 48,
+    maxSpan: number = 48
   ): number {
     let best = 1;
     for (const [dx, dy] of dirs) {
       let len = 1;
       for (let k = 1; k < maxSpan; k++) {
         const t = this.tileMap.getTile(x + dx * k, y + dy * k);
-        if (!t || t.terrain !== "water") break;
+        if (!t || t.terrain !== 'water') break;
         if (this.getWaterCardinalsMask(x + dx * k, y + dy * k) !== card) break;
         len++;
       }
       for (let k = 1; k < maxSpan; k++) {
         const t = this.tileMap.getTile(x - dx * k, y - dy * k);
-        if (!t || t.terrain !== "water") break;
+        if (!t || t.terrain !== 'water') break;
         if (this.getWaterCardinalsMask(x - dx * k, y - dy * k) !== card) break;
         len++;
       }
@@ -4017,11 +3654,7 @@ export class RenderSystem extends System {
     return best;
   }
 
-  private isLinearizedWaterHalfShore(
-    x: number,
-    y: number,
-    card: number,
-  ): boolean {
+  private isLinearizedWaterHalfShore(x: number, y: number, card: number): boolean {
     const axisSteps = [
       [1, 0],
       [-1, 0],
@@ -4033,23 +3666,19 @@ export class RenderSystem extends System {
     // Same topology as the smooth-road corner pairs: alternating stair cells read as one straight shore.
     if (card === 9)
       return (
-        this.getWaterCardinalsMask(x - 1, y) === 6 ||
-        this.getWaterCardinalsMask(x, y + 1) === 6
+        this.getWaterCardinalsMask(x - 1, y) === 6 || this.getWaterCardinalsMask(x, y + 1) === 6
       );
     if (card === 6)
       return (
-        this.getWaterCardinalsMask(x, y - 1) === 9 ||
-        this.getWaterCardinalsMask(x + 1, y) === 9
+        this.getWaterCardinalsMask(x, y - 1) === 9 || this.getWaterCardinalsMask(x + 1, y) === 9
       );
     if (card === 3)
       return (
-        this.getWaterCardinalsMask(x - 1, y) === 12 ||
-        this.getWaterCardinalsMask(x, y - 1) === 12
+        this.getWaterCardinalsMask(x - 1, y) === 12 || this.getWaterCardinalsMask(x, y - 1) === 12
       );
     if (card === 12)
       return (
-        this.getWaterCardinalsMask(x + 1, y) === 3 ||
-        this.getWaterCardinalsMask(x, y + 1) === 3
+        this.getWaterCardinalsMask(x + 1, y) === 3 || this.getWaterCardinalsMask(x, y + 1) === 3
       );
     return false;
   }
@@ -4066,19 +3695,12 @@ export class RenderSystem extends System {
     const waterNeighborCount = this.popcountNibble(card);
     if (waterNeighborCount !== 2 && waterNeighborCount !== 3) return null;
 
-    if (
-      waterNeighborCount === 2 &&
-      this.isLinearizedWaterHalfShore(wx, wy, card)
-    ) {
+    if (waterNeighborCount === 2 && this.isLinearizedWaterHalfShore(wx, wy, card)) {
       const w = this.iso.gridToScreen(wx, wy);
-      if (card === 3)
-        return { axis: "horizontal", worldY: w.y, grassHalf: "lower" };
-      if (card === 12)
-        return { axis: "horizontal", worldY: w.y, grassHalf: "upper" };
-      if (card === 9)
-        return { axis: "vertical", worldX: w.x, grassHalf: "right" };
-      if (card === 6)
-        return { axis: "vertical", worldX: w.x, grassHalf: "left" };
+      if (card === 3) return { axis: 'horizontal', worldY: w.y, grassHalf: 'lower' };
+      if (card === 12) return { axis: 'horizontal', worldY: w.y, grassHalf: 'upper' };
+      if (card === 9) return { axis: 'vertical', worldX: w.x, grassHalf: 'right' };
+      if (card === 6) return { axis: 'vertical', worldX: w.x, grassHalf: 'left' };
     }
 
     if (waterNeighborCount !== 3) return null;
@@ -4097,9 +3719,9 @@ export class RenderSystem extends System {
       const w = this.iso.gridToScreen(wx, wy);
       const l = this.iso.gridToScreen(wx, wy - 1);
       return {
-        axis: "horizontal",
+        axis: 'horizontal',
         worldY: (w.y + l.y) * 0.5,
-        grassHalf: "upper",
+        grassHalf: 'upper',
       };
     }
     if (landMask === 8) {
@@ -4107,25 +3729,25 @@ export class RenderSystem extends System {
       const w = this.iso.gridToScreen(wx, wy);
       const l = this.iso.gridToScreen(wx, wy + 1);
       return {
-        axis: "horizontal",
+        axis: 'horizontal',
         worldY: (w.y + l.y) * 0.5,
-        grassHalf: "lower",
+        grassHalf: 'lower',
       };
     }
     if (landMask === 1) {
       if (this.waterMaskRunLength(wx, wy, card, diagVR) < 2) return null;
       const w = this.iso.gridToScreen(wx, wy);
       const l = this.iso.gridToScreen(wx - 1, wy);
-      return { axis: "vertical", worldX: (w.x + l.x) * 0.5, grassHalf: "left" };
+      return { axis: 'vertical', worldX: (w.x + l.x) * 0.5, grassHalf: 'left' };
     }
     if (landMask === 4) {
       if (this.waterMaskRunLength(wx, wy, card, diagVR) < 2) return null;
       const w = this.iso.gridToScreen(wx, wy);
       const l = this.iso.gridToScreen(wx + 1, wy);
       return {
-        axis: "vertical",
+        axis: 'vertical',
         worldX: (w.x + l.x) * 0.5,
-        grassHalf: "right",
+        grassHalf: 'right',
       };
     }
     return null;
@@ -4134,15 +3756,15 @@ export class RenderSystem extends System {
   private getGrassFlatShoreCut(gx: number, gy: number): FlatShoreCut | null {
     const fromWater = (wx: number, wy: number): FlatShoreCut | null => {
       const t = this.tileMap.getTile(wx, wy);
-      if (!t || t.terrain !== "water") return null;
+      if (!t || t.terrain !== 'water') return null;
       const cut = this.tryWaterFlatShoreCut(wx, wy);
       if (!cut) return null;
-      if (cut.axis === "horizontal") {
-        if (cut.grassHalf === "upper" && gx === wx && gy === wy - 1) return cut;
-        if (cut.grassHalf === "lower" && gx === wx && gy === wy + 1) return cut;
+      if (cut.axis === 'horizontal') {
+        if (cut.grassHalf === 'upper' && gx === wx && gy === wy - 1) return cut;
+        if (cut.grassHalf === 'lower' && gx === wx && gy === wy + 1) return cut;
       } else {
-        if (cut.grassHalf === "left" && gx === wx - 1 && gy === wy) return cut;
-        if (cut.grassHalf === "right" && gx === wx + 1 && gy === wy) return cut;
+        if (cut.grassHalf === 'left' && gx === wx - 1 && gy === wy) return cut;
+        if (cut.grassHalf === 'right' && gx === wx + 1 && gy === wy) return cut;
       }
       return null;
     };
@@ -4157,13 +3779,13 @@ export class RenderSystem extends System {
   private applyFlatShoreGrassClip(cut: FlatShoreCut): void {
     const M = FLAT_SHORE_CLIP_EXTENT;
     this.ctx.beginPath();
-    if (cut.axis === "horizontal") {
-      if (cut.grassHalf === "upper") {
+    if (cut.axis === 'horizontal') {
+      if (cut.grassHalf === 'upper') {
         this.ctx.rect(-M, -M, 2 * M, cut.worldY + M);
       } else {
         this.ctx.rect(-M, cut.worldY, 2 * M, 2 * M);
       }
-    } else if (cut.grassHalf === "left") {
+    } else if (cut.grassHalf === 'left') {
       this.ctx.rect(-M, -M, cut.worldX + M, 2 * M);
     } else {
       this.ctx.rect(cut.worldX, -M, 2 * M, 2 * M);
@@ -4174,54 +3796,24 @@ export class RenderSystem extends System {
   private renderTile(tile: Tile): void {
     const center = this.iso.gridToScreen(tile.x, tile.y);
     if (!tile.isExplored()) {
-      this.terrainTextures.drawTile(
-        this.ctx,
-        "fog",
-        tile.x,
-        tile.y,
-        center.x,
-        center.y,
-      );
+      this.terrainTextures.drawTile(this.ctx, 'fog', tile.x, tile.y, center.x, center.y);
       return;
     }
 
-    if (tile.terrain === "water") {
-      this.terrainTextures.drawTile(
-        this.ctx,
-        "grass",
-        tile.x,
-        tile.y,
-        center.x,
-        center.y,
-      );
+    if (tile.terrain === 'water') {
+      this.terrainTextures.drawTile(this.ctx, 'grass', tile.x, tile.y, center.x, center.y);
     } else {
       const flatGrass =
-        tile.terrain === "grass" ||
-        tile.terrain === "forest" ||
-        tile.terrain === "tree"
+        tile.terrain === 'grass' || tile.terrain === 'forest' || tile.terrain === 'tree'
           ? this.getGrassFlatShoreCut(tile.x, tile.y)
           : null;
       if (flatGrass) {
         this.ctx.save();
         this.applyFlatShoreGrassClip(flatGrass);
-        this.terrainTextures.drawTile(
-          this.ctx,
-          tile.terrain,
-          tile.x,
-          tile.y,
-          center.x,
-          center.y,
-        );
+        this.terrainTextures.drawTile(this.ctx, tile.terrain, tile.x, tile.y, center.x, center.y);
         this.ctx.restore();
       } else {
-        this.terrainTextures.drawTile(
-          this.ctx,
-          tile.terrain,
-          tile.x,
-          tile.y,
-          center.x,
-          center.y,
-        );
+        this.terrainTextures.drawTile(this.ctx, tile.terrain, tile.x, tile.y, center.x, center.y);
       }
       if (tile.forestDepth > 1) {
         const darken = Math.min((tile.forestDepth - 1) * 0.07, 0.35);
@@ -4252,9 +3844,9 @@ export class RenderSystem extends System {
     ) {
       const c = this.iso.getTileCorners(tile.x, tile.y);
       this.ctx.save();
-      this.ctx.strokeStyle = "rgba(255, 215, 100, 0.98)";
+      this.ctx.strokeStyle = 'rgba(255, 215, 100, 0.98)';
       this.ctx.lineWidth = 2.5;
-      this.ctx.shadowColor = "rgba(255, 190, 60, 0.75)";
+      this.ctx.shadowColor = 'rgba(255, 190, 60, 0.75)';
       this.ctx.shadowBlur = 12;
       this.ctx.beginPath();
       this.ctx.moveTo(c[0].x, c[0].y);
@@ -4271,13 +3863,13 @@ export class RenderSystem extends System {
       this.insightHighlightWater.x === tile.x &&
       this.insightHighlightWater.y === tile.y &&
       tile.isExplored() &&
-      tile.terrain === "water"
+      tile.terrain === 'water'
     ) {
       const c = this.iso.getTileCorners(tile.x, tile.y);
       this.ctx.save();
-      this.ctx.strokeStyle = "rgba(120, 200, 255, 0.95)";
+      this.ctx.strokeStyle = 'rgba(120, 200, 255, 0.95)';
       this.ctx.lineWidth = 2.5;
-      this.ctx.shadowColor = "rgba(80, 160, 255, 0.65)";
+      this.ctx.shadowColor = 'rgba(80, 160, 255, 0.65)';
       this.ctx.shadowBlur = 12;
       this.ctx.beginPath();
       this.ctx.moveTo(c[0].x, c[0].y);
@@ -4314,8 +3906,7 @@ export class RenderSystem extends System {
         fish.y > bounds.maxY
       )
         continue;
-      const hash =
-        (((fish.x * 7919 + fish.y * 104729 + 1) >>> 0) % 10000) / 10000;
+      const hash = (((fish.x * 7919 + fish.y * 104729 + 1) >>> 0) % 10000) / 10000;
       this.renderFish(fish.x, fish.y, elapsed / JUMP_DURATION, hash);
     }
   }
@@ -4328,19 +3919,14 @@ export class RenderSystem extends System {
       const x = bounds.minX + Math.floor(Math.random() * w);
       const y = bounds.minY + Math.floor(Math.random() * h);
       const tile = this.tileMap.getTile(x, y);
-      if (!tile || tile.terrain !== "water" || !tile.isExplored()) continue;
+      if (!tile || tile.terrain !== 'water' || !tile.isExplored()) continue;
       if (this.tileMap.getWaterFishRemainingAt(x, y) <= 0) continue;
       this.fishJumps.push({ x, y, startTime: getSimulationNowMs() });
       return;
     }
   }
 
-  private renderFish(
-    tileX: number,
-    tileY: number,
-    progress: number,
-    hash: number,
-  ): void {
+  private renderFish(tileX: number, tileY: number, progress: number, hash: number): void {
     const center = this.iso.gridToScreen(tileX, tileY);
     const ctx = this.ctx;
     const dir = hash > 0.01 ? 1 : -1;
@@ -4361,17 +3947,17 @@ export class RenderSystem extends System {
     ctx.translate(fishX, fishY);
     ctx.rotate(angle);
 
-    ctx.fillStyle = "#a0b5c5";
+    ctx.fillStyle = '#a0b5c5';
     ctx.beginPath();
     ctx.ellipse(0, 0, 5, 2, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = "#c5d4e0";
+    ctx.fillStyle = '#c5d4e0';
     ctx.beginPath();
     ctx.ellipse(0, 0.8, 4, 1, 0, 0, Math.PI);
     ctx.fill();
 
-    ctx.fillStyle = "#8a9fb0";
+    ctx.fillStyle = '#8a9fb0';
     ctx.beginPath();
     ctx.moveTo(-5, 0);
     ctx.lineTo(-8, -2.5);
@@ -4386,7 +3972,7 @@ export class RenderSystem extends System {
     ctx.closePath();
     ctx.fill();
 
-    ctx.fillStyle = "#1a1a1a";
+    ctx.fillStyle = '#1a1a1a';
     ctx.beginPath();
     ctx.arc(3, -0.5, 0.7, 0, Math.PI * 2);
     ctx.fill();
@@ -4422,23 +4008,15 @@ export class RenderSystem extends System {
     // Check if this entity is selected
     const isSelected = this.selectedEntityId === entity.id;
     const isHoveredWorker =
-      this.hoveredEntityId === entity.id &&
-      entity.hasComponent(Worker) &&
-      !building;
+      this.hoveredEntityId === entity.id && entity.hasComponent(Worker) && !building;
 
     // Use drag preview position if dragging this entity
-    const renderX =
-      isSelected && this.dragPreviewPosition
-        ? this.dragPreviewPosition.x
-        : pos.x;
-    const renderY =
-      isSelected && this.dragPreviewPosition
-        ? this.dragPreviewPosition.y
-        : pos.y;
+    const renderX = isSelected && this.dragPreviewPosition ? this.dragPreviewPosition.x : pos.x;
+    const renderY = isSelected && this.dragPreviewPosition ? this.dragPreviewPosition.y : pos.y;
 
     let screenPos = this.iso.gridToScreen(renderX, renderY);
     if (
-      ROAD_RENDERING_MODE === "vector" &&
+      ROAD_RENDERING_MODE === 'vector' &&
       !building &&
       entity.hasComponent(Worker) &&
       movableForRoad
@@ -4453,43 +4031,32 @@ export class RenderSystem extends System {
     const isInactive = building && !building.isActive;
     const isUnderConstruction =
       building &&
-      (building.state === "under_construction" ||
-        building.state === "awaiting_materials");
+      (building.state === 'under_construction' || building.state === 'awaiting_materials');
 
     // Apply fade effect for selected buildings
     if (isSelected && building) {
       this.ctx.globalAlpha = 0.7;
     }
 
-    if (
-      isHoveredWorker ||
-      (isSelected && entity.hasComponent(Worker) && !building)
-    ) {
-      this.ctx.filter =
-        "brightness(1.25) drop-shadow(0 0 4px rgba(255, 235, 160, 0.85))";
+    if (isHoveredWorker || (isSelected && entity.hasComponent(Worker) && !building)) {
+      this.ctx.filter = 'brightness(1.25) drop-shadow(0 0 4px rgba(255, 235, 160, 0.85))';
     }
 
     // Apply opacity fade for under-construction buildings without construction sprites
-    if (
-      isUnderConstruction &&
-      !BUILDING_CONSTRUCTION_SPRITES[building!.buildingType]
-    ) {
+    if (isUnderConstruction && !BUILDING_CONSTRUCTION_SPRITES[building!.buildingType]) {
       this.ctx.globalAlpha = 0.4 + 0.6 * building!.constructionProgress;
     }
 
     // Apply grayscale + dim for inactive buildings
     if (isInactive && !isUnderConstruction) {
-      this.ctx.filter = "grayscale(85%) brightness(0.65)";
+      this.ctx.filter = 'grayscale(85%) brightness(0.65)';
     }
 
     // Buildings anchor at the top corner of their starting tile (isometric back corner)
     // gridToScreen gives us tile CENTER, but building corners are calculated from TOP corner
     if (building && building.buildingHeight > 0) {
       // Offset from tile center to tile top corner
-      this.ctx.translate(
-        screenPos.x + offsetX,
-        screenPos.y - this.iso.tileHeight / 2 + offsetY,
-      );
+      this.ctx.translate(screenPos.x + offsetX, screenPos.y - this.iso.tileHeight / 2 + offsetY);
     } else {
       // Non-buildings render at tile center
       this.ctx.translate(screenPos.x + offsetX, screenPos.y + offsetY);
@@ -4513,40 +4080,20 @@ export class RenderSystem extends System {
       const insightHighlight = entity.id === this.insightHighlightEntityId;
       const production = entity.getComponent(Production) ?? null;
       if (renderable.spritePath) {
-        this.renderBuildingSprite(
-          building,
-          renderable,
-          production,
-          isSelected,
-          insightHighlight,
-        );
+        this.renderBuildingSprite(building, renderable, production, isSelected, insightHighlight);
       } else {
-        this.renderIsometricBuilding(
-          building,
-          renderable,
-          isSelected,
-          insightHighlight,
-        );
+        this.renderIsometricBuilding(building, renderable, isSelected, insightHighlight);
       }
       if (!isPlayerOwned(entity)) {
-        this.renderEnemyBuildingEntranceFlag(
-          building,
-          getEntityFaction(entity),
-        );
+        this.renderEnemyBuildingEntranceFlag(building, getEntityFaction(entity));
       }
 
-      const chimneyCfg = dataManager.getBuilding(
-        building.buildingType,
-      )?.chimneySmoke;
-      if (
-        chimneyCfg &&
-        building.isComplete() &&
-        building.state === "complete"
-      ) {
+      const chimneyCfg = dataManager.getBuilding(building.buildingType)?.chimneySmoke;
+      if (chimneyCfg && building.isComplete() && building.state === 'complete') {
         const chimneySmoke = this.chimneySmokes.get(entity.id);
         if (chimneySmoke) chimneySmoke.draw(this.ctx);
       }
-      if (building.state === "under_construction") {
+      if (building.state === 'under_construction') {
         const constructionSmoke = this.constructionSmokes.get(entity.id);
         if (constructionSmoke) constructionSmoke.smoke.draw(this.ctx);
       }
@@ -4561,9 +4108,9 @@ export class RenderSystem extends System {
         const tw = worker.fisherTowardWater;
         if (
           tw &&
-          worker.carryingResource === "fishing_rod" &&
-          worker.visualActivity === "production_gather" &&
-          worker.state === "working" &&
+          worker.carryingResource === 'fishing_rod' &&
+          worker.visualActivity === 'production_gather' &&
+          worker.state === 'working' &&
           movable &&
           !movable.isMoving
         ) {
@@ -4572,46 +4119,35 @@ export class RenderSystem extends System {
           const pStand = this.iso.gridToScreen(gx, gy);
           const pWater = this.iso.gridToScreen(gx + tw.dx, gy + tw.dy);
           const k = 0.26;
-          this.ctx.translate(
-            (pWater.x - pStand.x) * k,
-            (pWater.y - pStand.y) * k,
-          );
+          this.ctx.translate((pWater.x - pStand.x) * k, (pWater.y - pStand.y) * k);
         }
         this.renderWorkerSprite(movable, worker, !isPlayerOwned(entity));
       }
     } else {
       switch (renderable.type) {
-        case "circle":
+        case 'circle':
           this.renderCircle(renderable);
           break;
-        case "rectangle":
+        case 'rectangle':
           this.renderRectangle(renderable);
           break;
-        case "triangle":
+        case 'triangle':
           this.renderTriangle(renderable);
           break;
       }
     }
 
     if (building && this.showBuildingLabels) {
-      this.ctx.fillStyle = "white";
-      this.ctx.font = "10px monospace";
-      this.ctx.textAlign = "center";
+      this.ctx.fillStyle = 'white';
+      this.ctx.font = '10px monospace';
+      this.ctx.textAlign = 'center';
       const buildingDef = dataManager.getBuilding(building.buildingType);
-      this.ctx.fillText(
-        buildingDef?.name || building.buildingType,
-        0,
-        -building.height - 10,
-      );
+      this.ctx.fillText(buildingDef?.name || building.buildingType, 0, -building.height - 10);
     }
 
     // Reset filter before drawing status indicators
-    if (
-      isInactive ||
-      isHoveredWorker ||
-      (isSelected && entity.hasComponent(Worker) && !building)
-    ) {
-      this.ctx.filter = "none";
+    if (isInactive || isHoveredWorker || (isSelected && entity.hasComponent(Worker) && !building)) {
+      this.ctx.filter = 'none';
     }
 
     // Status bubble for inactive buildings (only when complete)
@@ -4621,13 +4157,13 @@ export class RenderSystem extends System {
         building,
         hovered,
         () => this.drawRoadMissingIcon(),
-        "No road connection",
+        'No road connection'
       );
     } else if (building && building.isComplete()) {
       const production = entity.getComponent(Production);
       if (production) {
         const buffered = production.getTotalBuffered();
-        if (production.status === "stopped_full") {
+        if (production.status === 'stopped_full') {
           this.renderProductionBubble(building, production, true);
         } else if (buffered > 0) {
           this.renderProductionBubble(building, production, false);
@@ -4638,10 +4174,7 @@ export class RenderSystem extends System {
       }
       if (building.isActive && building.outOfMapResources) {
         const bd = dataManager.getBuilding(building.buildingType);
-        if (
-          bd?.animation?.type === "gather" ||
-          building.buildingType === "well"
-        ) {
+        if (bd?.animation?.type === 'gather' || building.buildingType === 'well') {
           this.renderMapResourcesExhaustedMarker(building);
         }
       }
@@ -4652,7 +4185,7 @@ export class RenderSystem extends System {
 
   private renderEnemyBuildingEntranceFlag(
     building: Building,
-    factionId: ReturnType<typeof getEntityFaction>,
+    factionId: ReturnType<typeof getEntityFaction>
   ): void {
     const entrance = building.getEntranceOffset();
     if (!entrance) return;
@@ -4660,35 +4193,31 @@ export class RenderSystem extends System {
 
     const tileW = this.iso.tileWidth;
     const tileH = this.iso.tileHeight;
-    const entranceCenterX =
-      (entrance.dx * tileW) / 2 - (entrance.dy * tileW) / 2;
-    const entranceCenterY =
-      (entrance.dx * tileH) / 2 + (entrance.dy * tileH) / 2 + tileH / 2;
+    const entranceCenterX = (entrance.dx * tileW) / 2 - (entrance.dy * tileW) / 2;
+    const entranceCenterY = (entrance.dx * tileH) / 2 + (entrance.dy * tileH) / 2 + tileH / 2;
     const footX = entranceCenterX + tileW / 4;
     const footY = entranceCenterY + tileH / 4;
     const s = 0.8;
     const poleH = Math.max(18, Math.min(27, building.buildingHeight * 0.44));
     const topY = footY - poleH;
-    const t =
-      performance.now() * 0.004 +
-      (building.width * 1.7 + building.height * 2.3);
+    const t = performance.now() * 0.004 + (building.width * 1.7 + building.height * 2.3);
     const wave = Math.sin(t) * 2.2 * s;
 
     this.ctx.save();
-    this.ctx.lineCap = "round";
-    this.ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
+    this.ctx.lineCap = 'round';
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
     this.ctx.beginPath();
     this.ctx.ellipse(footX, footY + 1.4 * s, 4.2 * s, 2 * s, 0, 0, Math.PI * 2);
     this.ctx.fill();
 
-    this.ctx.strokeStyle = "rgba(70, 22, 16, 0.96)";
+    this.ctx.strokeStyle = 'rgba(70, 22, 16, 0.96)';
     this.ctx.lineWidth = 4 * s;
     this.ctx.beginPath();
     this.ctx.moveTo(footX, footY);
     this.ctx.lineTo(footX, topY);
     this.ctx.stroke();
 
-    this.ctx.strokeStyle = "rgba(165, 58, 42, 0.78)";
+    this.ctx.strokeStyle = 'rgba(165, 58, 42, 0.78)';
     this.ctx.lineWidth = 1.4 * s;
     this.ctx.beginPath();
     this.ctx.moveTo(footX - 0.9 * s, footY - 1 * s);
@@ -4700,17 +4229,12 @@ export class RenderSystem extends System {
     this.ctx.lineWidth = 1.1 * s;
     this.ctx.beginPath();
     this.ctx.moveTo(footX + 1.5 * s, topY + 3 * s);
-    this.ctx.quadraticCurveTo(
-      footX + 13 * s,
-      topY + 1 * s + wave,
-      footX + 23 * s,
-      topY + 6 * s,
-    );
+    this.ctx.quadraticCurveTo(footX + 13 * s, topY + 1 * s + wave, footX + 23 * s, topY + 6 * s);
     this.ctx.quadraticCurveTo(
       footX + 13 * s,
       topY + 10 * s - wave * 0.45,
       footX + 1.5 * s,
-      topY + 12 * s,
+      topY + 12 * s
     );
     this.ctx.closePath();
     this.ctx.fill();
@@ -4724,7 +4248,7 @@ export class RenderSystem extends System {
       footX + 13 * s,
       topY + 4 * s + wave * 0.7,
       footX + 20 * s,
-      topY + 7 * s,
+      topY + 7 * s
     );
     this.ctx.stroke();
     this.ctx.restore();
@@ -4742,9 +4266,9 @@ export class RenderSystem extends System {
 
     this.ctx.save();
     this.ctx.translate(centerX, y);
-    this.ctx.strokeStyle = "#ff7043";
+    this.ctx.strokeStyle = '#ff7043';
     this.ctx.lineWidth = 3;
-    this.ctx.lineCap = "round";
+    this.ctx.lineCap = 'round';
     this.ctx.beginPath();
     this.ctx.moveTo(-size, -size);
     this.ctx.lineTo(size, size);
@@ -4767,8 +4291,8 @@ export class RenderSystem extends System {
 
     this.ctx.save();
     this.ctx.translate(markerX, markerY);
-    this.ctx.fillStyle = "#ffd54f";
-    this.ctx.strokeStyle = "rgba(70, 45, 0, 0.95)";
+    this.ctx.fillStyle = '#ffd54f';
+    this.ctx.strokeStyle = 'rgba(70, 45, 0, 0.95)';
     this.ctx.lineWidth = 1.5;
     this.ctx.beginPath();
     for (let i = 0; i < 10; i++) {
@@ -4787,11 +4311,10 @@ export class RenderSystem extends System {
 
   private getConstructionSpritePath(
     building: Building,
-    renderable: Renderable,
+    renderable: Renderable
   ): string | undefined {
     if (
-      (building.state !== "under_construction" &&
-        building.state !== "awaiting_materials") ||
+      (building.state !== 'under_construction' && building.state !== 'awaiting_materials') ||
       !renderable.spritePath
     )
       return renderable.spritePath;
@@ -4800,34 +4323,30 @@ export class RenderSystem extends System {
     const totalFrames = stages.length + 1;
     const frameIndex = Math.min(
       Math.floor(building.constructionProgress * totalFrames),
-      stages.length,
+      stages.length
     );
-    return frameIndex < stages.length
-      ? stages[frameIndex]
-      : renderable.spritePath;
+    return frameIndex < stages.length ? stages[frameIndex] : renderable.spritePath;
   }
 
   private getProductionSpritePath(
     building: Building,
     renderable: Renderable,
-    production?: Production | null,
+    production?: Production | null
   ): string | undefined {
     if (!renderable.spritePath || !production) return renderable.spritePath;
     if (!building.isComplete()) return renderable.spritePath;
-    if (building.state !== "complete") return renderable.spritePath;
-    if (production.status !== "producing") return renderable.spritePath;
+    if (building.state !== 'complete') return renderable.spritePath;
+    if (production.status !== 'producing') return renderable.spritePath;
     if (production.productionTime <= 0) return renderable.spritePath;
 
     const stages = BUILDING_PRODUCTION_SPRITES[building.buildingType];
     if (!stages || stages.length === 0) return renderable.spritePath;
 
     const progress = Math.max(0, Math.min(0.999999, production.getProgress()));
-    const animConfig =
-      BUILDING_PRODUCTION_SPRITE_ANIMATION[building.buildingType];
+    const animConfig = BUILDING_PRODUCTION_SPRITE_ANIMATION[building.buildingType];
     const activeFractionRaw = animConfig?.activeFraction;
     const activeFraction =
-      typeof activeFractionRaw === "number" &&
-      Number.isFinite(activeFractionRaw)
+      typeof activeFractionRaw === 'number' && Number.isFinite(activeFractionRaw)
         ? Math.max(0, Math.min(1, activeFractionRaw))
         : 1;
     if (activeFraction <= 0) return renderable.spritePath;
@@ -4837,32 +4356,23 @@ export class RenderSystem extends System {
 
     const sequence = animConfig?.sequence;
     if (sequence && sequence.length > 0) {
-      const seqIndex = Math.min(
-        Math.floor(phaseProgress * sequence.length),
-        sequence.length - 1,
-      );
+      const seqIndex = Math.min(Math.floor(phaseProgress * sequence.length), sequence.length - 1);
       const spriteIndex = sequence[seqIndex];
       if (spriteIndex == null) return renderable.spritePath;
       const bounded = Math.max(0, Math.min(stages.length - 1, spriteIndex));
       return stages[bounded] ?? renderable.spritePath;
     }
 
-    const stageIndex = Math.min(
-      Math.floor(phaseProgress * stages.length),
-      stages.length - 1,
-    );
+    const stageIndex = Math.min(Math.floor(phaseProgress * stages.length), stages.length - 1);
     return stages[stageIndex] ?? renderable.spritePath;
   }
 
   private getBuildingSpritePath(
     building: Building,
     renderable: Renderable,
-    production?: Production | null,
+    production?: Production | null
   ): string | undefined {
-    if (
-      building.state === "under_construction" ||
-      building.state === "awaiting_materials"
-    ) {
+    if (building.state === 'under_construction' || building.state === 'awaiting_materials') {
       return this.getConstructionSpritePath(building, renderable);
     }
     return this.getProductionSpritePath(building, renderable, production);
@@ -4871,7 +4381,7 @@ export class RenderSystem extends System {
   private getBuildingSpriteVisualScale(buildingType: string): number {
     const def = dataManager.getBuilding(buildingType as BuildingType);
     const s = def?.visual?.spriteScale;
-    return typeof s === "number" && s > 0 && Number.isFinite(s) ? s : 1;
+    return typeof s === 'number' && s > 0 && Number.isFinite(s) ? s : 1;
   }
 
   private renderBuildingSprite(
@@ -4879,13 +4389,9 @@ export class RenderSystem extends System {
     renderable: Renderable,
     production: Production | null,
     isSelected: boolean = false,
-    insightHighlight: boolean = false,
+    insightHighlight: boolean = false
   ): void {
-    const spritePath = this.getBuildingSpritePath(
-      building,
-      renderable,
-      production,
-    );
+    const spritePath = this.getBuildingSpritePath(building, renderable, production);
     const sprite = spritePath ? this.loadSprite(spritePath) : null;
     if (!sprite) return;
 
@@ -4903,13 +4409,7 @@ export class RenderSystem extends System {
     const centerX = ((width - depth) * tileW) / 4;
     const frontY = ((width + depth) * tileH) / 2;
 
-    this.ctx.drawImage(
-      sprite,
-      centerX - drawW / 2,
-      frontY - drawH,
-      drawW,
-      drawH,
-    );
+    this.ctx.drawImage(sprite, centerX - drawW / 2, frontY - drawH, drawW, drawH);
 
     const baseCorners = [
       { x: 0, y: 0 },
@@ -4919,7 +4419,7 @@ export class RenderSystem extends System {
     ];
 
     if (isSelected) {
-      this.ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+      this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
       this.ctx.lineWidth = 2;
       this.ctx.beginPath();
       baseCorners.forEach((corner, i) => {
@@ -4932,9 +4432,9 @@ export class RenderSystem extends System {
 
     if (insightHighlight) {
       this.ctx.save();
-      this.ctx.strokeStyle = "rgba(255, 220, 120, 0.98)";
+      this.ctx.strokeStyle = 'rgba(255, 220, 120, 0.98)';
       this.ctx.lineWidth = isSelected ? 3.5 : 4;
-      this.ctx.shadowColor = "rgba(255, 200, 70, 0.85)";
+      this.ctx.shadowColor = 'rgba(255, 200, 70, 0.85)';
       this.ctx.shadowBlur = 14;
       this.ctx.beginPath();
       baseCorners.forEach((corner, i) => {
@@ -4951,7 +4451,7 @@ export class RenderSystem extends System {
     building: Building,
     renderable: Renderable,
     isSelected: boolean = false,
-    insightHighlight: boolean = false,
+    insightHighlight: boolean = false
   ): void {
     const tileW = this.iso.tileWidth;
     const tileH = this.iso.tileHeight;
@@ -4975,7 +4475,7 @@ export class RenderSystem extends System {
     ];
 
     // Calculate top corners (offset by building height)
-    const topCorners = baseCorners.map((c) => ({
+    const topCorners = baseCorners.map(c => ({
       x: c.x,
       y: c.y - height,
     }));
@@ -4989,7 +4489,7 @@ export class RenderSystem extends System {
     this.ctx.closePath();
     this.ctx.fillStyle = this.darkenColor(renderable.color, 0.7);
     this.ctx.fill();
-    this.ctx.strokeStyle = "#000";
+    this.ctx.strokeStyle = '#000';
     this.ctx.lineWidth = 1.5;
     this.ctx.stroke();
 
@@ -5002,7 +4502,7 @@ export class RenderSystem extends System {
     this.ctx.closePath();
     this.ctx.fillStyle = this.darkenColor(renderable.color, 0.5);
     this.ctx.fill();
-    this.ctx.strokeStyle = "#000";
+    this.ctx.strokeStyle = '#000';
     this.ctx.lineWidth = 1.5;
     this.ctx.stroke();
 
@@ -5017,19 +4517,19 @@ export class RenderSystem extends System {
     this.ctx.fill();
 
     if (isSelected) {
-      this.ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+      this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
       this.ctx.lineWidth = 2;
     } else {
-      this.ctx.strokeStyle = "#000";
+      this.ctx.strokeStyle = '#000';
       this.ctx.lineWidth = 1.5;
     }
     this.ctx.stroke();
 
     if (insightHighlight) {
       this.ctx.save();
-      this.ctx.strokeStyle = "rgba(255, 215, 100, 0.98)";
+      this.ctx.strokeStyle = 'rgba(255, 215, 100, 0.98)';
       this.ctx.lineWidth = 3;
-      this.ctx.shadowColor = "rgba(255, 190, 60, 0.8)";
+      this.ctx.shadowColor = 'rgba(255, 190, 60, 0.8)';
       this.ctx.shadowBlur = 12;
       this.ctx.beginPath();
       baseCorners.forEach((corner, i) => {
@@ -5053,7 +4553,7 @@ export class RenderSystem extends System {
     building: Building,
     isHovered: boolean,
     drawIcon: () => void,
-    hoverText: string,
+    hoverText: string
   ): void {
     const tileW = this.iso.tileWidth;
     const tileH = this.iso.tileHeight;
@@ -5076,53 +4576,29 @@ export class RenderSystem extends System {
     this.ctx.beginPath();
     this.ctx.moveTo(-bubbleW / 2 + radius, -bubbleH / 2);
     this.ctx.lineTo(bubbleW / 2 - radius, -bubbleH / 2);
-    this.ctx.arcTo(
-      bubbleW / 2,
-      -bubbleH / 2,
-      bubbleW / 2,
-      -bubbleH / 2 + radius,
-      radius,
-    );
+    this.ctx.arcTo(bubbleW / 2, -bubbleH / 2, bubbleW / 2, -bubbleH / 2 + radius, radius);
     this.ctx.lineTo(bubbleW / 2, bubbleH / 2 - radius);
-    this.ctx.arcTo(
-      bubbleW / 2,
-      bubbleH / 2,
-      bubbleW / 2 - radius,
-      bubbleH / 2,
-      radius,
-    );
+    this.ctx.arcTo(bubbleW / 2, bubbleH / 2, bubbleW / 2 - radius, bubbleH / 2, radius);
     this.ctx.lineTo(7, bubbleH / 2);
     this.ctx.lineTo(0, bubbleH / 2 + 10);
     this.ctx.lineTo(-7, bubbleH / 2);
     this.ctx.lineTo(-bubbleW / 2 + radius, bubbleH / 2);
-    this.ctx.arcTo(
-      -bubbleW / 2,
-      bubbleH / 2,
-      -bubbleW / 2,
-      bubbleH / 2 - radius,
-      radius,
-    );
+    this.ctx.arcTo(-bubbleW / 2, bubbleH / 2, -bubbleW / 2, bubbleH / 2 - radius, radius);
     this.ctx.lineTo(-bubbleW / 2, -bubbleH / 2 + radius);
-    this.ctx.arcTo(
-      -bubbleW / 2,
-      -bubbleH / 2,
-      -bubbleW / 2 + radius,
-      -bubbleH / 2,
-      radius,
-    );
+    this.ctx.arcTo(-bubbleW / 2, -bubbleH / 2, -bubbleW / 2 + radius, -bubbleH / 2, radius);
     this.ctx.closePath();
 
-    this.ctx.fillStyle = "rgba(40, 40, 40, 0.92)";
+    this.ctx.fillStyle = 'rgba(40, 40, 40, 0.92)';
     this.ctx.fill();
-    this.ctx.strokeStyle = "#cc3333";
+    this.ctx.strokeStyle = '#cc3333';
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
 
     if (isHovered) {
-      this.ctx.fillStyle = "#ffffff";
-      this.ctx.font = "bold 12px monospace";
-      this.ctx.textAlign = "center";
-      this.ctx.textBaseline = "middle";
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.font = 'bold 12px monospace';
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
       this.ctx.fillText(hoverText, 0, 0);
     } else {
       drawIcon();
@@ -5134,7 +4610,7 @@ export class RenderSystem extends System {
   private renderProductionBubble(
     building: Building,
     production: Production,
-    isFull: boolean,
+    isFull: boolean
   ): void {
     const tileW = this.iso.tileWidth;
     const tileH = this.iso.tileHeight;
@@ -5144,9 +4620,7 @@ export class RenderSystem extends System {
     const bubbleY = ((building.width - 1) * tileH) / 2 - 12;
 
     const primaryOutput = Object.keys(production.outputs)[0];
-    const icon = primaryOutput
-      ? this.loadSprite(`/assets/resources/${primaryOutput}.png`)
-      : null;
+    const icon = primaryOutput ? this.loadSprite(`/assets/resources/${primaryOutput}.png`) : null;
 
     const r = 10;
     const hasIcon = !!icon;
@@ -5165,30 +4639,24 @@ export class RenderSystem extends System {
     this.ctx.arc(-pillW / 2 + r, 0, pillH / 2, Math.PI / 2, -Math.PI / 2);
     this.ctx.closePath();
 
-    this.ctx.fillStyle = "rgba(30, 30, 30, 0.88)";
+    this.ctx.fillStyle = 'rgba(30, 30, 30, 0.88)';
     this.ctx.fill();
-    this.ctx.strokeStyle = isFull ? "#cc3333" : "#5a8a4a";
+    this.ctx.strokeStyle = isFull ? '#cc3333' : '#5a8a4a';
     this.ctx.lineWidth = 1.5;
     this.ctx.stroke();
 
     if (hasIcon) {
-      this.ctx.drawImage(
-        icon!,
-        -pillW / 2 + 3,
-        -iconDraw / 2 - 0.5,
-        iconDraw,
-        iconDraw,
-      );
-      this.ctx.fillStyle = isFull ? "#ff6666" : "#ffffff";
-      this.ctx.font = "bold 9px monospace";
-      this.ctx.textAlign = "center";
-      this.ctx.textBaseline = "middle";
+      this.ctx.drawImage(icon!, -pillW / 2 + 3, -iconDraw / 2 - 0.5, iconDraw, iconDraw);
+      this.ctx.fillStyle = isFull ? '#ff6666' : '#ffffff';
+      this.ctx.font = 'bold 9px monospace';
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
       this.ctx.fillText(`${buffered}`, pillW / 2 - 8, 0);
     } else {
-      this.ctx.fillStyle = isFull ? "#ff6666" : "#ffffff";
-      this.ctx.font = "bold 9px monospace";
-      this.ctx.textAlign = "center";
-      this.ctx.textBaseline = "middle";
+      this.ctx.fillStyle = isFull ? '#ff6666' : '#ffffff';
+      this.ctx.font = 'bold 9px monospace';
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
       this.ctx.fillText(`${buffered}`, 0, 0);
     }
 
@@ -5214,7 +4682,7 @@ export class RenderSystem extends System {
       const combined = [...junctionItems, ...pendingItems];
       if (combined.length === 0) continue;
 
-      const [x, y] = key.split(",").map(Number);
+      const [x, y] = key.split(',').map(Number);
       if (
         x < viewportBounds.minX ||
         x > viewportBounds.maxX ||
@@ -5238,42 +4706,40 @@ export class RenderSystem extends System {
         const ix = center.x + offsets[i].x;
         const iy = center.y + offsets[i].y;
 
-        const resSprite = this.loadSprite(
-          `/assets/resources/${combined[i].resourceType}.png`,
-        );
+        const resSprite = this.loadSprite(`/assets/resources/${combined[i].resourceType}.png`);
         const jw = 10 * RESOURCE_ICON_DRAW_SCALE;
         const jHalf = jw / 2;
         if (resSprite) {
           this.ctx.drawImage(resSprite, ix - jHalf, iy - jHalf, jw, jw);
         } else {
-          this.ctx.fillStyle = "#6b5020";
+          this.ctx.fillStyle = '#6b5020';
           this.ctx.fillRect(
             ix - 4 * RESOURCE_ICON_DRAW_SCALE,
             iy - 1 * RESOURCE_ICON_DRAW_SCALE,
             8 * RESOURCE_ICON_DRAW_SCALE,
-            4 * RESOURCE_ICON_DRAW_SCALE,
+            4 * RESOURCE_ICON_DRAW_SCALE
           );
-          this.ctx.fillStyle = "#8b6914";
+          this.ctx.fillStyle = '#8b6914';
           this.ctx.fillRect(
             ix - 4 * RESOURCE_ICON_DRAW_SCALE,
             iy - 4 * RESOURCE_ICON_DRAW_SCALE,
             8 * RESOURCE_ICON_DRAW_SCALE,
-            4 * RESOURCE_ICON_DRAW_SCALE,
+            4 * RESOURCE_ICON_DRAW_SCALE
           );
-          this.ctx.fillStyle = "#a07818";
+          this.ctx.fillStyle = '#a07818';
           this.ctx.fillRect(
             ix - 3 * RESOURCE_ICON_DRAW_SCALE,
             iy - 4 * RESOURCE_ICON_DRAW_SCALE,
             6 * RESOURCE_ICON_DRAW_SCALE,
-            2 * RESOURCE_ICON_DRAW_SCALE,
+            2 * RESOURCE_ICON_DRAW_SCALE
           );
-          this.ctx.strokeStyle = "#4a3510";
+          this.ctx.strokeStyle = '#4a3510';
           this.ctx.lineWidth = 0.5;
           this.ctx.strokeRect(
             ix - 4 * RESOURCE_ICON_DRAW_SCALE,
             iy - 4 * RESOURCE_ICON_DRAW_SCALE,
             8 * RESOURCE_ICON_DRAW_SCALE,
-            7 * RESOURCE_ICON_DRAW_SCALE,
+            7 * RESOURCE_ICON_DRAW_SCALE
           );
         }
       }
@@ -5291,9 +4757,9 @@ export class RenderSystem extends System {
     this.ctx.lineTo(0, dh);
     this.ctx.lineTo(-dw, 0);
     this.ctx.closePath();
-    this.ctx.fillStyle = "#c4a572";
+    this.ctx.fillStyle = '#c4a572';
     this.ctx.fill();
-    this.ctx.strokeStyle = "#a68a5a";
+    this.ctx.strokeStyle = '#a68a5a';
     this.ctx.lineWidth = 1;
     this.ctx.stroke();
 
@@ -5303,7 +4769,7 @@ export class RenderSystem extends System {
     this.ctx.lineTo(7, 7);
     this.ctx.moveTo(7, -7);
     this.ctx.lineTo(-7, 7);
-    this.ctx.strokeStyle = "#ff4444";
+    this.ctx.strokeStyle = '#ff4444';
     this.ctx.lineWidth = 3;
     this.ctx.stroke();
   }
@@ -5323,16 +4789,13 @@ export class RenderSystem extends System {
     }
 
     const fadeStart = duration * 0.6;
-    const alpha =
-      elapsed > fadeStart
-        ? 1 - (elapsed - fadeStart) / (duration - fadeStart)
-        : 1;
+    const alpha = elapsed > fadeStart ? 1 - (elapsed - fadeStart) / (duration - fadeStart) : 1;
     const rise = elapsed * 0.02;
 
     this.ctx.save();
     this.ctx.globalAlpha = alpha;
-    this.ctx.font = "bold 13px monospace";
-    this.ctx.textAlign = "center";
+    this.ctx.font = 'bold 13px monospace';
+    this.ctx.textAlign = 'center';
 
     const tx = this.toast.x;
     const ty = this.toast.y - rise;
@@ -5340,23 +4803,17 @@ export class RenderSystem extends System {
     const pad = 10;
 
     // Background
-    this.ctx.fillStyle = "rgba(40, 40, 40, 0.9)";
+    this.ctx.fillStyle = 'rgba(40, 40, 40, 0.9)';
     this.ctx.beginPath();
-    this.ctx.roundRect(
-      tx - textWidth / 2 - pad,
-      ty - 12,
-      textWidth + pad * 2,
-      24,
-      6,
-    );
+    this.ctx.roundRect(tx - textWidth / 2 - pad, ty - 12, textWidth + pad * 2, 24, 6);
     this.ctx.fill();
-    this.ctx.strokeStyle = "#cc3333";
+    this.ctx.strokeStyle = '#cc3333';
     this.ctx.lineWidth = 1.5;
     this.ctx.stroke();
 
     // Text
-    this.ctx.fillStyle = "#ffffff";
-    this.ctx.textBaseline = "middle";
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.textBaseline = 'middle';
     this.ctx.fillText(this.toast.text, tx, ty);
 
     this.ctx.restore();
@@ -5364,7 +4821,7 @@ export class RenderSystem extends System {
 
   private darkenColor(color: string, factor: number): string {
     // Simple color darkening
-    const hex = color.replace("#", "");
+    const hex = color.replace('#', '');
     const r = Math.floor(parseInt(hex.substr(0, 2), 16) * factor);
     const g = Math.floor(parseInt(hex.substr(2, 2), 16) * factor);
     const b = Math.floor(parseInt(hex.substr(4, 2), 16) * factor);
@@ -5374,7 +4831,7 @@ export class RenderSystem extends System {
   private syncWorkerIdleNapClock(
     worker: Worker,
     _movable: Movable | null,
-    isMoving: boolean,
+    isMoving: boolean
   ): void {
     if (worker.concealedInBuildingId != null) {
       worker.idleContinuousSinceMs = null;
@@ -5383,7 +4840,7 @@ export class RenderSystem extends System {
       worker.nextFloorSleepProbeMs = null;
       return;
     }
-    if (isMoving || worker.state !== "idle" || worker.carryingResource) {
+    if (isMoving || worker.state !== 'idle' || worker.carryingResource) {
       worker.idleContinuousSinceMs = null;
       worker.floorSleepUntilMs = null;
       worker.floorSleepStartedAtMs = null;
@@ -5407,39 +4864,33 @@ export class RenderSystem extends System {
   private updateIdleAnimation(worker: Worker): void {
     const now = getSimulationNowMs();
     if (
-      (worker.visualActivity === "production_well" ||
-        worker.visualActivity === "production_mill") &&
-      worker.state === "working"
+      (worker.visualActivity === 'production_well' ||
+        worker.visualActivity === 'production_mill') &&
+      worker.state === 'working'
+    ) {
+      return;
+    }
+    if (worker.visualActivity === 'combat_duel' || worker.visualActivity === 'combat_fallen') {
+      return;
+    }
+    if (worker.visualActivity === 'production_plant' && worker.state === 'working') {
+      return;
+    }
+    if (
+      worker.visualActivity === 'production_gather' &&
+      worker.state === 'working' &&
+      worker.carryingResource === 'pickaxe'
     ) {
       return;
     }
     if (
-      worker.visualActivity === "combat_duel" ||
-      worker.visualActivity === "combat_fallen"
-    ) {
-      return;
-    }
-    if (
-      worker.visualActivity === "production_plant" &&
-      worker.state === "working"
-    ) {
-      return;
-    }
-    if (
-      worker.visualActivity === "production_gather" &&
-      worker.state === "working" &&
-      worker.carryingResource === "pickaxe"
-    ) {
-      return;
-    }
-    if (
-      worker.visualActivity === "construct" &&
-      worker.state === "working" &&
+      worker.visualActivity === 'construct' &&
+      worker.state === 'working' &&
       worker.hammerConstructionEnabled
     ) {
       return;
     }
-    if (worker.heldItemStyle === "side" && worker.carryingResource) {
+    if (worker.heldItemStyle === 'side' && worker.carryingResource) {
       return;
     }
 
@@ -5456,7 +4907,7 @@ export class RenderSystem extends System {
     }
 
     if (
-      worker.state === "idle" &&
+      worker.state === 'idle' &&
       !worker.carryingResource &&
       worker.idleContinuousSinceMs != null &&
       now - worker.idleContinuousSinceMs >= RenderSystem.FLOOR_NAP_MIN_IDLE_MS
@@ -5471,9 +4922,8 @@ export class RenderSystem extends System {
           worker.floorSleepUntilMs =
             now +
             RenderSystem.FLOOR_NAP_MS_MIN +
-            Math.random() *
-              (RenderSystem.FLOOR_NAP_MS_MAX - RenderSystem.FLOOR_NAP_MS_MIN);
-          worker.idleAnim = "none";
+            Math.random() * (RenderSystem.FLOOR_NAP_MS_MAX - RenderSystem.FLOOR_NAP_MS_MIN);
+          worker.idleAnim = 'none';
           return;
         }
       }
@@ -5481,9 +4931,9 @@ export class RenderSystem extends System {
       worker.nextFloorSleepProbeMs = null;
     }
 
-    if (worker.idleAnim !== "none") {
+    if (worker.idleAnim !== 'none') {
       if (now > worker.idleAnimStart + worker.idleAnimDuration) {
-        worker.idleAnim = "none";
+        worker.idleAnim = 'none';
         worker.nextIdleCheck = now + 3000 + Math.random() * 6000;
       }
       return;
@@ -5491,15 +4941,15 @@ export class RenderSystem extends System {
     if (now < worker.nextIdleCheck) return;
 
     const anims: { anim: IdleAnim; duration: number; weight: number }[] = [
-      { anim: "look_around", duration: 1800 + Math.random() * 1200, weight: 4 },
-      { anim: "scratch_head", duration: 1500 + Math.random() * 800, weight: 2 },
+      { anim: 'look_around', duration: 1800 + Math.random() * 1200, weight: 4 },
+      { anim: 'scratch_head', duration: 1500 + Math.random() * 800, weight: 2 },
       {
-        anim: "hands_on_hips",
+        anim: 'hands_on_hips',
         duration: 2500 + Math.random() * 2000,
         weight: 2,
       },
-      { anim: "stretch", duration: 1200 + Math.random() * 600, weight: 1 },
-      { anim: "read", duration: 3000 + Math.random() * 2000, weight: 1 },
+      { anim: 'stretch', duration: 1200 + Math.random() * 600, weight: 1 },
+      { anim: 'read', duration: 3000 + Math.random() * 2000, weight: 1 },
     ];
     const totalWeight = anims.reduce((s, a) => s + a.weight, 0);
     let r = Math.random() * totalWeight;
@@ -5509,9 +4959,8 @@ export class RenderSystem extends System {
         worker.idleAnim = entry.anim;
         worker.idleAnimStart = now;
         worker.idleAnimDuration = entry.duration;
-        if (entry.anim === "look_around") {
-          worker.idleFacing =
-            (worker.idleFacing + 1 + Math.floor(Math.random() * 3)) % 4;
+        if (entry.anim === 'look_around') {
+          worker.idleFacing = (worker.idleFacing + 1 + Math.floor(Math.random() * 3)) % 4;
         }
         return;
       }
@@ -5539,13 +4988,13 @@ export class RenderSystem extends System {
     napPillowArms: boolean;
     enemyTint?: boolean;
   }): void {
-    paintWorkerBodyToCanvas(this.ctx, (path) => this.loadSprite(path), p);
+    paintWorkerBodyToCanvas(this.ctx, path => this.loadSprite(path), p);
   }
 
   private renderWorkerSprite(
     movable: Movable | null,
     worker: Worker,
-    enemyTint: boolean = false,
+    enemyTint: boolean = false
   ): void {
     let dirX = 0;
     let dirY = 1;
@@ -5568,7 +5017,7 @@ export class RenderSystem extends System {
       else if (dirX <= 0 && dirY > 0) facing = 1;
       else if (dirX < 0 && dirY <= 0) facing = 2;
       else facing = 3;
-      worker.idleAnim = "none";
+      worker.idleAnim = 'none';
       worker.nextIdleCheck = getSimulationNowMs() + 2000 + Math.random() * 4000;
     } else {
       this.updateIdleAnimation(worker);
@@ -5576,70 +5025,60 @@ export class RenderSystem extends System {
     }
 
     const now = getSimulationNowMs();
-    const isCombatDuel =
-      worker.visualActivity === "combat_duel" && worker.role === "military";
-    const frame =
-      isMoving || isCombatDuel
-        ? Math.floor(now / (isCombatDuel ? 120 : 200)) % 4
-        : 0;
+    const isCombatDuel = worker.visualActivity === 'combat_duel' && worker.role === 'military';
+    const frame = isMoving || isCombatDuel ? Math.floor(now / (isCombatDuel ? 120 : 200)) % 4 : 0;
     // Keep military close to civilian size; body proportions are normalized in painter.
-    const s = worker.role === "military" ? 2.05 : 2;
-    if (worker.carrierType === "donkey") {
+    const s = worker.role === 'military' ? 2.05 : 2;
+    if (worker.carrierType === 'donkey') {
       this.renderDonkeySprite(s, facing, isMoving, frame, worker.carryingItems);
       return;
     }
     const anim = worker.idleAnim;
-    const animT =
-      anim !== "none"
-        ? (now - worker.idleAnimStart) / worker.idleAnimDuration
-        : 0;
+    const animT = anim !== 'none' ? (now - worker.idleAnimStart) / worker.idleAnimDuration : 0;
 
     const isCarrying = !!worker.carryingResource;
     const isHammerConstruct =
       isCarrying &&
-      worker.carryingResource === "hammer" &&
-      worker.visualActivity === "construct" &&
+      worker.carryingResource === 'hammer' &&
+      worker.visualActivity === 'construct' &&
       worker.hammerConstructionEnabled &&
-      worker.state === "working" &&
+      worker.state === 'working' &&
       !isMoving;
 
     const isPlantDigging =
       isCarrying &&
-      worker.carryingResource === "shovel" &&
-      (worker.visualActivity === "production_plant" ||
-        worker.visualActivity === "survey_dig") &&
-      worker.state === "working" &&
+      worker.carryingResource === 'shovel' &&
+      (worker.visualActivity === 'production_plant' || worker.visualActivity === 'survey_dig') &&
+      worker.state === 'working' &&
       !isMoving;
 
     const isStoneGathering =
       isCarrying &&
-      worker.carryingResource === "pickaxe" &&
-      worker.visualActivity === "production_gather" &&
-      worker.state === "working" &&
+      worker.carryingResource === 'pickaxe' &&
+      worker.visualActivity === 'production_gather' &&
+      worker.state === 'working' &&
       !isMoving;
 
     const isFisherFishing =
       isCarrying &&
-      worker.carryingResource === "fishing_rod" &&
-      worker.visualActivity === "production_gather" &&
-      worker.state === "working" &&
+      worker.carryingResource === 'fishing_rod' &&
+      worker.visualActivity === 'production_gather' &&
+      worker.state === 'working' &&
       !isMoving;
 
     const isSideCarryTool =
       isCarrying &&
-      worker.heldItemStyle === "side" &&
+      worker.heldItemStyle === 'side' &&
       !isHammerConstruct &&
       !isPlantDigging &&
       !isStoneGathering &&
       !isFisherFishing;
 
-    const isOverheadCarry = isCarrying && worker.heldItemStyle === "overhead";
+    const isOverheadCarry = isCarrying && worker.heldItemStyle === 'overhead';
 
     /** Idle poses that need free hands — skip when holding a tool at the side. */
     const armAnim: IdleAnim =
-      isSideCarryTool && anim !== "look_around" && anim !== "none"
-        ? "none"
-        : anim;
+      isSideCarryTool && anim !== 'look_around' && anim !== 'none' ? 'none' : anim;
 
     const bodyArgs = {
       worker,
@@ -5661,7 +5100,7 @@ export class RenderSystem extends System {
       enemyTint,
     };
 
-    if (worker.visualActivity === "combat_fallen") {
+    if (worker.visualActivity === 'combat_fallen') {
       const fadeUntil = worker.buildIdleUntil || now;
       const alpha = Math.max(0, Math.min(1, (fadeUntil - now) / 2000));
       this.ctx.save();
@@ -5672,7 +5111,7 @@ export class RenderSystem extends System {
       this.paintWorkerSpriteBody({
         ...bodyArgs,
         isMoving: false,
-        anim: "none",
+        anim: 'none',
         animT: 0,
         isCarrying: false,
         isHammerConstruct: false,
@@ -5681,7 +5120,7 @@ export class RenderSystem extends System {
         isStoneGathering: false,
         isSideCarryTool: false,
         isOverheadCarry: false,
-        armAnim: "none",
+        armAnim: 'none',
         drawRoundFootShadow: false,
         napPillowArms: false,
       });
@@ -5691,18 +5130,18 @@ export class RenderSystem extends System {
 
     if (
       !isMoving &&
-      worker.state === "idle" &&
+      worker.state === 'idle' &&
       worker.floorSleepUntilMs != null &&
       now < worker.floorSleepUntilMs
     ) {
       paintWorkerFloorNap(
         this.ctx,
-        (path) => this.loadSprite(path),
+        path => this.loadSprite(path),
         worker,
         now,
         s,
         facing,
-        enemyTint,
+        enemyTint
       );
       return;
     }
@@ -5719,23 +5158,17 @@ export class RenderSystem extends System {
     facing: number,
     isMoving: boolean,
     frame: number,
-    carriedItems: Array<{ resourceType: string }>,
+    carriedItems: Array<{ resourceType: string }>
   ): void {
     const mirror = facing === 1 || facing === 2;
     const showBack = facing === 2 || facing === 3;
-    const legSwing = isMoving
-      ? frame === 1
-        ? 1.6
-        : frame === 3
-          ? -1.6
-          : 0
-      : 0;
+    const legSwing = isMoving ? (frame === 1 ? 1.6 : frame === 3 ? -1.6 : 0) : 0;
 
     this.ctx.save();
     if (mirror) this.ctx.scale(-1, 1);
 
     this.ctx.globalAlpha = 0.22;
-    this.ctx.fillStyle = "#000";
+    this.ctx.fillStyle = '#000';
     this.ctx.beginPath();
     this.ctx.ellipse(0, 1 * s, 9 * s, 3 * s, 0, 0, Math.PI * 2);
     this.ctx.fill();
@@ -5746,14 +5179,14 @@ export class RenderSystem extends System {
       this.ctx.fillRect(x * s, y * s, w * s, h * s);
     };
 
-    const body = showBack ? "#74604b" : "#80684f";
-    const bodyDark = "#4d392b";
-    const muzzle = "#b9956d";
-    const bag = "#9b6b34";
-    const bagDark = "#5a371c";
+    const body = showBack ? '#74604b' : '#80684f';
+    const bodyDark = '#4d392b';
+    const muzzle = '#b9956d';
+    const bag = '#9b6b34';
+    const bagDark = '#5a371c';
 
     px(-7, -9, 14, 7, body);
-    px(-6, -10, 12, 2, "#92765a");
+    px(-6, -10, 12, 2, '#92765a');
     px(-8, -7, 2, 4, bodyDark);
 
     px(5, -12, 3, 5, body);
@@ -5763,23 +5196,23 @@ export class RenderSystem extends System {
     px(7, -18, 1, 4, bodyDark);
     px(10, -18, 1, 4, bodyDark);
     if (!showBack) {
-      px(10, -13, 1, 1, "#15110c");
+      px(10, -13, 1, 1, '#15110c');
     }
 
     px(-5, -4, 2, 6 + legSwing, bodyDark);
     px(-1, -4, 2, 6 - legSwing, bodyDark);
     px(3, -4, 2, 6 - legSwing, bodyDark);
     px(6, -4, 2, 6 + legSwing, bodyDark);
-    px(-5, 2 + legSwing, 3, 1, "#251a12");
-    px(-1, 2 - legSwing, 3, 1, "#251a12");
-    px(3, 2 - legSwing, 3, 1, "#251a12");
-    px(6, 2 + legSwing, 3, 1, "#251a12");
+    px(-5, 2 + legSwing, 3, 1, '#251a12');
+    px(-1, 2 - legSwing, 3, 1, '#251a12');
+    px(3, 2 - legSwing, 3, 1, '#251a12');
+    px(6, 2 + legSwing, 3, 1, '#251a12');
 
     px(-5, -13, 5, 6, bag);
     px(1, -13, 5, 6, bag);
     px(-5, -8, 5, 1, bagDark);
     px(1, -8, 5, 1, bagDark);
-    px(-1, -13, 2, 5, "#4a2f1a");
+    px(-1, -13, 2, 5, '#4a2f1a');
 
     if (carriedItems.length > 0) {
       this.renderDonkeyLoadIcons(carriedItems.slice(0, 5), s);
@@ -5788,10 +5221,7 @@ export class RenderSystem extends System {
     this.ctx.restore();
   }
 
-  private renderDonkeyLoadIcons(
-    items: Array<{ resourceType: string }>,
-    s: number,
-  ): void {
+  private renderDonkeyLoadIcons(items: Array<{ resourceType: string }>, s: number): void {
     const iconSize = 4.6 * s * RESOURCE_ICON_DRAW_SCALE;
     const half = iconSize / 2;
     const positions = [
@@ -5803,9 +5233,7 @@ export class RenderSystem extends System {
     ];
 
     for (let i = 0; i < items.length; i++) {
-      const icon = this.loadSprite(
-        `/assets/resources/${items[i]!.resourceType}.png`,
-      );
+      const icon = this.loadSprite(`/assets/resources/${items[i]!.resourceType}.png`);
       const p = positions[i]!;
       const cx = p.x * s;
       const cy = p.y * s;
@@ -5815,9 +5243,9 @@ export class RenderSystem extends System {
       if (icon) {
         this.ctx.drawImage(icon, -half, -half, iconSize, iconSize);
       } else {
-        this.ctx.fillStyle = "#d2a654";
+        this.ctx.fillStyle = '#d2a654';
         this.ctx.fillRect(-half, -half, iconSize, iconSize);
-        this.ctx.strokeStyle = "#5a371c";
+        this.ctx.strokeStyle = '#5a371c';
         this.ctx.lineWidth = 0.8;
         this.ctx.strokeRect(-half, -half, iconSize, iconSize);
       }
@@ -5830,7 +5258,7 @@ export class RenderSystem extends System {
     this.ctx.arc(0, 0, renderable.size.width / 2, 0, Math.PI * 2);
     this.ctx.fillStyle = renderable.color;
     this.ctx.fill();
-    this.ctx.strokeStyle = "#000";
+    this.ctx.strokeStyle = '#000';
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
   }
@@ -5841,14 +5269,9 @@ export class RenderSystem extends System {
 
     this.ctx.fillStyle = renderable.color;
     this.ctx.fillRect(-hw, -hh, renderable.size.width, renderable.size.height);
-    this.ctx.strokeStyle = "#000";
+    this.ctx.strokeStyle = '#000';
     this.ctx.lineWidth = 2;
-    this.ctx.strokeRect(
-      -hw,
-      -hh,
-      renderable.size.width,
-      renderable.size.height,
-    );
+    this.ctx.strokeRect(-hw, -hh, renderable.size.width, renderable.size.height);
   }
 
   private renderTriangle(renderable: Renderable): void {
@@ -5862,7 +5285,7 @@ export class RenderSystem extends System {
 
     this.ctx.fillStyle = renderable.color;
     this.ctx.fill();
-    this.ctx.strokeStyle = "#000";
+    this.ctx.strokeStyle = '#000';
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
   }
@@ -5931,10 +5354,7 @@ export class RenderSystem extends System {
     return this.screenToWorld(canvasX, canvasY);
   }
 
-  private clientToCanvas(
-    clientX: number,
-    clientY: number,
-  ): { x: number; y: number } {
+  private clientToCanvas(clientX: number, clientY: number): { x: number; y: number } {
     const rect = this.canvas.getBoundingClientRect();
     const scaleX = this.canvas.width / Math.max(rect.width, 1e-6);
     const scaleY = this.canvas.height / Math.max(rect.height, 1e-6);
@@ -5945,10 +5365,7 @@ export class RenderSystem extends System {
   }
 
   /** Pointer in iso world plane (before camera), for road-row snapping. */
-  pointerToIsoWorld(
-    clientX: number,
-    clientY: number,
-  ): { wx: number; wy: number } {
+  pointerToIsoWorld(clientX: number, clientY: number): { wx: number; wy: number } {
     const { x: canvasX, y: canvasY } = this.clientToCanvas(clientX, clientY);
     return {
       wx: (canvasX - this.camera.x) / this.camera.zoom,
@@ -5966,7 +5383,7 @@ export class RenderSystem extends System {
     hoverX: number,
     hoverY: number,
     clientX: number,
-    clientY: number,
+    clientY: number
   ): { x: number; y: number } {
     const { wx, wy } = this.pointerToIsoWorld(clientX, clientY);
     const h = this.iso.gridToScreen(hoverX, anchorY);
@@ -5993,7 +5410,7 @@ export class RenderSystem extends System {
     this.surveyWorkerDrawOnTopIds.clear();
     this.cachedViewportBounds = null;
     // Reset minimap offscreen canvas
-    this.minimapOffscreenCtx.fillStyle = "#1a1a1a";
+    this.minimapOffscreenCtx.fillStyle = '#1a1a1a';
     this.minimapOffscreenCtx.fillRect(0, 0, 200, 200);
     this.minimapScale = 200 / this.tileMap.width;
     this.minimapFullWorldDirty = DEBUG;

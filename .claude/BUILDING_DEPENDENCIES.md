@@ -35,12 +35,12 @@ Whenever you add a building with `production.inputs` + `storage` in `buildings.j
 
 ### Storage vs. Output Buffer
 
-| Building Type | Has Inputs? | Ingredients | Finished goods (awaiting pickup) |
-|---------------|-------------|-------------|-----------------------------------|
-| Lumberjack | No | — | `Production.outputBuffer` |
-| Sawmill | Yes (wood_log) | `Storage` (`isProductionStorage`) | `Production.outputBuffer` |
-| Quarry | No | — | `Production.outputBuffer` |
-| Bakery | Yes | `Storage` (`isProductionStorage`) | `Production.outputBuffer` |
+| Building Type | Has Inputs?    | Ingredients                       | Finished goods (awaiting pickup) |
+| ------------- | -------------- | --------------------------------- | -------------------------------- |
+| Lumberjack    | No             | —                                 | `Production.outputBuffer`        |
+| Sawmill       | Yes (wood_log) | `Storage` (`isProductionStorage`) | `Production.outputBuffer`        |
+| Quarry        | No             | —                                 | `Production.outputBuffer`        |
+| Bakery        | Yes            | `Storage` (`isProductionStorage`) | `Production.outputBuffer`        |
 
 Buildings **without** inputs use only `Production.outputBuffer`. Buildings **with** inputs use **`Storage` for inputs** and **`Production.outputBuffer` for outputs** — both are always created when the building has production; `isProductionStorage` is set when the definition has both `production.inputs` and `storage`.
 
@@ -96,13 +96,13 @@ A full shared store must still leave **physical slots** for every other ingredie
 
 ### Status Mapping
 
-| Condition | Status |
-|-----------|--------|
-| Output buffer full (`outputBuffer` total ≥ `maxOutputBuffer` for the next batch) | `stopped_full` |
-| Ingredient store full (inputs only) — does **not** stop production by itself | *(n/a — outputs use buffer)* |
-| Required input not in local Storage | `stopped_no_inputs` |
-| No road connection | `stopped_no_road` |
-| Actively producing | `producing` |
+| Condition                                                                        | Status                       |
+| -------------------------------------------------------------------------------- | ---------------------------- |
+| Output buffer full (`outputBuffer` total ≥ `maxOutputBuffer` for the next batch) | `stopped_full`               |
+| Ingredient store full (inputs only) — does **not** stop production by itself     | _(n/a — outputs use buffer)_ |
+| Required input not in local Storage                                              | `stopped_no_inputs`          |
+| No road connection                                                               | `stopped_no_road`            |
+| Actively producing                                                               | `producing`                  |
 
 ---
 
@@ -119,6 +119,7 @@ When a road worker picks up a resource, the transport system checks if any produ
 ### Demand Definition
 
 A building "demands" a resource when:
+
 - It has a `Production` component with that resource as an input
 - It has a `Storage` component with `isProductionStorage = true`
 - It is complete and road-connected (`building.isActive`)
@@ -132,6 +133,7 @@ A building "demands" a resource when:
 - **Building directions**: `buildingDirections` — BFS from each production building with inputs
 
 Both are computed/recomputed when:
+
 - Roads are placed or deleted
 - Buildings are placed or deleted
 - A building finishes construction
@@ -182,6 +184,7 @@ When a worker arrives at a dropoff endpoint:
 ### Commitment Rule
 
 Once a routing decision is made (at first pickup), the item's destination is **locked**:
+
 - If routed to a sawmill, it stays routed to that sawmill even if the sawmill fills up mid-transit
 - If routed to base camp, it stays routed to base camp even if a sawmill frees up space
 - If the sawmill is full on arrival, the item is redirected to base camp at that point
@@ -194,28 +197,28 @@ The system is general — any building with `production.inputs` and `storage` au
 
 ### Current Chains
 
-| Chain | Source | Consumer | Input → Output |
-|-------|--------|----------|----------------|
-| Wood processing | Lumberjack | Sawmill | wood_log → wood_plank |
+| Chain           | Source     | Consumer | Input → Output        |
+| --------------- | ---------- | -------- | --------------------- |
+| Wood processing | Lumberjack | Sawmill  | wood_log → wood_plank |
 
 **Audit (2026-04-22):** Every building in `buildings.json` that defines both `production.inputs` and `storage` uses `storage.capacity: 10` for ingredients and relies on the default `production.maxOutputBuffer` (10) for the outside pickup queue — same pattern: `sawmill`, `pig_farm`, `mill`, `bakery`, `brewery`, `slaughterhouse`, `coal_mine`, `iron_mine`, `gold_mine`, `granite_mine`, `iron_smelter`, `mint`, `metalworks`, `armory`. None share a single pool for inputs and outputs anymore, so a full ingredient bin cannot block the first output unit.
 
 ### Future Chains (defined in buildings.json but not yet active)
 
-| Chain | Source | Consumer | Input → Output |
-|-------|--------|----------|----------------|
-| Flour milling | Farm | Mill | grain → flour |
-| Baking | Mill | Bakery | flour → bread |
-| Iron smelting | Iron Mine + Coal Mine | Iron Smelter | iron_ore + coal → iron_bar |
-| Tool smithing | Iron Smelter + Sawmill | Metalworks | iron_bar + wood_plank → hammer |
-| Brewing | Brewery | brewery | grain + water → beer |
-| Meat processing | Pig Farm | Slaughterhouse | meat → ham |
-| Pig breeding | Farm + Well | Pig Farm | grain + water → meat |
-| Coal mining | Bakery | Coal Mine | bread → coal |
-| Iron mining | Bakery | Iron Mine | bread → iron_ore |
-| Gold mining | Bakery | Gold Mine | bread → gold_ore |
-| Gold minting | Iron Smelter pattern | Mint | coal + gold_ore → gold_coin |
-| Weapon forging | Iron Smelter pattern | Armory | coal + iron_bar → sword |
+| Chain           | Source                 | Consumer       | Input → Output                 |
+| --------------- | ---------------------- | -------------- | ------------------------------ |
+| Flour milling   | Farm                   | Mill           | grain → flour                  |
+| Baking          | Mill                   | Bakery         | flour → bread                  |
+| Iron smelting   | Iron Mine + Coal Mine  | Iron Smelter   | iron_ore + coal → iron_bar     |
+| Tool smithing   | Iron Smelter + Sawmill | Metalworks     | iron_bar + wood_plank → hammer |
+| Brewing         | Brewery                | brewery        | grain + water → beer           |
+| Meat processing | Pig Farm               | Slaughterhouse | meat → ham                     |
+| Pig breeding    | Farm + Well            | Pig Farm       | grain + water → meat           |
+| Coal mining     | Bakery                 | Coal Mine      | bread → coal                   |
+| Iron mining     | Bakery                 | Iron Mine      | bread → iron_ore               |
+| Gold mining     | Bakery                 | Gold Mine      | bread → gold_ore               |
+| Gold minting    | Iron Smelter pattern   | Mint           | coal + gold_ore → gold_coin    |
+| Weapon forging  | Iron Smelter pattern   | Armory         | coal + iron_bar → sword        |
 
 Multi-input buildings (iron smelter, metalworks) demand each input independently. Each input type is routed from its own source.
 
@@ -233,17 +236,17 @@ Multi-input buildings (iron smelter, metalworks) demand each input independently
 
 ## File Map
 
-| File | Purpose |
-|------|---------|
-| `src/data/buildings.json` | Building definitions with `production.inputs` and `storage` |
-| `src/components/Storage.ts` | Storage component with `isProductionStorage` flag |
-| `src/components/Production.ts` | Production component (`outputBuffer` for all finished goods awaiting pickup) |
-| `src/entities/EntityFactory.ts` | Sets `isProductionStorage` when building has inputs + storage |
-| `src/systems/ProductionSystem.ts` | Local ingredient mode: consume inputs from Storage, add outputs to `outputBuffer` |
-| `src/economics/ResourceManager.ts` | Excludes production storage from global inventory |
-| `src/economics/TransportManager.ts` | Per-building BFS routing, direction-aware junction items |
-| `src/core/Game.ts` | Demand routing in `tryStartTransport`, pickup in `advanceTransport`, legacy output migration on load |
-| `src/ui/BuildingPopover.ts` | Ingredients vs outside pickup for `isProductionStorage` buildings |
+| File                                | Purpose                                                                                              |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `src/data/buildings.json`           | Building definitions with `production.inputs` and `storage`                                          |
+| `src/components/Storage.ts`         | Storage component with `isProductionStorage` flag                                                    |
+| `src/components/Production.ts`      | Production component (`outputBuffer` for all finished goods awaiting pickup)                         |
+| `src/entities/EntityFactory.ts`     | Sets `isProductionStorage` when building has inputs + storage                                        |
+| `src/systems/ProductionSystem.ts`   | Local ingredient mode: consume inputs from Storage, add outputs to `outputBuffer`                    |
+| `src/economics/ResourceManager.ts`  | Excludes production storage from global inventory                                                    |
+| `src/economics/TransportManager.ts` | Per-building BFS routing, direction-aware junction items                                             |
+| `src/core/Game.ts`                  | Demand routing in `tryStartTransport`, pickup in `advanceTransport`, legacy output migration on load |
+| `src/ui/BuildingPopover.ts`         | Ingredients vs outside pickup for `isProductionStorage` buildings                                    |
 
 ---
 

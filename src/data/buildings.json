@@ -292,7 +292,13 @@
     "name": "Farm",
     "description": "Grows and harvests grain.",
     "size": { "width": 3, "height": 3 },
-    "visual": { "buildingHeight": 55, "color": "#daa520", "spriteScale": 1.42, "offsetX": -4, "offsetY": 3 },
+    "visual": {
+      "buildingHeight": 55,
+      "color": "#daa520",
+      "spriteScale": 1.42,
+      "offsetX": -4,
+      "offsetY": 3
+    },
     "buildCost": { "wood_plank": 3, "stone": 3 },
     "buildTime": 35,
     "requiresRoad": true,
@@ -323,7 +329,13 @@
     "name": "Pig Farm",
     "description": "Breeds pigs from grain and water to produce raw meat.",
     "size": { "width": 3, "height": 3 },
-    "visual": { "buildingHeight": 55, "color": "#cd9b6a", "spriteScale": 1.45, "offsetX": -6, "offsetY": 10 },
+    "visual": {
+      "buildingHeight": 55,
+      "color": "#cd9b6a",
+      "spriteScale": 1.45,
+      "offsetX": -6,
+      "offsetY": 10
+    },
     "buildCost": { "wood_plank": 3, "stone": 3 },
     "buildTime": 35,
     "requiresRoad": true,
@@ -345,7 +357,13 @@
     "name": "Mill",
     "description": "Grinds grain into flour.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 75, "color": "#f5deb3", "spriteScale": 1.4, "offsetX": -3, "offsetY": 2 },
+    "visual": {
+      "buildingHeight": 75,
+      "color": "#f5deb3",
+      "spriteScale": 1.4,
+      "offsetX": -3,
+      "offsetY": 2
+    },
     "buildCost": { "wood_plank": 2, "stone": 2 },
     "buildTime": 30,
     "requiresRoad": true,
@@ -374,7 +392,13 @@
     "name": "Bakery",
     "description": "Bakes bread from flour and water to feed miners.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 60, "color": "#cd853f", "spriteScale": 1.4, "offsetX": -3, "offsetY": 2 },
+    "visual": {
+      "buildingHeight": 60,
+      "color": "#cd853f",
+      "spriteScale": 1.4,
+      "offsetX": -3,
+      "offsetY": 2
+    },
     "buildCost": { "wood_plank": 2, "stone": 2 },
     "buildTime": 30,
     "requiresRoad": true,
@@ -402,7 +426,13 @@
     "name": "Brewery",
     "description": "Brews beer from grain and water for soldiers.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 60, "color": "#8b6508", "spriteScale": 1.4, "offsetX": -3, "offsetY": 2 },
+    "visual": {
+      "buildingHeight": 60,
+      "color": "#8b6508",
+      "spriteScale": 1.4,
+      "offsetX": -3,
+      "offsetY": 2
+    },
     "buildCost": { "wood_plank": 2, "stone": 2 },
     "buildTime": 30,
     "requiresRoad": true,
@@ -424,7 +454,13 @@
     "name": "Slaughterhouse",
     "description": "Converts raw meat into ham to feed miners.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 55, "color": "#8b2500", "spriteScale": 1.5, "offsetX": -4, "offsetY": 1 },
+    "visual": {
+      "buildingHeight": 55,
+      "color": "#8b2500",
+      "spriteScale": 1.5,
+      "offsetX": -4,
+      "offsetY": 1
+    },
     "buildCost": { "wood_plank": 2, "stone": 2 },
     "buildTime": 30,
     "requiresRoad": true,
@@ -447,7 +483,13 @@
     "name": "Coal Mine",
     "description": "Extracts coal from underground deposits. Miners need bread, ham, or fish.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 60, "color": "#404040", "spriteScale": 1.5, "offsetX": -6, "offsetY": 4},
+    "visual": {
+      "buildingHeight": 60,
+      "color": "#404040",
+      "spriteScale": 1.5,
+      "offsetX": -6,
+      "offsetY": 4
+    },
     "buildCost": { "wood_plank": 4 },
     "buildTime": 40,
     "requiresRoad": true,
@@ -482,7 +524,13 @@
     "name": "Iron Mine",
     "description": "Extracts iron ore from underground deposits. Miners need bread, ham, or fish.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 60, "color": "#8c5a3c", "spriteScale": 1.5, "offsetX": -6, "offsetY": 4},
+    "visual": {
+      "buildingHeight": 60,
+      "color": "#8c5a3c",
+      "spriteScale": 1.5,
+      "offsetX": -6,
+      "offsetY": 4
+    },
     "buildCost": { "wood_plank": 4 },
     "buildTime": 40,
     "requiresRoad": true,
@@ -517,7 +565,13 @@
     "name": "Gold Mine",
     "description": "Extracts gold ore from underground deposits. Miners need bread, ham, or fish.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 60, "color": "#daa520", "spriteScale": 1.5, "offsetX": -6, "offsetY": 4},
+    "visual": {
+      "buildingHeight": 60,
+      "color": "#daa520",
+      "spriteScale": 1.5,
+      "offsetX": -6,
+      "offsetY": 4
+    },
     "buildCost": { "wood_plank": 4 },
     "buildTime": 40,
     "requiresRoad": true,
@@ -552,7 +606,13 @@
     "name": "Granite Mine",
     "description": "Cuts finished building stone at the mine face (same stock as a stonemason), using the mine shaft instead of surface rock. Miners need bread, ham, or fish.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 60, "color": "#696969", "spriteScale": 1.5, "offsetX": -6, "offsetY": 4},
+    "visual": {
+      "buildingHeight": 60,
+      "color": "#696969",
+      "spriteScale": 1.5,
+      "offsetX": -6,
+      "offsetY": 4
+    },
     "buildCost": { "wood_plank": 4 },
     "buildTime": 40,
     "requiresRoad": true,
@@ -618,7 +678,13 @@
     "name": "Mint",
     "description": "Mints gold coins from gold ore and coal for military upgrades.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 65, "color": "#ffd700", "spriteScale": 1.4, "offsetX": -3, "offsetY": 2 },
+    "visual": {
+      "buildingHeight": 65,
+      "color": "#ffd700",
+      "spriteScale": 1.4,
+      "offsetX": -3,
+      "offsetY": 2
+    },
     "buildCost": { "wood_plank": 2, "stone": 2 },
     "buildTime": 35,
     "requiresRoad": true,
@@ -641,7 +707,13 @@
     "name": "Metalworks",
     "description": "Crafts tools from boards and iron bars. Tool type based on settlement priorities.",
     "size": { "width": 3, "height": 3 },
-    "visual": { "buildingHeight": 65, "color": "#696969", "spriteScale": 1.4, "offsetX": -4, "offsetY": 4 },
+    "visual": {
+      "buildingHeight": 65,
+      "color": "#696969",
+      "spriteScale": 1.4,
+      "offsetX": -4,
+      "offsetY": 4
+    },
     "buildCost": { "wood_plank": 2, "stone": 2 },
     "buildTime": 35,
     "requiresRoad": true,
@@ -722,7 +794,13 @@
     "name": "Guardhouse",
     "description": "Medium military post garrisoning 3 soldiers.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 65, "color": "#8b1a1a", "spriteScale": 1.4, "offsetX": 0, "offsetY": 4 },
+    "visual": {
+      "buildingHeight": 65,
+      "color": "#8b1a1a",
+      "spriteScale": 1.4,
+      "offsetX": 0,
+      "offsetY": 4
+    },
     "buildCost": { "wood_plank": 2, "stone": 3 },
     "buildTime": 30,
     "requiresRoad": true,

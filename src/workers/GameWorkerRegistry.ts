@@ -25,7 +25,12 @@ import { createWorker } from '@/entities/EntityFactory';
 import { getSimulationNowMs } from '@/core/simulationClock';
 import { applyProductionCycleOutputs } from '@/systems/ProductionSystem';
 import { getEntityFaction, isPlayerOwned, setEntityFaction } from '@/components/ownerUtils';
-import type { ResourceType, BuildingDefinition, AnimationConfig, BuildingType } from '@/types/GameData';
+import type {
+  ResourceType,
+  BuildingDefinition,
+  AnimationConfig,
+  BuildingType,
+} from '@/types/GameData';
 import type { WildlifeCoordinator } from '@/wildlife/WildlifeCoordinator';
 
 const HQ_STREET_DISPATCH_SPACING_MS = 500;
@@ -71,7 +76,13 @@ type GatherAnimState = {
 type WellOperatorAnimState = {
   kind: 'well_operator';
   buildingEntityId: number;
-  phase: 'idle_left' | 'to_entrance' | 'waiting_at_well' | 'drawing' | 'to_idle' | 'interior_inside';
+  phase:
+    | 'idle_left'
+    | 'to_entrance'
+    | 'waiting_at_well'
+    | 'drawing'
+    | 'to_idle'
+    | 'interior_inside';
   idleTile: { x: number; y: number };
   workTile: { x: number; y: number };
   lastProductionTimer: number;
@@ -508,7 +519,7 @@ export class GameWorkerRegistry {
           );
           if (path.length > 0) {
             movable.setPath(path);
-          const workerComp = builderEntity.getComponent(Worker);
+            const workerComp = builderEntity.getComponent(Worker);
             if (workerComp) workerComp.setState('walking');
           }
         }
@@ -563,7 +574,11 @@ export class GameWorkerRegistry {
         continue;
       }
 
-      if (building.builderEntityId === null && building.isActive && building.areMaterialsDelivered()) {
+      if (
+        building.builderEntityId === null &&
+        building.isActive &&
+        building.areMaterialsDelivered()
+      ) {
         if (!this.tryReassignBuilderToSite(entity, constructionSites)) {
           this.spawnBuilder(entity);
         }
@@ -597,13 +612,14 @@ export class GameWorkerRegistry {
 
         const gx = Math.floor(workerPos.x + 1e-6);
         const gy = Math.floor(workerPos.y + 1e-6);
-        const onGoalTile =
-          targetTile && workerPos && gx === targetTile.x && gy === targetTile.y;
+        const onGoalTile = targetTile && workerPos && gx === targetTile.x && gy === targetTile.y;
 
         if (onGoalTile) {
           const building = buildingEntity.getComponent(Building);
           const workerComp = workerEntity.getComponent(Worker);
-          const def = building ? dataManager.getBuilding(building.buildingType as BuildingType) : null;
+          const def = building
+            ? dataManager.getBuilding(building.buildingType as BuildingType)
+            : null;
           const cap = def?.military?.soldierCapacity;
           if (building && workerComp && typeof cap === 'number' && cap > 0) {
             building.initMilitaryGarrison(cap);
@@ -740,14 +756,25 @@ export class GameWorkerRegistry {
 
       const bx = Math.floor(pos.x);
       const by = Math.floor(pos.y);
-      const perimeterTiles = this.getBuildingPerimeterTiles(bx, by, building.width, building.height);
+      const perimeterTiles = this.getBuildingPerimeterTiles(
+        bx,
+        by,
+        building.width,
+        building.height
+      );
       if (perimeterTiles.length === 0) continue;
 
-      const bottomFaceTiles = this.getBuildingBottomFacePerimeterTiles(bx, by, building.width, building.height);
+      const bottomFaceTiles = this.getBuildingBottomFacePerimeterTiles(
+        bx,
+        by,
+        building.width,
+        building.height
+      );
 
       const cx = Math.floor(builderPos.x);
       const cy = Math.floor(builderPos.y);
-      const manhattan1 = (t: { x: number; y: number }) => Math.abs(t.x - cx) + Math.abs(t.y - cy) === 1;
+      const manhattan1 = (t: { x: number; y: number }) =>
+        Math.abs(t.x - cx) + Math.abs(t.y - cy) === 1;
 
       const adjacentBottom = bottomFaceTiles.filter(manhattan1);
       const adjacentFull = perimeterTiles.filter(manhattan1);
@@ -851,7 +878,8 @@ export class GameWorkerRegistry {
         if (isInterior) {
           if (movable?.isMoving) continue;
           const onWork =
-            Math.floor(workerPos.x) === state.workTile.x && Math.floor(workerPos.y) === state.workTile.y;
+            Math.floor(workerPos.x) === state.workTile.x &&
+            Math.floor(workerPos.y) === state.workTile.y;
           if (!onWork) {
             const wpath = pathToWork();
             if (wpath.length > 0 && movable) {
@@ -964,7 +992,8 @@ export class GameWorkerRegistry {
 
         if (state.phase === 'waiting_at_well') {
           const onWork =
-            Math.floor(workerPos.x) === state.workTile.x && Math.floor(workerPos.y) === state.workTile.y;
+            Math.floor(workerPos.x) === state.workTile.x &&
+            Math.floor(workerPos.y) === state.workTile.y;
           if (!onWork) {
             const wpath = pathToWork();
             if (wpath.length > 0 && movable) {
@@ -998,7 +1027,8 @@ export class GameWorkerRegistry {
 
         if (state.phase === 'idle_left') {
           const onIdle =
-            Math.floor(workerPos.x) === state.idleTile.x && Math.floor(workerPos.y) === state.idleTile.y;
+            Math.floor(workerPos.x) === state.idleTile.x &&
+            Math.floor(workerPos.y) === state.idleTile.y;
           if (!onIdle) {
             const ret = pathToIdle();
             if (ret.length > 0 && movable) {
@@ -1151,7 +1181,7 @@ export class GameWorkerRegistry {
             if (!gather.terrainModified) {
               const nowMsH = getSimulationNowMs();
               if (gather.digUntilMs === undefined) {
-                const digSec = animH?.type === 'gather' ? animH.digAtSiteSec ?? 2.5 : 2.5;
+                const digSec = animH?.type === 'gather' ? (animH.digAtSiteSec ?? 2.5) : 2.5;
                 gather.digUntilMs = nowMsH + digSec * 1000;
                 workerComp.visualActivity = 'production_gather';
                 workerComp.setState('working');
@@ -1190,7 +1220,10 @@ export class GameWorkerRegistry {
           const bDef = bldg ? dataManager.getBuilding(bldg.buildingType) : null;
           const anim = bDef?.animation;
 
-          if ((gather.rockGather || gather.waterGather || gather.mineGather) && anim?.type === 'gather') {
+          if (
+            (gather.rockGather || gather.waterGather || gather.mineGather) &&
+            anim?.type === 'gather'
+          ) {
             const nowMs = getSimulationNowMs();
             if (gather.digUntilMs === undefined) {
               if (gather.waterGather && bldg && anim && bDef?.production) {
@@ -1201,7 +1234,9 @@ export class GameWorkerRegistry {
                   if (rem <= 0) {
                     gather.waterFishPickAttempts = (gather.waterFishPickAttempts ?? 0) + 1;
                     if (gather.waterFishPickAttempts <= 4) {
-                      this.reservedTreeTiles.delete(`${gather.targetTile.x},${gather.targetTile.y}`);
+                      this.reservedTreeTiles.delete(
+                        `${gather.targetTile.x},${gather.targetTile.y}`
+                      );
                       const gatherRadius =
                         bDef.production?.maxGatherRadius ?? anim.searchRadius ?? 7;
                       const maxWalkCells =
@@ -1246,7 +1281,9 @@ export class GameWorkerRegistry {
                   }
                 }
               }
-              const digSec = gather.waterGather ? 40 + Math.random() * 10 : anim.digAtSiteSec ?? 4;
+              const digSec = gather.waterGather
+                ? 40 + Math.random() * 10
+                : (anim.digAtSiteSec ?? 4);
               gather.digUntilMs = nowMs + digSec * 1000;
               workerComp.visualActivity = 'production_gather';
               workerComp.setState('working');
@@ -1256,8 +1293,14 @@ export class GameWorkerRegistry {
 
             if (!gather.terrainModified) {
               const productionRule = bDef?.production;
-              const fishWx = gather.waterGather && gather.fisherWaterTile ? gather.fisherWaterTile.x : gather.targetTile.x;
-              const fishWy = gather.waterGather && gather.fisherWaterTile ? gather.fisherWaterTile.y : gather.targetTile.y;
+              const fishWx =
+                gather.waterGather && gather.fisherWaterTile
+                  ? gather.fisherWaterTile.x
+                  : gather.targetTile.x;
+              const fishWy =
+                gather.waterGather && gather.fisherWaterTile
+                  ? gather.fisherWaterTile.y
+                  : gather.targetTile.y;
               const tile = tileMap.getTile(fishWx, fishWy);
 
               if (gather.mineGather) {
@@ -1283,9 +1326,15 @@ export class GameWorkerRegistry {
                   if (rem <= 0) {
                     const newTerrain = anim.terrainTransition[tile.terrain];
                     if (newTerrain) {
-                      tileMap.setTerrain(gather.targetTile.x, gather.targetTile.y, newTerrain as never);
+                      tileMap.setTerrain(
+                        gather.targetTile.x,
+                        gather.targetTile.y,
+                        newTerrain as never
+                      );
                       delete tile.rockHarvestsRemaining;
-                      render.updateMinimapTiles([{ x: gather.targetTile.x, y: gather.targetTile.y }]);
+                      render.updateMinimapTiles([
+                        { x: gather.targetTile.x, y: gather.targetTile.y },
+                      ]);
                     }
                   } else {
                     tile.rockHarvestsRemaining = rem;
@@ -1400,7 +1449,9 @@ export class GameWorkerRegistry {
             if (building) building.animationWorkerId = null;
             if (gather.rockGather || gather.waterGather || gather.mineGather || gather.wildHunt) {
               const prod = buildingEntity.getComponent(Production);
-              applyProductionCycleOutputs(buildingEntity, { suppressPickup: !isPlayerOwned(buildingEntity) });
+              applyProductionCycleOutputs(buildingEntity, {
+                suppressPickup: !isPlayerOwned(buildingEntity),
+              });
               if (prod && prod.continuous) {
                 prod.timer = 0;
               }
@@ -1493,8 +1544,19 @@ export class GameWorkerRegistry {
       if (pos) {
         const bx = Math.floor(pos.x);
         const by = Math.floor(pos.y);
-        const perimeterTiles = this.getBuildingPerimeterTiles(bx, by, building.width, building.height);
-        prefixPath = this.findPerimeterPath(builderX, builderY, roadTile.x, roadTile.y, perimeterTiles);
+        const perimeterTiles = this.getBuildingPerimeterTiles(
+          bx,
+          by,
+          building.width,
+          building.height
+        );
+        prefixPath = this.findPerimeterPath(
+          builderX,
+          builderY,
+          roadTile.x,
+          roadTile.y,
+          perimeterTiles
+        );
       }
 
       if (prefixPath.length === 0) {
@@ -1582,13 +1644,19 @@ export class GameWorkerRegistry {
       const chosenPath =
         roadPath.length > 0
           ? roadPath
-          : (fallbackPath.length > 0 ? fallbackPath : [new Position(spawnTile.x, spawnTile.y)]);
+          : fallbackPath.length > 0
+            ? fallbackPath
+            : [new Position(spawnTile.x, spawnTile.y)];
       movable.setPath(chosenPath);
       this.returningWorkers.add(wid);
     }
   }
 
-  private sendWorkerBackToBaseCamp(workerEntity: Entity, sourceBuildingEntity: Entity, speed: number = 1.8): boolean {
+  private sendWorkerBackToBaseCamp(
+    workerEntity: Entity,
+    sourceBuildingEntity: Entity,
+    speed: number = 1.8
+  ): boolean {
     const spawnTile = this.findBaseCampSpawnTile();
     if (!spawnTile) return false;
 
@@ -1620,7 +1688,11 @@ export class GameWorkerRegistry {
     return true;
   }
 
-  sendLooseWorkerBackToBaseCamp(workerEntity: Entity, sourceBuildingEntity: Entity, speed: number = 1.8): boolean {
+  sendLooseWorkerBackToBaseCamp(
+    workerEntity: Entity,
+    sourceBuildingEntity: Entity,
+    speed: number = 1.8
+  ): boolean {
     return this.sendWorkerBackToBaseCamp(workerEntity, sourceBuildingEntity, speed);
   }
 
@@ -1650,17 +1722,22 @@ export class GameWorkerRegistry {
   }
 
   /** Remove attached worker entities and clear registry entries when a building is destroyed. */
-  detachWorkersForDestroyedBuilding(entity: Entity, opts?: { retreatOwnerWorkers?: boolean }): void {
+  detachWorkersForDestroyedBuilding(
+    entity: Entity,
+    opts?: { retreatOwnerWorkers?: boolean }
+  ): void {
     const building = entity.getComponent(Building);
     if (!building) return;
 
     const entities = [...this.world.getEntities()];
-    const retreatFaction = opts?.retreatOwnerWorkers || !isPlayerOwned(entity) ? getEntityFaction(entity) : null;
+    const retreatFaction =
+      opts?.retreatOwnerWorkers || !isPlayerOwned(entity) ? getEntityFaction(entity) : null;
 
     if (building.builderEntityId != null) {
       const builderEntity = entities.find(e => e.id === building.builderEntityId && e.active);
       if (builderEntity) {
-        if (retreatFaction) this.retreatWorkerToFactionHeadquarters(builderEntity, retreatFaction, entity);
+        if (retreatFaction)
+          this.retreatWorkerToFactionHeadquarters(builderEntity, retreatFaction, entity);
         else this.world.removeEntity(builderEntity);
       }
       this.builderWorkers.delete(building.builderEntityId);
@@ -1673,7 +1750,8 @@ export class GameWorkerRegistry {
         if (retreatFaction) {
           this.retreatWorkerToFactionHeadquarters(animWorker, retreatFaction, entity);
         } else if (isPlayerOwned(entity)) {
-          if (!this.sendWorkerBackToBaseCamp(animWorker, entity)) this.world.removeEntity(animWorker);
+          if (!this.sendWorkerBackToBaseCamp(animWorker, entity))
+            this.world.removeEntity(animWorker);
         } else {
           this.world.removeEntity(animWorker);
         }
@@ -1697,7 +1775,8 @@ export class GameWorkerRegistry {
       if (payload.buildingId === entity.id) {
         const workerEntity = entities.find(e => e.id === workerId && e.active);
         if (workerEntity) {
-          if (retreatFaction) this.retreatWorkerToFactionHeadquarters(workerEntity, retreatFaction, entity);
+          if (retreatFaction)
+            this.retreatWorkerToFactionHeadquarters(workerEntity, retreatFaction, entity);
           else this.world.removeEntity(workerEntity);
         }
         this.world.returnToolSpecialistToHq(payload.tool);
@@ -1710,7 +1789,8 @@ export class GameWorkerRegistry {
       if (buildingId === entity.id) {
         const workerEntity = entities.find(e => e.id === workerId && e.active);
         if (workerEntity) {
-          if (retreatFaction) this.retreatWorkerToFactionHeadquarters(workerEntity, retreatFaction, entity);
+          if (retreatFaction)
+            this.retreatWorkerToFactionHeadquarters(workerEntity, retreatFaction, entity);
           else this.world.removeEntity(workerEntity);
         }
         this.militaryDispatchWorkers.delete(workerId);
@@ -1718,7 +1798,11 @@ export class GameWorkerRegistry {
     }
   }
 
-  private retreatWorkerToFactionHeadquarters(workerEntity: Entity, factionId: string, sourceBuildingEntity: Entity): void {
+  private retreatWorkerToFactionHeadquarters(
+    workerEntity: Entity,
+    factionId: string,
+    sourceBuildingEntity: Entity
+  ): void {
     const entities = [...this.world.getEntities()];
     const hq = entities.find(e => {
       if (!e.active || getEntityFaction(e) !== factionId) return false;
@@ -1729,13 +1813,18 @@ export class GameWorkerRegistry {
       return;
     }
 
-    const target = this.findBuildingAdjacentRoadTile(hq) ?? (() => {
-      const hqPos = hq.getComponent(Position);
-      const hqBuilding = hq.getComponent(Building);
-      return hqPos && hqBuilding
-        ? { x: hqPos.x + Math.floor(hqBuilding.width / 2), y: hqPos.y + Math.floor(hqBuilding.height / 2) }
-        : null;
-    })();
+    const target =
+      this.findBuildingAdjacentRoadTile(hq) ??
+      (() => {
+        const hqPos = hq.getComponent(Position);
+        const hqBuilding = hq.getComponent(Building);
+        return hqPos && hqBuilding
+          ? {
+              x: hqPos.x + Math.floor(hqBuilding.width / 2),
+              y: hqPos.y + Math.floor(hqBuilding.height / 2),
+            }
+          : null;
+      })();
     if (!target) {
       this.world.removeEntity(workerEntity);
       return;
@@ -1826,7 +1915,11 @@ export class GameWorkerRegistry {
 
     let streetPath: Position[] = [];
     if (spawnTile && (spawnX !== near.x || spawnY !== near.y)) {
-      let path = pathFinder.findPath(new Position(spawnX, spawnY), new Position(near.x, near.y), tileMap);
+      let path = pathFinder.findPath(
+        new Position(spawnX, spawnY),
+        new Position(near.x, near.y),
+        tileMap
+      );
       if (path.length > 0) {
         const endX = path[path.length - 1]!.x;
         const endY = path[path.length - 1]!.y;
@@ -1850,7 +1943,9 @@ export class GameWorkerRegistry {
       }
     }
 
-    console.log(`Road worker spawned for segment #${segment.id} at (${spawnX},${spawnY}) → rest (${rest.x},${rest.y})`);
+    console.log(
+      `Road worker spawned for segment #${segment.id} at (${spawnX},${spawnY}) → rest (${rest.x},${rest.y})`
+    );
     this.roadSegmentWorkers.add(worker.id);
     return worker.id;
   }
@@ -1867,27 +1962,42 @@ export class GameWorkerRegistry {
       if (workerComp.carryingResource) {
         const p = entity.getComponent(Position);
         if (p) {
-          const items = workerComp.carryingItems.length > 0
-            ? workerComp.carryingItems
-            : Array.from({ length: Math.max(1, workerComp.carryingAmount || task.amount || 1) }, () => ({
-              resourceType: workerComp.carryingResource!,
-              destinationEntityId: task.destEntityId ?? null,
-            }));
+          const items =
+            workerComp.carryingItems.length > 0
+              ? workerComp.carryingItems
+              : Array.from(
+                  { length: Math.max(1, workerComp.carryingAmount || task.amount || 1) },
+                  () => ({
+                    resourceType: workerComp.carryingResource!,
+                    destinationEntityId: task.destEntityId ?? null,
+                  })
+                );
           for (const item of items) {
-            transportManager.addJunctionItem(Math.floor(p.x), Math.floor(p.y), item.resourceType, item.destinationEntityId);
+            transportManager.addJunctionItem(
+              Math.floor(p.x),
+              Math.floor(p.y),
+              item.resourceType,
+              item.destinationEntityId
+            );
           }
         }
         workerComp.dropResource();
       } else if (task.phase === 'to_pickup' && task.sourceEntityId === null) {
-        const items = task.items && task.items.length > 0
-          ? task.items
-          : Array.from({ length: Math.max(1, task.amount || 1) }, () => ({
-            resourceType: task.resourceType,
-            destinationEntityId: task.destEntityId,
-          }));
+        const items =
+          task.items && task.items.length > 0
+            ? task.items
+            : Array.from({ length: Math.max(1, task.amount || 1) }, () => ({
+                resourceType: task.resourceType,
+                destinationEntityId: task.destEntityId,
+              }));
         transportManager.removePendingPickupItems(task.pickupPos.x, task.pickupPos.y, items);
         for (const item of items) {
-          transportManager.addJunctionItem(task.pickupPos.x, task.pickupPos.y, item.resourceType, item.destinationEntityId);
+          transportManager.addJunctionItem(
+            task.pickupPos.x,
+            task.pickupPos.y,
+            item.resourceType,
+            item.destinationEntityId
+          );
         }
       }
       workerComp.transportTask = null;
@@ -2037,7 +2147,12 @@ export class GameWorkerRegistry {
   ): { x: number; y: number } | null {
     for (let dy = 0; dy < building.height; dy++) {
       for (let dx = 0; dx < building.width; dx++) {
-        const adjacent = this.findAdjacentNetworkRoadTile(pos.x + dx, pos.y + dy, tileMap, connected);
+        const adjacent = this.findAdjacentNetworkRoadTile(
+          pos.x + dx,
+          pos.y + dy,
+          tileMap,
+          connected
+        );
         if (adjacent) return adjacent;
       }
     }
@@ -2078,7 +2193,12 @@ export class GameWorkerRegistry {
       const ey = pos.y + entrance.dy;
       const adjacent = this.findAdjacentNetworkRoadTile(ex, ey, tileMap, connected);
       if (adjacent) return adjacent;
-      return this.findFootprintAdjacentNetworkRoadTile(pos, building, tileMap, connected) ?? { x: ex, y: ey };
+      return (
+        this.findFootprintAdjacentNetworkRoadTile(pos, building, tileMap, connected) ?? {
+          x: ex,
+          y: ey,
+        }
+      );
     }
 
     return this.findFootprintAdjacentNetworkRoadTile(pos, building, tileMap, connected);
@@ -2141,18 +2261,22 @@ export class GameWorkerRegistry {
     const donorBuilding = donorEntity.getComponent(Building);
     if (!donorBuilding || donorBuilding.builderEntityId == null) return false;
 
-    const builderEntity = this.world.getEntities().find(e => e.id === donorBuilding.builderEntityId && e.active);
+    const builderEntity = this.world
+      .getEntities()
+      .find(e => e.id === donorBuilding.builderEntityId && e.active);
     const builderPos = builderEntity?.getComponent(Position);
     const movable = builderEntity?.getComponent(Movable);
     const worker = builderEntity?.getComponent(Worker);
     const targetTile = this.findBuildingAdjacentRoadTile(targetEntity);
     if (!builderEntity || !builderPos || !movable || !worker || !targetTile) return false;
 
-    const path = this.world.getPathFinder().findPath(
-      new Position(Math.floor(builderPos.x), Math.floor(builderPos.y)),
-      new Position(targetTile.x, targetTile.y),
-      this.world.getTileMap()
-    );
+    const path = this.world
+      .getPathFinder()
+      .findPath(
+        new Position(Math.floor(builderPos.x), Math.floor(builderPos.y)),
+        new Position(targetTile.x, targetTile.y),
+        this.world.getTileMap()
+      );
     if (path.length === 0) return false;
 
     donorBuilding.builderEntityId = null;
@@ -2412,23 +2536,32 @@ export class GameWorkerRegistry {
     movable?.clearPath();
   }
 
-  private fallbackInteriorTiles(buildingEntity: Entity): { idle: { x: number; y: number }; work: { x: number; y: number } } | null {
+  private fallbackInteriorTiles(
+    buildingEntity: Entity
+  ): { idle: { x: number; y: number }; work: { x: number; y: number } } | null {
     const pos = buildingEntity.getComponent(Position);
     const building = buildingEntity.getComponent(Building);
     if (!pos || !building) return null;
     const road = this.findBuildingAdjacentRoadTile(buildingEntity);
     const entrance = building.getEntranceOffset();
-    const work = road ?? (entrance ? { x: pos.x + entrance.dx, y: pos.y + entrance.dy } : { x: pos.x, y: pos.y });
+    const work =
+      road ??
+      (entrance ? { x: pos.x + entrance.dx, y: pos.y + entrance.dy } : { x: pos.x, y: pos.y });
     return { idle: work, work };
   }
 
-  private createConcealedInteriorOperator(buildingEntity: Entity, anim: Extract<AnimationConfig, { type: 'interior_operator' }>): boolean {
+  private createConcealedInteriorOperator(
+    buildingEntity: Entity,
+    anim: Extract<AnimationConfig, { type: 'interior_operator' }>
+  ): boolean {
     const building = buildingEntity.getComponent(Building);
     const pos = buildingEntity.getComponent(Position);
     const production = buildingEntity.getComponent(Production);
     if (!building || !pos || !production || building.animationWorkerId != null) return false;
 
-    const tiles = this.computeInteriorApproachTiles(buildingEntity) ?? this.fallbackInteriorTiles(buildingEntity);
+    const tiles =
+      this.computeInteriorApproachTiles(buildingEntity) ??
+      this.fallbackInteriorTiles(buildingEntity);
     if (!tiles) return false;
 
     const bx = Math.floor(pos.x);
@@ -2566,8 +2699,7 @@ export class GameWorkerRegistry {
     const pathFinder = this.world.getPathFinder();
 
     const stonesPer = buildingDef.production?.stonesPerRockTile ?? 10;
-    const gatherRadius =
-      buildingDef.production?.maxGatherRadius ?? anim.searchRadius;
+    const gatherRadius = buildingDef.production?.maxGatherRadius ?? anim.searchRadius;
     const maxWalkCells =
       buildingDef.production?.maxGatherWalkCells ??
       buildingDef.production?.maxGatherRadius ??
@@ -2933,7 +3065,12 @@ export class GameWorkerRegistry {
     }
   }
 
-  private getBuildingPerimeterTiles(bx: number, by: number, w: number, h: number): { x: number; y: number }[] {
+  private getBuildingPerimeterTiles(
+    bx: number,
+    by: number,
+    w: number,
+    h: number
+  ): { x: number; y: number }[] {
     const tiles: { x: number; y: number }[] = [];
     const tileMap = this.world.getTileMap();
     for (let x = bx - 1; x <= bx + w; x++) {
@@ -2985,7 +3122,9 @@ export class GameWorkerRegistry {
     tileSet.add(key(endX, endY));
 
     const visited = new Set<string>();
-    const queue: { x: number; y: number; path: Position[] }[] = [{ x: startX, y: startY, path: [] }];
+    const queue: { x: number; y: number; path: Position[] }[] = [
+      { x: startX, y: startY, path: [] },
+    ];
     visited.add(key(startX, startY));
 
     while (queue.length > 0) {

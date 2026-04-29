@@ -7,12 +7,14 @@ This is a large-world game (1000x1000 tiles). Every rendering decision must assu
 ## Terrain & Tile Rendering
 
 ### Atlas pattern (current approach)
+
 - Each terrain type is a **single pre-rendered sprite atlas** (1024x512 canvas) containing a 16x16 grid of diamond-clipped tiles
 - All atlases are generated once at startup using procedural noise
 - At render time, each tile is a single `ctx.drawImage()` call with source rect — no pixel manipulation, no noise computation, no canvas creation
 - Noise uses **world-space coordinates** so tiles blend seamlessly across boundaries
 
 ### Rules for new terrain types or visual features
+
 1. **Never create canvas elements per tile at runtime.** Use the atlas pattern: pre-render into a sprite sheet at startup
 2. **Never compute noise or pixel-level effects per frame.** Bake everything into atlas textures
 3. **Never use `ctx.clip()`, `ctx.createPattern()`, or `ctx.getImageData()` during the render loop.** These are slow when called thousands of times
@@ -20,11 +22,13 @@ This is a large-world game (1000x1000 tiles). Every rendering decision must assu
 5. Diamond masking must be baked into the atlas (transparent pixels outside the diamond), not applied at render time
 
 ### Shoreline contour overlay
+
 - Water cells remain tile-based for gameplay and atlas rendering.
 - `RenderSystem.renderShorelineContour()` traces explored water/land boundaries with marching squares, simplifies the resulting polylines in screen space, fills closed lake contours, fills darker closed depth-band contours, and strokes a narrow shoreline band over the tile art.
 - Keep this as a viewport-bounded vector overlay. Do not reintroduce per-tile clipping rectangles or overlapping ellipse blobs for lake smoothing.
 
 ### Adding new terrain types
+
 1. Add a generator function following the existing pattern (world-space coordinates, writes to r/g/b buffers)
 2. Register it in the `GENERATORS` map
 3. The atlas system handles the rest automatically — no per-tile cache or runtime generation needed
@@ -32,6 +36,7 @@ This is a large-world game (1000x1000 tiles). Every rendering decision must assu
 ## General Canvas 2D Performance
 
 ### Do
+
 - **Viewport cull** — only process tiles/entities within visible bounds (already implemented)
 - **Cache viewport bounds** — recalculate only when camera moves (already implemented)
 - **Batch similar operations** — minimize state changes (fillStyle, strokeStyle, font)
@@ -40,6 +45,7 @@ This is a large-world game (1000x1000 tiles). Every rendering decision must assu
 - **Use typed arrays** (Float64Array, Uint8Array) for bulk pixel/data operations
 
 ### Don't
+
 - Don't create/destroy canvas elements during gameplay
 - Don't use `save()`/`restore()` inside tight loops when you can reset manually
 - Don't use string concatenation for colors in hot paths — pre-compute color strings
@@ -63,6 +69,7 @@ This is a large-world game (1000x1000 tiles). Every rendering decision must assu
 ## Profiling
 
 When investigating performance:
+
 1. Check FPS counter (already in UI)
 2. Use Chrome DevTools Performance tab — look for long frames
 3. Common culprits: too many drawImage calls (reduce visible area), GC pauses (avoid object allocation in render loop), excessive state changes

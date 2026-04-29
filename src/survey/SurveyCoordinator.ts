@@ -26,14 +26,12 @@ export type SurveyOverlayForRender = {
   flags: Array<{ x: number; y: number }>;
   labels: Array<{ x: number; y: number; resource: ResourceType }>;
   /** Progress while walking/digging the sampled cells (null if idle). */
-  progress:
-    | {
-        centerX: number;
-        centerY: number;
-        progress01: number;
-        currentCell: { x: number; y: number } | null;
-      }
-    | null;
+  progress: {
+    centerX: number;
+    centerY: number;
+    progress01: number;
+    currentCell: { x: number; y: number } | null;
+  } | null;
 };
 
 type SurveyLabel = {
@@ -67,7 +65,11 @@ function manhattan(ax: number, ay: number, bx: number, by: number): number {
   return Math.abs(ax - bx) + Math.abs(ay - by);
 }
 
-function cellsWithinManhattan(cx: number, cy: number, maxSteps: number): { x: number; y: number }[] {
+function cellsWithinManhattan(
+  cx: number,
+  cy: number,
+  maxSteps: number
+): { x: number; y: number }[] {
   const out: { x: number; y: number }[] = [];
   for (let y = cy - maxSteps; y <= cy + maxSteps; y++) {
     for (let x = cx - maxSteps; x <= cx + maxSteps; x++) {
@@ -114,7 +116,11 @@ function findNearestHqRoadToPoint(
   return null;
 }
 
-function buildSurveyCellQueue(tileMap: TileMap, centerX: number, centerY: number): { x: number; y: number }[] {
+function buildSurveyCellQueue(
+  tileMap: TileMap,
+  centerX: number,
+  centerY: number
+): { x: number; y: number }[] {
   const pool = cellsWithinManhattan(centerX, centerY, SURVEY_MAX_MANHATTAN_STEPS).filter(c =>
     tileMap.isInBounds(c.x, c.y)
   );
@@ -315,8 +321,16 @@ export class SurveyCoordinator {
       const anchor = findNearestHqRoadToPoint(sx, sy, connected, tileMap, 64);
       const anchorGoal = findNearestHqRoadToPoint(gx, gy, connected, tileMap, 64);
       if (anchor && anchorGoal) {
-        const a = pathFinder.findOffRoadPath(new Position(sx, sy), new Position(anchor.x, anchor.y), tileMap);
-        const r = pathFinder.findPath(new Position(anchor.x, anchor.y), new Position(anchorGoal.x, anchorGoal.y), tileMap);
+        const a = pathFinder.findOffRoadPath(
+          new Position(sx, sy),
+          new Position(anchor.x, anchor.y),
+          tileMap
+        );
+        const r = pathFinder.findPath(
+          new Position(anchor.x, anchor.y),
+          new Position(anchorGoal.x, anchorGoal.y),
+          tileMap
+        );
         const b = pathFinder.findOffRoadPath(
           new Position(anchorGoal.x, anchorGoal.y),
           new Position(gx + 0.5, gy + 0.5),
@@ -460,9 +474,7 @@ export class SurveyCoordinator {
           this.abortSurveyAt(i, 'Surveyor lost');
           continue;
         }
-        const atSpawn =
-          !movable.isMoving &&
-          this.atGridCell(pos, s.spawnTile.x, s.spawnTile.y);
+        const atSpawn = !movable.isMoving && this.atGridCell(pos, s.spawnTile.x, s.spawnTile.y);
         if (atSpawn) {
           this.deps.removeEntity(ent);
           this.deps.detachSurveyorWorker(wid);
@@ -548,7 +560,9 @@ export class SurveyCoordinator {
       }
       p01 = Math.min(1, p01);
       const cur =
-        s.seqSub === 'to_cell' || s.seqSub === 'digging' ? s.cellsQueue[s.seqIndex] ?? null : null;
+        s.seqSub === 'to_cell' || s.seqSub === 'digging'
+          ? (s.cellsQueue[s.seqIndex] ?? null)
+          : null;
       progress = {
         centerX: s.centerX,
         centerY: s.centerY,

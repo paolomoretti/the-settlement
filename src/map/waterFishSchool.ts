@@ -23,5 +23,7 @@ export function waterFishCellSeed(mapSeed: number, x: number, y: number): number
 /** Deterministic per-cell cap roll (5–15); used when building a lake-wide cluster budget. */
 export function rollWaterFishSchoolMax(mapSeed: number, x: number, y: number): number {
   const rng = mulberry32(waterFishCellSeed(mapSeed, x, y));
-  return WATER_FISH_SCHOOL_MIN + Math.floor(rng() * (WATER_FISH_SCHOOL_MAX - WATER_FISH_SCHOOL_MIN + 1));
+  return (
+    WATER_FISH_SCHOOL_MIN + Math.floor(rng() * (WATER_FISH_SCHOOL_MAX - WATER_FISH_SCHOOL_MIN + 1))
+  );
 }

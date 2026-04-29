@@ -70,7 +70,7 @@ export class Building extends Component {
     if (this.width <= 1 && this.height <= 1) return null;
     return {
       dx: this.width - 1,
-      dy: Math.ceil((this.height - 1) / 2)
+      dy: Math.ceil((this.height - 1) / 2),
     };
   }
 
@@ -124,9 +124,9 @@ export class Building extends Component {
   }
 
   canStartConstruction(): boolean {
-    return this.state === 'awaiting_materials' &&
-           this.builderArrived &&
-           this.areMaterialsDelivered();
+    return (
+      this.state === 'awaiting_materials' && this.builderArrived && this.areMaterialsDelivered()
+    );
   }
 
   beginConstruction(nowMs: number = getSimulationNowMs()): void {
@@ -170,7 +170,8 @@ export class Building extends Component {
   }
 
   assignMilitarySlot(slotIndex: number, workerEntityId: number): void {
-    if (!this.militaryGarrison || slotIndex < 0 || slotIndex >= this.militaryGarrison.length) return;
+    if (!this.militaryGarrison || slotIndex < 0 || slotIndex >= this.militaryGarrison.length)
+      return;
     this.militaryGarrison[slotIndex] = { rank: 1, workerEntityId };
     this.militaryTerritoryEstablished = true;
   }

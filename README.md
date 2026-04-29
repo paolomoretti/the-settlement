@@ -17,13 +17,14 @@ The Settlement is a browser-based city-building game inspired by the classic The
 - **Fog of War** - Exploration system revealing the map as you play
 - **Interactive Minimap** - Click to navigate, see explored regions
 - **Building System** - Multi-tile buildings (warehouse 3×3, lumberjack 2×2)
-- **Road Network** - Workers pathfind along roads using A* algorithm
+- **Road Network** - Workers pathfind along roads using A\* algorithm
 - **Save/Load** - Compressed save system using seed-based terrain regeneration
 - **Touch Support** - Fully playable on mobile devices
 
 ## 🚀 Getting Started
 
 ### Prerequisites
+
 - Node.js 18+ and npm
 
 ### Installation
@@ -56,6 +57,7 @@ We're using AI-generated sprites in the style of The Settlers II. For detailed i
 **📖 [Asset Guide](./.claude/ASSET_GUIDE.md)**
 
 Quick summary:
+
 - **Terrain tiles**: 64×32px isometric diamonds
 - **Buildings**: Multi-tile sprites with transparency
 - **Style**: Hand-painted medieval fantasy, warm colors
@@ -116,6 +118,7 @@ All terrain is regenerated from a single **seed** for efficient save/load.
 ## 💾 Save System
 
 Saves include:
+
 - Terrain seed (regenerates identical world)
 - Explored tiles (compressed coordinate list)
 - Roads (compressed coordinate list)
@@ -128,7 +131,7 @@ Result: ~200KB save file instead of 100MB!
 - **TypeScript** - Type-safe development
 - **Vite** - Fast build tool and dev server
 - **Canvas 2D** - Rendering engine
-- **pathfinding** - A* pathfinding library
+- **pathfinding** - A\* pathfinding library
 - **howler.js** - Audio management (future)
 
 ## 📋 Roadmap

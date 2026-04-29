@@ -3,26 +3,26 @@
  * Currently a placeholder - ready for sound integration
  */
 
-import { Howl, Howler } from "howler";
+import { Howl, Howler } from 'howler';
 
 export type SoundEvent =
-  | "build_placed"
-  | "road_build"
-  | "demolish"
-  | "erase_demolition"
-  | "building_complete"
-  | "battle_clash_1"
-  | "battle_clash_2"
-  | "battle_victory"
-  | "battle_loss"
-  | "forest_1"
-  | "forest_2"
-  | "worker_spawn"
-  | "footstep"
-  | "chop_wood"
-  | "hammer"
-  | "ambient_birds"
-  | "ui_click";
+  | 'build_placed'
+  | 'road_build'
+  | 'demolish'
+  | 'erase_demolition'
+  | 'building_complete'
+  | 'battle_clash_1'
+  | 'battle_clash_2'
+  | 'battle_victory'
+  | 'battle_loss'
+  | 'forest_1'
+  | 'forest_2'
+  | 'worker_spawn'
+  | 'footstep'
+  | 'chop_wood'
+  | 'hammer'
+  | 'ambient_birds'
+  | 'ui_click';
 
 export class AudioManager {
   private sounds: Map<SoundEvent, Howl> = new Map();
@@ -42,7 +42,7 @@ export class AudioManager {
         new Howl({
           src: [path],
           volume,
-        }),
+        })
       );
     }
   }

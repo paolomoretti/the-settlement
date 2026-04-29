@@ -58,11 +58,7 @@ export function buildBuildingHoverLines(entity: Entity): { title: string; lines:
       building.buildingType === 'lumberjack' ||
       building.buildingType === 'quarry' ||
       building.buildingType === 'fisher';
-    if (
-      mapGather &&
-      building.outOfMapResources &&
-      production?.status === 'producing'
-    ) {
+    if (mapGather && building.outOfMapResources && production?.status === 'producing') {
       lines.push('Nothing to gather within reach of this building.');
     }
     if (
@@ -111,7 +107,8 @@ export function buildBuildingHoverLines(entity: Entity): { title: string; lines:
     }
 
     if (!building.hasOperator && def?.requiredTool) {
-      const toolName = dataManager.getResource(def.requiredTool as ResourceType)?.name ?? def.requiredTool;
+      const toolName =
+        dataManager.getResource(def.requiredTool as ResourceType)?.name ?? def.requiredTool;
       lines.push(`Waiting for the ${toolName} worker to arrive.`);
     }
 
@@ -238,10 +235,14 @@ export function buildRockTileHoverLines(tile: Tile): { title: string; lines: str
   return { title, lines };
 }
 
-export function getHoverTargetKey(game: {
-  tileMap: { getTile: (x: number, y: number) => Tile | null };
-  getBuildingEntityAtGrid: (x: number, y: number) => Entity | null;
-}, gx: number, gy: number): string | null {
+export function getHoverTargetKey(
+  game: {
+    tileMap: { getTile: (x: number, y: number) => Tile | null };
+    getBuildingEntityAtGrid: (x: number, y: number) => Entity | null;
+  },
+  gx: number,
+  gy: number
+): string | null {
   const building = game.getBuildingEntityAtGrid(gx, gy);
   if (building) return `b:${building.id}`;
   const tile = game.tileMap.getTile(gx, gy);

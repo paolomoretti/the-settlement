@@ -130,7 +130,9 @@ export class CanvasHoverTooltip {
       const insight = buildBuildingHoverLines(building);
       if (insight) {
         this.titleEl.textContent = insight.title;
-        this.bodyEl.innerHTML = insight.lines.map(l => `<div class="canvas-hover-tooltip-line">${escapeHtml(l)}</div>`).join('');
+        this.bodyEl.innerHTML = insight.lines
+          .map(l => `<div class="canvas-hover-tooltip-line">${escapeHtml(l)}</div>`)
+          .join('');
         return;
       }
     }
@@ -140,13 +142,17 @@ export class CanvasHoverTooltip {
       const rock = buildRockTileHoverLines(t);
       if (rock) {
         this.titleEl.textContent = rock.title;
-        this.bodyEl.innerHTML = rock.lines.map(l => `<div class="canvas-hover-tooltip-line">${escapeHtml(l)}</div>`).join('');
+        this.bodyEl.innerHTML = rock.lines
+          .map(l => `<div class="canvas-hover-tooltip-line">${escapeHtml(l)}</div>`)
+          .join('');
         return;
       }
       const water = buildWaterFishHoverLines(t, game.tileMap, gx, gy);
       if (water) {
         this.titleEl.textContent = water.title;
-        this.bodyEl.innerHTML = water.lines.map(l => `<div class="canvas-hover-tooltip-line">${escapeHtml(l)}</div>`).join('');
+        this.bodyEl.innerHTML = water.lines
+          .map(l => `<div class="canvas-hover-tooltip-line">${escapeHtml(l)}</div>`)
+          .join('');
         return;
       }
     }

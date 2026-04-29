@@ -72,7 +72,8 @@ function isExploredRabbitHabitatMetricTile(tile: Tile | null | undefined): tile 
   if (!tile.isExplored()) return false;
   if (!tile.walkable) return false;
   if (tile.hasRoad) return false;
-  if (tile.terrain !== 'grass' && tile.terrain !== 'desert' && tile.terrain !== 'hill') return false;
+  if (tile.terrain !== 'grass' && tile.terrain !== 'desert' && tile.terrain !== 'hill')
+    return false;
   return true;
 }
 
@@ -183,7 +184,9 @@ export class WildlifeCoordinator {
             : 'brown';
         const animSeed = typeof raw.animSeed === 'number' ? raw.animSeed : Math.random() * 1000;
         const nextWander =
-          typeof raw.nextWanderAtMs === 'number' ? raw.nextWanderAtMs : getSimulationNowMs() + WANDER_INTERVAL_MS;
+          typeof raw.nextWanderAtMs === 'number'
+            ? raw.nextWanderAtMs
+            : getSimulationNowMs() + WANDER_INTERVAL_MS;
         this.insertRabbit({
           id: raw.id,
           originX: raw.originX,
@@ -262,8 +265,15 @@ export class WildlifeCoordinator {
     footprintCells: Set<string>
   ): boolean {
     return (
-      this.pickReachableRabbit(tileMap, pathFinder, entranceX, entranceY, gatherRadius, maxWalkCells, footprintCells) !==
-      null
+      this.pickReachableRabbit(
+        tileMap,
+        pathFinder,
+        entranceX,
+        entranceY,
+        gatherRadius,
+        maxWalkCells,
+        footprintCells
+      ) !== null
     );
   }
 
@@ -410,7 +420,12 @@ export class WildlifeCoordinator {
   }
 
   /** Fallback: any explored grass away from HQ if scored candidates were too few. */
-  private tryPlaceStarterRabbitsLoose(tileMap: TileMap, cx: number, cy: number, count: number): void {
+  private tryPlaceStarterRabbitsLoose(
+    tileMap: TileMap,
+    cx: number,
+    cy: number,
+    count: number
+  ): void {
     let placed = 0;
     const rad = 140;
     for (let attempt = 0; attempt < 8000 && placed < count; attempt++) {
@@ -438,8 +453,16 @@ export class WildlifeCoordinator {
     if (r.jumping) return;
 
     const picks: { x: number; y: number }[] = [];
-    for (let y = r.originY - WANDER_RADIUS_MANHATTAN; y <= r.originY + WANDER_RADIUS_MANHATTAN; y++) {
-      for (let x = r.originX - WANDER_RADIUS_MANHATTAN; x <= r.originX + WANDER_RADIUS_MANHATTAN; x++) {
+    for (
+      let y = r.originY - WANDER_RADIUS_MANHATTAN;
+      y <= r.originY + WANDER_RADIUS_MANHATTAN;
+      y++
+    ) {
+      for (
+        let x = r.originX - WANDER_RADIUS_MANHATTAN;
+        x <= r.originX + WANDER_RADIUS_MANHATTAN;
+        x++
+      ) {
         const man = Math.abs(x - r.originX) + Math.abs(y - r.originY);
         if (man > WANDER_RADIUS_MANHATTAN) continue;
         if (x === r.x && y === r.y) continue;

@@ -8,7 +8,7 @@ import {
   ResourceDefinition,
   BuildingType,
   BuildingDefinition,
-  GameConfig
+  GameConfig,
 } from '@/types/GameData';
 
 import resourcesData from './resources.json';
@@ -47,7 +47,9 @@ export class DataManager {
     // Load central gameplay tuning config
     this.gameConfig = GAME_CONFIG;
 
-    console.log(`📊 Data loaded: ${this.resources.size} resources, ${this.buildings.size} buildings`);
+    console.log(
+      `📊 Data loaded: ${this.resources.size} resources, ${this.buildings.size} buildings`
+    );
   }
 
   // ========================================================================
@@ -62,7 +64,9 @@ export class DataManager {
     return Array.from(this.resources.values());
   }
 
-  getResourcesByCategory(category: 'raw' | 'refined' | 'food' | 'tool' | 'weapon'): ResourceDefinition[] {
+  getResourcesByCategory(
+    category: 'raw' | 'refined' | 'food' | 'tool' | 'weapon'
+  ): ResourceDefinition[] {
     return this.getAllResources().filter(r => r.category === category);
   }
 
@@ -78,7 +82,9 @@ export class DataManager {
     return Array.from(this.buildings.values());
   }
 
-  getBuildingsByCategory(category: 'core' | 'residential' | 'production' | 'military' | 'infrastructure'): BuildingDefinition[] {
+  getBuildingsByCategory(
+    category: 'core' | 'residential' | 'production' | 'military' | 'infrastructure'
+  ): BuildingDefinition[] {
     return this.getAllBuildings().filter(b => b.category === category);
   }
 
@@ -101,7 +107,10 @@ export class DataManager {
   }
 
   // Get missing resources for a building
-  getMissingResources(buildingType: BuildingType, inventory: { [key: string]: number }): { [key: string]: number } {
+  getMissingResources(
+    buildingType: BuildingType,
+    inventory: { [key: string]: number }
+  ): { [key: string]: number } {
     const building = this.getBuilding(buildingType);
     if (!building) return {};
 
@@ -154,7 +163,9 @@ export class DataManager {
         if (building.production.inputs) {
           Object.keys(building.production.inputs).forEach(resourceId => {
             if (!this.resources.has(resourceId as ResourceType)) {
-              errors.push(`Building ${building.id} production inputs reference unknown resource: ${resourceId}`);
+              errors.push(
+                `Building ${building.id} production inputs reference unknown resource: ${resourceId}`
+              );
             }
           });
         }
@@ -172,7 +183,9 @@ export class DataManager {
 
         Object.keys(building.production.outputs).forEach(resourceId => {
           if (!this.resources.has(resourceId as ResourceType)) {
-            errors.push(`Building ${building.id} production outputs reference unknown resource: ${resourceId}`);
+            errors.push(
+              `Building ${building.id} production outputs reference unknown resource: ${resourceId}`
+            );
           }
         });
       }
@@ -180,7 +193,7 @@ export class DataManager {
 
     return {
       valid: errors.length === 0,
-      errors
+      errors,
     };
   }
 

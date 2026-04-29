@@ -1,0 +1,14 @@
+{
+  // Format on save is already "on" by default in Zed, but made explicit here.
+  "format_on_save": "on",
+
+  // Use the locally installed Prettier (from node_modules) via npx.
+  // Prettier reads its config from .prettierrc automatically.
+  // {buffer_path} tells Prettier which parser to use (ts, json, html, css…).
+  "formatter": {
+    "external": {
+      "command": "npx",
+      "arguments": ["prettier", "--stdin-filepath", "{buffer_path}"]
+    }
+  }
+}

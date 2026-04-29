@@ -1,0 +1,11 @@
+# Build output
+dist/
+node_modules/
+
+# Binary / non-text assets
+assets/
+public/audio/
+psd/
+
+# Lock files
+package-lock.json

@@ -23,7 +23,13 @@ export type WaterFishClusterState = {
 };
 
 const TERRAIN_CODES: Record<TerrainType, string> = {
-  grass: 'g', water: 'w', mountain: 'm', forest: 'f', tree: 't', hill: 'h', desert: 'd'
+  grass: 'g',
+  water: 'w',
+  mountain: 'm',
+  forest: 'f',
+  tree: 't',
+  hill: 'h',
+  desert: 'd',
 };
 const CODE_TO_TERRAIN: Record<string, TerrainType> = {};
 for (const [terrain, code] of Object.entries(TERRAIN_CODES)) {
@@ -90,9 +96,10 @@ export class TileMap {
       return 'water';
     }
 
-    const lakeNoise = noise.noise(x + 3000, y + 3000, 0.12) * 0.5
-                    + noise.noise(x + 3500, y + 3500, 0.25) * 0.3
-                    + noise.noise(x + 3800, y + 3800, 0.4) * 0.2;
+    const lakeNoise =
+      noise.noise(x + 3000, y + 3000, 0.12) * 0.5 +
+      noise.noise(x + 3500, y + 3500, 0.25) * 0.3 +
+      noise.noise(x + 3800, y + 3800, 0.4) * 0.2;
     const wetness = noise.noise(x + 4000, y + 4000, 0.005);
     const lakeThreshold = 0.12 + Math.max(0, wetness - 0.35) * 0.25;
     if (lakeNoise < lakeThreshold && elevation < 0.45) {
@@ -100,9 +107,10 @@ export class TileMap {
     }
 
     const forestDensity = noise.noise(x + 5000, y + 5000, 0.008);
-    const treePlacement = noise.noise(x + 6000, y + 6000, 0.1) * 0.5
-                        + noise.noise(x + 6500, y + 6500, 0.2) * 0.3
-                        + noise.noise(x + 7000, y + 7000, 0.4) * 0.2;
+    const treePlacement =
+      noise.noise(x + 6000, y + 6000, 0.1) * 0.5 +
+      noise.noise(x + 6500, y + 6500, 0.2) * 0.3 +
+      noise.noise(x + 7000, y + 7000, 0.4) * 0.2;
 
     if (forestDensity > 0.27 && treePlacement > 0.17) {
       return 'forest';
@@ -147,13 +155,20 @@ export class TileMap {
     const numRanges = 8 + Math.floor(noise.noise(100, 100, 0.1) * 8);
 
     for (let r = 0; r < numRanges; r++) {
-      const startX = Math.floor(noise.noise(r * 137, 7919, 0.1) * this.width * 0.8 + this.width * 0.1);
-      const startY = Math.floor(noise.noise(7919, r * 137, 0.1) * this.height * 0.8 + this.height * 0.1);
+      const startX = Math.floor(
+        noise.noise(r * 137, 7919, 0.1) * this.width * 0.8 + this.width * 0.1
+      );
+      const startY = Math.floor(
+        noise.noise(7919, r * 137, 0.1) * this.height * 0.8 + this.height * 0.1
+      );
       const rangeWidth = 60 + Math.floor(noise.noise(r * 53, 3571, 0.1) * 200);
       const baseHeight = 6 + Math.floor(noise.noise(r * 53, 4571, 0.1) * 12);
 
       for (let dx = 0; dx < rangeWidth; dx++) {
-        const localHeight = Math.max(2, Math.floor(baseHeight * (0.4 + noise.noise(startX + dx, startY + 1000, 0.04) * 0.8)));
+        const localHeight = Math.max(
+          2,
+          Math.floor(baseHeight * (0.4 + noise.noise(startX + dx, startY + 1000, 0.04) * 0.8))
+        );
         const yOffset = Math.floor((noise.noise(startX + dx, startY + 2000, 0.025) - 0.5) * 8);
 
         for (let dy = -Math.floor(localHeight / 2); dy <= Math.floor(localHeight / 2); dy++) {
@@ -208,7 +223,12 @@ export class TileMap {
         if (tile.terrain !== 'water') continue;
 
         let waterNeighbors = 0;
-        const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+        const dirs = [
+          [-1, 0],
+          [1, 0],
+          [0, -1],
+          [0, 1],
+        ];
         for (const [dx, dy] of dirs) {
           const n = this.getTile(x + dx, y + dy);
           if (n && n.terrain === 'water') waterNeighbors++;
@@ -251,7 +271,12 @@ export class TileMap {
       const x = queue[head++];
       const y = queue[head++];
 
-      const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+      const dirs = [
+        [-1, 0],
+        [1, 0],
+        [0, -1],
+        [0, 1],
+      ];
       for (const [dx, dy] of dirs) {
         const nx = x + dx;
         const ny = y + dy;
@@ -287,7 +312,8 @@ export class TileMap {
           for (let dy = -1; dy <= 1; dy++) {
             for (let dx = -1; dx <= 1; dx++) {
               if (dx === 0 && dy === 0) continue;
-              const nx = x + dx, ny = y + dy;
+              const nx = x + dx,
+                ny = y + dy;
               if (nx >= 0 && nx < this.width && ny >= 0 && ny < this.height) {
                 const n = this.tiles[ny][nx];
                 if (n.terrain === 'water' && n.waterDepth === 0) {
@@ -308,7 +334,8 @@ export class TileMap {
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           if (dx === 0 && dy === 0) continue;
-          const nx = x + dx, ny = y + dy;
+          const nx = x + dx,
+            ny = y + dy;
           if (nx >= 0 && nx < this.width && ny >= 0 && ny < this.height) {
             const n = this.tiles[ny][nx];
             if (n.terrain === 'water' && n.waterDepth === 0) {
@@ -332,7 +359,8 @@ export class TileMap {
           for (let dy = -1; dy <= 1; dy++) {
             for (let dx = -1; dx <= 1; dx++) {
               if (dx === 0 && dy === 0) continue;
-              const nx = x + dx, ny = y + dy;
+              const nx = x + dx,
+                ny = y + dy;
               if (nx >= 0 && nx < this.width && ny >= 0 && ny < this.height) {
                 const n = this.tiles[ny][nx];
                 if (isForest(n) && n.forestDepth === 0) {
@@ -353,7 +381,8 @@ export class TileMap {
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           if (dx === 0 && dy === 0) continue;
-          const nx = x + dx, ny = y + dy;
+          const nx = x + dx,
+            ny = y + dy;
           if (nx >= 0 && nx < this.width && ny >= 0 && ny < this.height) {
             const n = this.tiles[ny][nx];
             if (isForest(n) && n.forestDepth === 0) {
@@ -484,10 +513,7 @@ export class TileMap {
       const cellMax = hasLegacy
         ? (legacyM ?? rollWaterFishSchoolMax(mapSeed, x, y))
         : rollWaterFishSchoolMax(mapSeed, x, y);
-      const cellRem =
-        legacyR !== undefined
-          ? Math.min(cellMax, Math.max(0, legacyR))
-          : cellMax;
+      const cellRem = legacyR !== undefined ? Math.min(cellMax, Math.max(0, legacyR)) : cellMax;
       sumMax += cellMax;
       sumRem += cellRem;
     }
@@ -539,7 +565,13 @@ export class TileMap {
     return true;
   }
 
-  findNearbyTerrain(cx: number, cy: number, radius: number, types: string[], exclude?: Set<string>): { x: number; y: number } | null {
+  findNearbyTerrain(
+    cx: number,
+    cy: number,
+    radius: number,
+    types: string[],
+    exclude?: Set<string>
+  ): { x: number; y: number } | null {
     let best: { x: number; y: number; dist: number } | null = null;
 
     for (let dy = -radius; dy <= radius; dy++) {
@@ -726,11 +758,13 @@ export class TileMap {
 
   buildRoad(x: number, y: number): boolean {
     const tile = this.getTile(x, y);
-    if (tile &&
-        !tile.hasRoad &&
-        tile.terrain !== 'water' &&
-        tile.terrain !== 'mountain' &&
-        !tile.isOccupied()) {
+    if (
+      tile &&
+      !tile.hasRoad &&
+      tile.terrain !== 'water' &&
+      tile.terrain !== 'mountain' &&
+      !tile.isOccupied()
+    ) {
       tile.hasRoad = true;
       return true;
     }
@@ -740,8 +774,14 @@ export class TileMap {
   getNeighbors(x: number, y: number): Tile[] {
     const neighbors: Tile[] = [];
     const directions = [
-      [-1, 0], [1, 0], [0, -1], [0, 1],
-      [-1, -1], [-1, 1], [1, -1], [1, 1]
+      [-1, 0],
+      [1, 0],
+      [0, -1],
+      [0, 1],
+      [-1, -1],
+      [-1, 1],
+      [1, -1],
+      [1, 1],
     ];
 
     for (const [dx, dy] of directions) {
@@ -928,7 +968,13 @@ export class TileMap {
         });
       }
     } else if (data.waterFish && Array.isArray(data.waterFish)) {
-      for (const entry of data.waterFish as { x: number; y: number; f?: number; r?: number; m?: number }[]) {
+      for (const entry of data.waterFish as {
+        x: number;
+        y: number;
+        f?: number;
+        r?: number;
+        m?: number;
+      }[]) {
         const tile = map.getTile(entry.x, entry.y);
         if (tile) {
           const r = entry.r ?? entry.f ?? 0;
@@ -940,7 +986,14 @@ export class TileMap {
     }
 
     if (data.cellMinerals && Array.isArray(data.cellMinerals)) {
-      for (const entry of data.cellMinerals as { x: number; y: number; c: number; i: number; g: number; r: number }[]) {
+      for (const entry of data.cellMinerals as {
+        x: number;
+        y: number;
+        c: number;
+        i: number;
+        g: number;
+        r: number;
+      }[]) {
         const tile = map.getTile(entry.x, entry.y);
         if (tile) {
           tile.cellMinerals = {

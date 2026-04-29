@@ -96,7 +96,9 @@ export class TerritoryCoordinator {
       const tr = def?.military?.territoryVisionRadius;
       const soldierCap = def?.military?.soldierCapacity;
       const needsGarrisonForDisk =
-        typeof soldierCap === 'number' && soldierCap > 0 ? b.hasMilitaryTerritoryContributor() : true;
+        typeof soldierCap === 'number' && soldierCap > 0
+          ? b.hasMilitaryTerritoryContributor()
+          : true;
       if (typeof tr === 'number' && tr > 0 && needsGarrisonForDisk) {
         const cx = pos.x + Math.floor(b.width / 2);
         const cy = pos.y + Math.floor(b.height / 2);
@@ -192,7 +194,9 @@ export class TerritoryCoordinator {
     return ownership;
   }
 
-  private recomputeFrontierAndInteriorFromExclusiveOwnership(ownership: ReadonlyMap<string, readonly CellClaim[]>): void {
+  private recomputeFrontierAndInteriorFromExclusiveOwnership(
+    ownership: ReadonlyMap<string, readonly CellClaim[]>
+  ): void {
     const cardinals: readonly [number, number][] = [
       [-1, 0],
       [1, 0],
@@ -314,5 +318,4 @@ export class TerritoryCoordinator {
     }
     return true;
   }
-
 }

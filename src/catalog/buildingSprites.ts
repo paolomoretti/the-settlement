@@ -41,7 +41,10 @@ export const BUILDING_FINAL_SPRITES: Record<string, string> = {
  * During build, total frames = stages.length + 1 (the completed sprite is the last frame).
  */
 export const BUILDING_CONSTRUCTION_SPRITES: Record<string, string[]> = {
-  storehouse: ['/assets/buildings/warehouse_build_0.png', '/assets/buildings/warehouse_build_1.png'],
+  storehouse: [
+    '/assets/buildings/warehouse_build_0.png',
+    '/assets/buildings/warehouse_build_1.png',
+  ],
   lumberjack: [
     '/assets/buildings/lumberjack_build_0.png',
     '/assets/buildings/lumberjack_build_1.png',
@@ -116,7 +119,10 @@ export const BUILDING_CONSTRUCTION_SPRITES: Record<string, string[]> = {
   coal_mine: ['/assets/buildings/coal_mine_build_0.png', '/assets/buildings/coal_mine_build_1.png'],
   iron_mine: ['/assets/buildings/iron_mine_build_0.png', '/assets/buildings/iron_mine_build_1.png'],
   gold_mine: ['/assets/buildings/gold_mine_build_0.png', '/assets/buildings/gold_mine_build_1.png'],
-  granite_mine: ['/assets/buildings/granite_mine_build_0.png', '/assets/buildings/granite_mine_build_1.png'],
+  granite_mine: [
+    '/assets/buildings/granite_mine_build_0.png',
+    '/assets/buildings/granite_mine_build_1.png',
+  ],
   iron_smelter: [
     '/assets/buildings/iron_smelter_build_0.png',
     '/assets/buildings/iron_smelter_build_1.png',
@@ -188,18 +194,14 @@ export type BuildingProductionSpriteAnimation = {
   sequence?: Array<number | null>;
 };
 
-export const BUILDING_PRODUCTION_SPRITE_ANIMATION: Record<string, BuildingProductionSpriteAnimation> = {
+export const BUILDING_PRODUCTION_SPRITE_ANIMATION: Record<
+  string,
+  BuildingProductionSpriteAnimation
+> = {
   // Bakery oven: short bursts of flame, then brief pauses.
   bakery: {
     activeFraction: 0.55,
-    sequence: [
-      0, 1, 2, 1, 0,
-      null, null,
-      0, 1, 2, 1, 0,
-      null, null, null,
-      0, 1, 2, 1,
-      null, null,
-    ],
+    sequence: [0, 1, 2, 1, 0, null, null, 0, 1, 2, 1, 0, null, null, null, 0, 1, 2, 1, null, null],
   },
 };
 

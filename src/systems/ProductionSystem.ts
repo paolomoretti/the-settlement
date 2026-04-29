@@ -381,14 +381,10 @@ export class ProductionSystem extends System {
       }
 
       const wellAquiferBlocked = wellAquiferDry;
-      const mapGatherSourceBlocked =
-        mapLinkedGather && building.outOfMapResources;
+      const mapGatherSourceBlocked = mapLinkedGather && building.outOfMapResources;
 
       if (!production.currentCycleOutputs && !mapGatherSourceBlocked && !wellAquiferBlocked) {
-        production.prepareCycleOutputs(
-          buildingType,
-          this.getProductionPriorities?.()
-        );
+        production.prepareCycleOutputs(buildingType, this.getProductionPriorities?.());
       }
 
       // Forester / quarry & fisher depletion / underground mine: hold the production clock while the field worker is out

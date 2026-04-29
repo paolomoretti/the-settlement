@@ -9,7 +9,11 @@ const ATLAS_H = ATLAS_GRID * TILE_H;
 const P = ATLAS_GRID;
 const WATER_FILL_PATTERN_SCALE = 0.45;
 
-interface RGB { r: number; g: number; b: number }
+interface RGB {
+  r: number;
+  g: number;
+  b: number;
+}
 
 function hexToRgb(hex: string): RGB {
   const n = parseInt(hex.replace('#', ''), 16);
@@ -30,7 +34,12 @@ function clamp(v: number): number {
 }
 
 // Grid-space coordinates: continuous across tiles, period = ATLAS_GRID
-function toGridCoords(gx: number, gy: number, px: number, py: number): { gfx: number; gfy: number } {
+function toGridCoords(
+  gx: number,
+  gy: number,
+  px: number,
+  py: number
+): { gfx: number; gfy: number } {
   return {
     gfx: gx + px / TILE_W,
     gfy: gy + py / TILE_H,
@@ -39,7 +48,14 @@ function toGridCoords(gx: number, gy: number, px: number, py: number): { gfx: nu
 
 // Seamlessly tileable noise using 4-sample bilinear blend.
 // The blend weights guarantee identical values at the wrap boundary (period P).
-function tileNoise(noise: NoiseGenerator, x: number, y: number, scale: number, ox: number = 0, oy: number = 0): number {
+function tileNoise(
+  noise: NoiseGenerator,
+  x: number,
+  y: number,
+  scale: number,
+  ox: number = 0,
+  oy: number = 0
+): number {
   const nx = ((x % P) + P) % P;
   const ny = ((y % P) + P) % P;
   const s00 = noise.noise(nx + ox, ny + oy, scale);
@@ -47,14 +63,20 @@ function tileNoise(noise: NoiseGenerator, x: number, y: number, scale: number, o
   const s01 = noise.noise(nx + ox, ny - P + oy, scale);
   const s11 = noise.noise(nx - P + ox, ny - P + oy, scale);
   return (
-    s00 * (P - nx) * (P - ny) +
-    s10 * nx * (P - ny) +
-    s01 * (P - nx) * ny +
-    s11 * nx * ny
-  ) / (P * P);
+    (s00 * (P - nx) * (P - ny) + s10 * nx * (P - ny) + s01 * (P - nx) * ny + s11 * nx * ny) /
+    (P * P)
+  );
 }
 
-type GenFn = (gfx: number, gfy: number, noise: NoiseGenerator, r: Float64Array, g: Float64Array, b: Float64Array, i: number) => void;
+type GenFn = (
+  gfx: number,
+  gfy: number,
+  noise: NoiseGenerator,
+  r: Float64Array,
+  g: Float64Array,
+  b: Float64Array,
+  i: number
+) => void;
 
 /** Slightly warmer, less flat base; variation added in `genGrass` (atlas build only — no runtime cost). */
 const GRASS = hexToRgb('#73ae4a');
@@ -65,7 +87,15 @@ const HILL = hexToRgb('#8bb34a');
 const DESERT = hexToRgb('#d4b96a');
 const ROAD = hexToRgb('#c4a572');
 
-function genGrass(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: Float64Array, b: Float64Array, i: number): void {
+function genGrass(
+  x: number,
+  y: number,
+  n: NoiseGenerator,
+  r: Float64Array,
+  g: Float64Array,
+  b: Float64Array,
+  i: number
+): void {
   const n1 = tileNoise(n, x, y, 0.8);
   const n2 = tileNoise(n, x, y, 2.2, 37, 53);
   const n3 = tileNoise(n, x, y, 5.5, 73, 91);
@@ -115,7 +145,15 @@ function genGrass(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: F
   b[i] = clamp(b[i]);
 }
 
-function genWater(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: Float64Array, b: Float64Array, i: number): void {
+function genWater(
+  x: number,
+  y: number,
+  n: NoiseGenerator,
+  r: Float64Array,
+  g: Float64Array,
+  b: Float64Array,
+  i: number
+): void {
   const n1 = tileNoise(n, x, y, 0.7);
   const n2 = tileNoise(n, x, y, 1.8, 37, 53);
   const n3 = tileNoise(n, x, y, 4.5, 73, 91);
@@ -125,11 +163,21 @@ function genWater(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: F
   b[i] = WATER.b + w;
   if (n3 > 0.72) {
     const h = (n3 - 0.72) * 180;
-    r[i] += h * 0.5; g[i] += h * 0.6; b[i] += h;
+    r[i] += h * 0.5;
+    g[i] += h * 0.6;
+    b[i] += h;
   }
 }
 
-function genMountain(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: Float64Array, b: Float64Array, i: number): void {
+function genMountain(
+  x: number,
+  y: number,
+  n: NoiseGenerator,
+  r: Float64Array,
+  g: Float64Array,
+  b: Float64Array,
+  i: number
+): void {
   genGrass(x, y, n, r, g, b, i);
   const cn = tileNoise(n, x, y, 2.5, 37, 53);
   if (cn > 0.5) {
@@ -140,7 +188,15 @@ function genMountain(x: number, y: number, n: NoiseGenerator, r: Float64Array, g
   }
 }
 
-function genForest(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: Float64Array, b: Float64Array, i: number): void {
+function genForest(
+  x: number,
+  y: number,
+  n: NoiseGenerator,
+  r: Float64Array,
+  g: Float64Array,
+  b: Float64Array,
+  i: number
+): void {
   genGrass(x, y, n, r, g, b, i);
   const cn = tileNoise(n, x, y, 2.2, 37, 53);
   if (cn > 0.5) {
@@ -151,17 +207,37 @@ function genForest(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: 
   }
 }
 
-function genHill(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: Float64Array, b: Float64Array, i: number): void {
+function genHill(
+  x: number,
+  y: number,
+  n: NoiseGenerator,
+  r: Float64Array,
+  g: Float64Array,
+  b: Float64Array,
+  i: number
+): void {
   const n1 = tileNoise(n, x, y, 0.8);
   const n2 = tileNoise(n, x, y, 2.0, 37, 53);
   const v = (n1 - 0.5) * 35 + (n2 - 0.5) * 18;
   r[i] = HILL.r + v * 0.4;
   g[i] = HILL.g + v;
   b[i] = HILL.b + v * 0.2;
-  if (n2 > 0.7) { r[i] += 12; g[i] -= 4; b[i] += 4; }
+  if (n2 > 0.7) {
+    r[i] += 12;
+    g[i] -= 4;
+    b[i] += 4;
+  }
 }
 
-function genDesert(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: Float64Array, b: Float64Array, i: number): void {
+function genDesert(
+  x: number,
+  y: number,
+  n: NoiseGenerator,
+  r: Float64Array,
+  g: Float64Array,
+  b: Float64Array,
+  i: number
+): void {
   const n1 = tileNoise(n, x, y, 0.7);
   const n2 = tileNoise(n, x, y, 1.8, 37, 53);
   const n3 = tileNoise(n, x, y, 4.5, 73, 91);
@@ -169,12 +245,26 @@ function genDesert(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: 
   r[i] = DESERT.r + v;
   g[i] = DESERT.g + v * 0.8;
   b[i] = DESERT.b + v * 0.5;
-  const rip = Math.sin((x * 3.5 + y * 1.8) + n1 * 4) * 8;
-  r[i] += rip; g[i] += rip * 0.8; b[i] += rip * 0.5;
-  if (n3 > 0.85) { r[i] -= 18; g[i] -= 13; b[i] -= 8; }
+  const rip = Math.sin(x * 3.5 + y * 1.8 + n1 * 4) * 8;
+  r[i] += rip;
+  g[i] += rip * 0.8;
+  b[i] += rip * 0.5;
+  if (n3 > 0.85) {
+    r[i] -= 18;
+    g[i] -= 13;
+    b[i] -= 8;
+  }
 }
 
-function genTree(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: Float64Array, b: Float64Array, i: number): void {
+function genTree(
+  x: number,
+  y: number,
+  n: NoiseGenerator,
+  r: Float64Array,
+  g: Float64Array,
+  b: Float64Array,
+  i: number
+): void {
   genGrass(x, y, n, r, g, b, i);
   const cn = tileNoise(n, x, y, 3.5, 200, 210);
   if (cn > 0.5) {
@@ -185,15 +275,30 @@ function genTree(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: Fl
   }
 }
 
-function genFog(x: number, y: number, n: NoiseGenerator, r: Float64Array, g: Float64Array, b: Float64Array, i: number): void {
+function genFog(
+  x: number,
+  y: number,
+  n: NoiseGenerator,
+  r: Float64Array,
+  g: Float64Array,
+  b: Float64Array,
+  i: number
+): void {
   const v = 35 + (tileNoise(n, x, y, 0.6) - 0.5) * 15;
-  r[i] = v; g[i] = v; b[i] = v + 3;
+  r[i] = v;
+  g[i] = v;
+  b[i] = v + 3;
 }
 
 const GENERATORS: Record<string, GenFn> = {
-  grass: genGrass, water: genWater, mountain: genMountain,
-  forest: genForest, hill: genHill, desert: genDesert,
-  tree: genTree, fog: genFog,
+  grass: genGrass,
+  water: genWater,
+  mountain: genMountain,
+  forest: genForest,
+  hill: genHill,
+  desert: genDesert,
+  tree: genTree,
+  fog: genFog,
 };
 
 // --- Road overlay atlas (16 connection configs in a 4x4 grid) ---
@@ -205,14 +310,21 @@ const ROAD_ATLAS_H = ROAD_ROWS * TILE_H;
 const TRACK_HALF = 4;
 
 const EDGE_MID = [
-  { x: 16, y: 8 },   // NW
-  { x: 48, y: 8 },   // NE
-  { x: 48, y: 24 },  // SE
-  { x: 16, y: 24 },  // SW
+  { x: 16, y: 8 }, // NW
+  { x: 48, y: 8 }, // NE
+  { x: 48, y: 24 }, // SE
+  { x: 16, y: 24 }, // SW
 ];
 const CENTER = { x: 32, y: 16 };
 
-function distToSegment(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
+function distToSegment(
+  px: number,
+  py: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number
+): number {
   const dx = x2 - x1;
   const dy = y2 - y1;
   const lenSq = dx * dx + dy * dy;
@@ -274,11 +386,17 @@ function buildRoadAtlas(noise: NoiseGenerator): HTMLCanvasElement {
         if (minDist > TRACK_HALF - 1.5) {
           const edge = (minDist - (TRACK_HALF - 1.5)) / 2.5;
           const darken = edge * 25;
-          rv -= darken; gv -= darken; bv -= darken;
+          rv -= darken;
+          gv -= darken;
+          bv -= darken;
         }
 
         const pebble = noise.noise(px * 7 + config * 200, py * 7, 0.2);
-        if (pebble > 0.82) { rv -= 14; gv -= 11; bv -= 7; }
+        if (pebble > 0.82) {
+          rv -= 14;
+          gv -= 11;
+          bv -= 7;
+        }
 
         let alpha = 255;
         if (minDist > TRACK_HALF) {
@@ -326,15 +444,19 @@ function smin(a: number, b: number, k: number): number {
 }
 
 function renderWaterCell(
-  data: Uint8ClampedArray, noise: NoiseGenerator,
-  cellIndex: number, config: number, noiseOx: number, noiseOy: number,
+  data: Uint8ClampedArray,
+  noise: NoiseGenerator,
+  cellIndex: number,
+  config: number,
+  noiseOx: number,
+  noiseOy: number,
   linearizeShore: boolean = false
 ): void {
   const col = cellIndex % WATER_COLS;
   const row = Math.floor(cellIndex / WATER_COLS);
 
-  const cardinals = config & 0xF;
-  const diagonals = (config >> 4) & 0xF;
+  const cardinals = config & 0xf;
+  const diagonals = (config >> 4) & 0xf;
 
   for (let py = 0; py < TILE_H; py++) {
     for (let px = 0; px < TILE_W; px++) {
@@ -348,10 +470,10 @@ function renderWaterCell(
       const fSE = (96 - cpx - 2 * cpy) / 32;
       const fSW = (cpx + 32 - 2 * cpy) / 32;
 
-      const eFNW = (cardinals & 1) ? 99 : fNW;
-      const eFNE = (cardinals & 2) ? 99 : fNE;
-      const eFSE = (cardinals & 4) ? 99 : fSE;
-      const eFSW = (cardinals & 8) ? 99 : fSW;
+      const eFNW = cardinals & 1 ? 99 : fNW;
+      const eFNE = cardinals & 2 ? 99 : fNE;
+      const eFSE = cardinals & 4 ? 99 : fSE;
+      const eFSW = cardinals & 8 ? 99 : fSW;
 
       const shoreNoise = noise.noise(cpx * 2.5 + noiseOx, cpy * 2.5 + noiseOy, 0.18);
       const shoreNoise2 = noise.noise(cpx * 5 + noiseOx + 200, cpy * 5 + noiseOy + 200, 0.25);
@@ -407,7 +529,9 @@ function renderWaterCell(
         bv = WATER.b + variation;
         if (n2 > 0.72) {
           const h = (n2 - 0.72) * 150;
-          rv += h * 0.5; gv += h * 0.6; bv += h;
+          rv += h * 0.5;
+          gv += h * 0.6;
+          bv += h;
         }
         alpha = 255;
       } else if (minF > 0.35) {
@@ -420,7 +544,9 @@ function renderWaterCell(
         // Foam near shore
         if (n2 > 0.76 && minF < 0.42) {
           const foam = (n2 - 0.76) * 250;
-          rv += foam; gv += foam; bv += foam * 0.8;
+          rv += foam;
+          gv += foam;
+          bv += foam * 0.8;
         }
       } else if (minF > 0.22) {
         // Stony shore
@@ -431,16 +557,24 @@ function renderWaterCell(
         bv = 115 + variation * 0.2;
         // Scatter stones
         if (stoneNoise > 0.72) {
-          rv -= 28; gv -= 24; bv -= 18;
+          rv -= 28;
+          gv -= 24;
+          bv -= 18;
         } else if (stoneNoise > 0.6) {
-          rv += 18; gv += 15; bv += 10;
+          rv += 18;
+          gv += 15;
+          bv += 10;
         } else if (stoneNoise < 0.3) {
-          rv -= 10; gv -= 5; bv -= 3;
+          rv -= 10;
+          gv -= 5;
+          bv -= 3;
         }
         // Wet area near water edge
         if (minF > 0.28) {
           const wet = (minF - 0.28) / 0.07;
-          rv -= wet * 22; gv -= wet * 16; bv += wet * 12;
+          rv -= wet * 22;
+          gv -= wet * 16;
+          bv += wet * 12;
         }
         alpha = Math.round(180 + 70 * t);
       } else {
@@ -450,7 +584,9 @@ function renderWaterCell(
         gv = 125 + variation * 0.3;
         bv = 65 + variation * 0.15;
         if (stoneNoise > 0.75) {
-          rv += 20; gv -= 10; bv -= 5;
+          rv += 20;
+          gv -= 10;
+          bv -= 5;
         }
         alpha = Math.round(130 * t);
       }
@@ -477,7 +613,15 @@ function buildWaterAtlas(noise: NoiseGenerator): HTMLCanvasElement {
   // 256 shore configurations (4 cardinal + 4 diagonal bits)
   for (let config = 0; config < 256; config++) {
     renderWaterCell(data, noise, config, config, config * 97, config * 53, false);
-    renderWaterCell(data, noise, WATER_LINEARIZE_OFFSET + config, config, config * 97, config * 53, true);
+    renderWaterCell(
+      data,
+      noise,
+      WATER_LINEARIZE_OFFSET + config,
+      config,
+      config * 97,
+      config * 53,
+      true
+    );
   }
 
   // 4 deep water variants (all neighbors water, different noise offsets)
@@ -586,7 +730,12 @@ function canvasFromImageData(id: ImageData): HTMLCanvasElement {
 function buildGrassPhotoAtlases(
   img: HTMLImageElement,
   repeat: number
-): { grass: HTMLCanvasElement; forest: HTMLCanvasElement; tree: HTMLCanvasElement; mountain: HTMLCanvasElement } | null {
+): {
+  grass: HTMLCanvasElement;
+  forest: HTMLCanvasElement;
+  tree: HTMLCanvasElement;
+  mountain: HTMLCanvasElement;
+} | null {
   const iw = img.naturalWidth || img.width;
   const ih = img.naturalHeight || img.height;
   const r = Math.max(1, repeat);
@@ -737,7 +886,14 @@ export class TerrainTextures {
     if (img.complete) apply();
   }
 
-  drawTile(ctx: CanvasRenderingContext2D, terrain: string, tileX: number, tileY: number, screenCenterX: number, screenCenterY: number): void {
+  drawTile(
+    ctx: CanvasRenderingContext2D,
+    terrain: string,
+    tileX: number,
+    tileY: number,
+    screenCenterX: number,
+    screenCenterY: number
+  ): void {
     const atlas = this.atlases.get(terrain);
     if (!atlas) return;
 
@@ -790,7 +946,11 @@ export class TerrainTextures {
     const hub = { x: wobbleX, y: wobbleY };
 
     ctx.beginPath();
-    if (linearizeCorner && connections.length === 2 && (connections[0]! + 2) % 4 !== connections[1]!) {
+    if (
+      linearizeCorner &&
+      connections.length === 2 &&
+      (connections[0]! + 2) % 4 !== connections[1]!
+    ) {
       const a = this.roadLocalPoint(connections[0]!);
       const b = this.roadLocalPoint(connections[1]!);
       ctx.moveTo(a.x, a.y);
@@ -834,7 +994,8 @@ export class TerrainTextures {
     tileY: number
   ): void {
     const count = 2 + Math.floor(this.roadHash(tileX, tileY, 20) * 4);
-    const usableConnections = connections.length > 0 ? connections : [Math.floor(this.roadHash(tileX, tileY, 21) * 4)];
+    const usableConnections =
+      connections.length > 0 ? connections : [Math.floor(this.roadHash(tileX, tileY, 21) * 4)];
     for (let i = 0; i < count; i++) {
       const bit = usableConnections[i % usableConnections.length]!;
       const end = this.roadLocalPoint(bit);
@@ -846,11 +1007,20 @@ export class TerrainTextures {
       const x = end.x * t + nx * side * 5.5;
       const y = end.y * t + ny * side * 3.2;
       const r = 0.8 + this.roadHash(tileX, tileY, 50 + i) * 1.2;
-      ctx.fillStyle = this.roadHash(tileX, tileY, 60 + i) > 0.5
-        ? 'rgba(111, 82, 48, 0.38)'
-        : 'rgba(235, 205, 155, 0.24)';
+      ctx.fillStyle =
+        this.roadHash(tileX, tileY, 60 + i) > 0.5
+          ? 'rgba(111, 82, 48, 0.38)'
+          : 'rgba(235, 205, 155, 0.24)';
       ctx.beginPath();
-      ctx.ellipse(x, y, r * 1.35, r * 0.72, this.roadHash(tileX, tileY, 70 + i) * Math.PI, 0, Math.PI * 2);
+      ctx.ellipse(
+        x,
+        y,
+        r * 1.35,
+        r * 0.72,
+        this.roadHash(tileX, tileY, 70 + i) * Math.PI,
+        0,
+        Math.PI * 2
+      );
       ctx.fill();
     }
   }
@@ -869,8 +1039,14 @@ export class TerrainTextures {
       const row = Math.floor(config / ROAD_COLS);
       ctx.drawImage(
         this.roadAtlas,
-        col * TILE_W, row * TILE_H, TILE_W, TILE_H,
-        screenCenterX - TILE_W / 2, screenCenterY - TILE_H / 2, TILE_W, TILE_H
+        col * TILE_W,
+        row * TILE_H,
+        TILE_W,
+        TILE_H,
+        screenCenterX - TILE_W / 2,
+        screenCenterY - TILE_H / 2,
+        TILE_W,
+        TILE_H
       );
       return;
     }
@@ -918,8 +1094,13 @@ export class TerrainTextures {
   }
 
   drawWater(
-    ctx: CanvasRenderingContext2D, config: number, tileX: number, tileY: number,
-    screenCenterX: number, screenCenterY: number, useLinearizedShore: boolean = false
+    ctx: CanvasRenderingContext2D,
+    config: number,
+    tileX: number,
+    tileY: number,
+    screenCenterX: number,
+    screenCenterY: number,
+    useLinearizedShore: boolean = false
   ): void {
     let cell: number;
     if (config === 255) {
@@ -934,9 +1115,14 @@ export class TerrainTextures {
 
     ctx.drawImage(
       this.waterAtlas,
-      col * TILE_W, row * TILE_H, TILE_W, TILE_H,
-      screenCenterX - TILE_W / 2, screenCenterY - TILE_H / 2, TILE_W, TILE_H
+      col * TILE_W,
+      row * TILE_H,
+      TILE_W,
+      TILE_H,
+      screenCenterX - TILE_W / 2,
+      screenCenterY - TILE_H / 2,
+      TILE_W,
+      TILE_H
     );
   }
-
 }

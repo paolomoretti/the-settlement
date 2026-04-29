@@ -18,11 +18,7 @@ let nextTransportId = 1;
 export class TransportQueue {
   private requests: Map<number, TransportRequest> = new Map();
 
-  createRequest(
-    sourceEntityId: number,
-    resourceType: string,
-    amount: number
-  ): TransportRequest {
+  createRequest(sourceEntityId: number, resourceType: string, amount: number): TransportRequest {
     const request: TransportRequest = {
       id: nextTransportId++,
       sourceEntityId,
@@ -84,25 +80,24 @@ export class TransportQueue {
   }
 
   getWaitingRequests(): TransportRequest[] {
-    return Array.from(this.requests.values())
-      .filter(r => r.status === 'waiting');
+    return Array.from(this.requests.values()).filter(r => r.status === 'waiting');
   }
 
   getRequestsBySource(sourceEntityId: number): TransportRequest[] {
-    return Array.from(this.requests.values())
-      .filter(r => r.sourceEntityId === sourceEntityId);
+    return Array.from(this.requests.values()).filter(r => r.sourceEntityId === sourceEntityId);
   }
 
   getRequestByWorker(workerId: number): TransportRequest | undefined {
-    return Array.from(this.requests.values())
-      .find(r => r.assignedWorkerId === workerId);
+    return Array.from(this.requests.values()).find(r => r.assignedWorkerId === workerId);
   }
 
   getInTransitAmount(resourceType: string): number {
     let total = 0;
     for (const request of this.requests.values()) {
-      if (request.resourceType === resourceType &&
-          (request.status === 'assigned' || request.status === 'in_transit')) {
+      if (
+        request.resourceType === resourceType &&
+        (request.status === 'assigned' || request.status === 'in_transit')
+      ) {
         total += request.amount;
       }
     }

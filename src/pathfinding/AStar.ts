@@ -79,7 +79,7 @@ export class PathFinder {
 
   constructor() {
     this.finder = new PF.AStarFinder({
-      allowDiagonal: false
+      allowDiagonal: false,
     });
   }
 
@@ -96,7 +96,7 @@ export class PathFinder {
     for (let y = 0; y < tileMap.height; y++) {
       for (let x = 0; x < tileMap.width; x++) {
         const tile = tileMap.getTile(x, y);
-        const walkable = tile ? (tile.hasRoad && tile.walkable) : false;
+        const walkable = tile ? tile.hasRoad && tile.walkable : false;
         grid.setWalkableAt(x, y, walkable);
       }
     }
@@ -118,11 +118,7 @@ export class PathFinder {
    * Find a path that allows going off-road (e.g., for hunters, lumberjacks)
    * Workers will still prefer roads but won't avoid off-road heavily
    */
-  findOffRoadPath(
-    start: Position,
-    end: Position,
-    tileMap: TileMap
-  ): Position[] {
+  findOffRoadPath(start: Position, end: Position, tileMap: TileMap): Position[] {
     const sx = Math.floor(start.x);
     const sy = Math.floor(start.y);
     const ex = Math.floor(end.x);
@@ -141,7 +137,7 @@ export class PathFinder {
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const tile = tileMap.getTile(minX + x, minY + y);
-        const walkable = tile ? (tile.walkable && !tile.isOccupied()) : false;
+        const walkable = tile ? tile.walkable && !tile.isOccupied() : false;
         grid.setWalkableAt(x, y, walkable);
       }
     }
@@ -149,11 +145,7 @@ export class PathFinder {
     grid.setWalkableAt(sx - minX, sy - minY, true);
     grid.setWalkableAt(ex - minX, ey - minY, true);
 
-    const path = this.finder.findPath(
-      sx - minX, sy - minY,
-      ex - minX, ey - minY,
-      grid
-    );
+    const path = this.finder.findPath(sx - minX, sy - minY, ex - minX, ey - minY, grid);
 
     return path.slice(1).map(([x, y]) => new Position(minX + x, minY + y));
   }
@@ -224,7 +216,10 @@ export class PathFinder {
     return [];
   }
 
-  private reconstructRoadBuildPath(cameFrom: Map<string, string>, endKey: string): { x: number; y: number }[] {
+  private reconstructRoadBuildPath(
+    cameFrom: Map<string, string>,
+    endKey: string
+  ): { x: number; y: number }[] {
     const keys = [endKey];
     let current = endKey;
     while (cameFrom.has(current)) {

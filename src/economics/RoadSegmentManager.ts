@@ -121,7 +121,12 @@ export class RoadSegmentManager {
 
   private getRoadNeighbors(x: number, y: number): { x: number; y: number }[] {
     const neighbors: { x: number; y: number }[] = [];
-    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    const dirs = [
+      [-1, 0],
+      [1, 0],
+      [0, -1],
+      [0, 1],
+    ];
     for (const [dx, dy] of dirs) {
       if (this.roadTiles.has(`${x + dx},${y + dy}`)) {
         neighbors.push({ x: x + dx, y: y + dy });
@@ -131,7 +136,12 @@ export class RoadSegmentManager {
   }
 
   private isAdjacentToBuilding(x: number, y: number, tileMap: TileMap): number | undefined {
-    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    const dirs = [
+      [-1, 0],
+      [1, 0],
+      [0, -1],
+      [0, 1],
+    ];
     for (const [dx, dy] of dirs) {
       const tile = tileMap.getTile(x + dx, y + dy);
       if (tile && tile.isOccupied()) {
@@ -141,19 +151,25 @@ export class RoadSegmentManager {
     return undefined;
   }
 
-  private classifyTile(
-    x: number,
-    y: number,
-    tileMap: TileMap
-  ): RoadNode | null {
+  private classifyTile(x: number, y: number, tileMap: TileMap): RoadNode | null {
     const neighbors = this.getRoadNeighbors(x, y);
     const adjacentBuildingId = this.isAdjacentToBuilding(x, y, tileMap);
 
     if (neighbors.length === 0) {
-      return { x, y, type: adjacentBuildingId !== undefined ? 'building' : 'dead_end', entityId: adjacentBuildingId };
+      return {
+        x,
+        y,
+        type: adjacentBuildingId !== undefined ? 'building' : 'dead_end',
+        entityId: adjacentBuildingId,
+      };
     }
     if (neighbors.length === 1) {
-      return { x, y, type: adjacentBuildingId !== undefined ? 'building' : 'dead_end', entityId: adjacentBuildingId };
+      return {
+        x,
+        y,
+        type: adjacentBuildingId !== undefined ? 'building' : 'dead_end',
+        entityId: adjacentBuildingId,
+      };
     }
     // Same as the 2-neighbor case: intersections next to a building footprint must
     // keep entityId so transport can seed computeRoutesToBuilding; otherwise
@@ -206,8 +222,9 @@ export class RoadSegmentManager {
         // Walk until we hit another node
         while (!nodes.has(`${current.x},${current.y}`)) {
           tiles.push({ x: current.x, y: current.y });
-          const nextNeighbors = this.getRoadNeighbors(current.x, current.y)
-            .filter(n => !(n.x === previous.x && n.y === previous.y));
+          const nextNeighbors = this.getRoadNeighbors(current.x, current.y).filter(
+            n => !(n.x === previous.x && n.y === previous.y)
+          );
 
           if (nextNeighbors.length === 0) break;
 
@@ -222,8 +239,11 @@ export class RoadSegmentManager {
           visitedEdges.add(this.edgeKey(previous.x, previous.y, current.x, current.y));
         }
 
-        const endNode = nodes.get(`${current.x},${current.y}`) ||
-          { x: current.x, y: current.y, type: 'dead_end' as const };
+        const endNode = nodes.get(`${current.x},${current.y}`) || {
+          x: current.x,
+          y: current.y,
+          type: 'dead_end' as const,
+        };
 
         segments.push({
           id: this.nextSegmentId++,
@@ -259,8 +279,8 @@ export class RoadSegmentManager {
     }
 
     // Pass 2: fuzzy match by tile overlap for unmatched new segments
-    const unmatchedOld = oldSegments.filter(s =>
-      s.assignedWorkerId !== null && !claimedOld.has(this.fingerprint(s))
+    const unmatchedOld = oldSegments.filter(
+      s => s.assignedWorkerId !== null && !claimedOld.has(this.fingerprint(s))
     );
 
     for (const newSeg of newSegments) {
@@ -309,7 +329,10 @@ export class RoadSegmentManager {
   }
 
   private fingerprint(seg: RoadSegment): string {
-    return seg.tiles.map(t => `${t.x},${t.y}`).sort().join(';');
+    return seg.tiles
+      .map(t => `${t.x},${t.y}`)
+      .sort()
+      .join(';');
   }
 
   reset(): void {

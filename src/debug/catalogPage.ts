@@ -277,12 +277,14 @@ function buildingDetailsPanel(def: BuildingDefinition): HTMLElement {
     }
     if (p.inputsAny?.length) {
       const lines = p.inputsAny.map(
-        (g) => `${g.amount} from any of: ${g.resourceTypes.map(resourceLabel).join(' / ')}`
+        g => `${g.amount} from any of: ${g.resourceTypes.map(resourceLabel).join(' / ')}`
       );
       addDetailLine(block, 'Inputs (OR groups)', lines.join('; '));
     }
-    if (p.maxOutputBuffer != null) addDetailLine(block, 'Output buffer max', String(p.maxOutputBuffer));
-    if (p.maxGatherRadius != null) addDetailLine(block, 'Gather radius (tiles)', String(p.maxGatherRadius));
+    if (p.maxOutputBuffer != null)
+      addDetailLine(block, 'Output buffer max', String(p.maxOutputBuffer));
+    if (p.maxGatherRadius != null)
+      addDetailLine(block, 'Gather radius (tiles)', String(p.maxGatherRadius));
     if (p.maxGatherWalkCells != null) {
       addDetailLine(block, 'Max gather walk (cells)', String(p.maxGatherWalkCells));
     }
@@ -335,7 +337,7 @@ function buildingSection(): HTMLElement {
   wrap.appendChild(
     buildSectionToc(
       'Jump to building',
-      buildings.map((b) => ({ id: `building-${b.id}`, label: b.name }))
+      buildings.map(b => ({ id: `building-${b.id}`, label: b.name }))
     )
   );
 
@@ -367,7 +369,11 @@ function buildingSection(): HTMLElement {
       finalWrap.appendChild(img);
     } else {
       finalWrap.appendChild(
-        el('div', 'col-placeholder', 'No completed sprite in catalogue (build column still cycles if stages exist).')
+        el(
+          'div',
+          'col-placeholder',
+          'No completed sprite in catalogue (build column still cycles if stages exist).'
+        )
       );
     }
     colFinal.appendChild(finalWrap);
@@ -569,7 +575,7 @@ function workerSection(): HTMLElement {
     addCard(`clothing-${appearance.variant}`, `Clothing: ${appearance.variant}`, {
       kind: 'normal',
       worker: w,
-      patch: (now) => basePatch(now, { facing: 0, anim: 'none', animT: 0 }),
+      patch: now => basePatch(now, { facing: 0, anim: 'none', animT: 0 }),
     });
   });
 
@@ -577,7 +583,7 @@ function workerSection(): HTMLElement {
   addCard('walk-se', 'Walk (facing SE)', {
     kind: 'normal',
     worker: walk,
-    patch: (now) => basePatch(now, { isMoving: true, facing: 0 }),
+    patch: now => basePatch(now, { isMoving: true, facing: 0 }),
   });
 
   const idles: IdleAnim[] = ['look_around', 'scratch_head', 'hands_on_hips', 'stretch', 'read'];
@@ -587,7 +593,7 @@ function workerSection(): HTMLElement {
     addCard(`idle-${anim}`, `Idle: ${anim}`, {
       kind: 'normal',
       worker: w,
-      patch: (now) => {
+      patch: now => {
         const t = (now % duration) / duration;
         return basePatch(now, { anim, animT: t, facing: 0 });
       },
@@ -610,7 +616,7 @@ function workerSection(): HTMLElement {
   addCard('hammer', 'Construct (hammer)', {
     kind: 'normal',
     worker: hammer,
-    patch: (now) =>
+    patch: now =>
       basePatch(now, {
         isCarrying: true,
         isHammerConstruct: true,
@@ -627,7 +633,7 @@ function workerSection(): HTMLElement {
   addCard('shovel', 'Shovel (plant / dig)', {
     kind: 'normal',
     worker: dig,
-    patch: (now) =>
+    patch: now =>
       basePatch(now, {
         isCarrying: true,
         isPlantDigging: true,
@@ -644,7 +650,7 @@ function workerSection(): HTMLElement {
   addCard('pickaxe', 'Pickaxe (gather)', {
     kind: 'normal',
     worker: pick,
-    patch: (now) =>
+    patch: now =>
       basePatch(now, {
         isCarrying: true,
         isStoneGathering: true,
@@ -661,7 +667,7 @@ function workerSection(): HTMLElement {
   addCard('fishing-rod', 'Fishing (shore sit)', {
     kind: 'normal',
     worker: fisher,
-    patch: (now) =>
+    patch: now =>
       basePatch(now, {
         isCarrying: true,
         isFisherFishing: true,
@@ -678,7 +684,7 @@ function workerSection(): HTMLElement {
   addCard('axe-walk', 'Side carry: axe + walk', {
     kind: 'normal',
     worker: axe,
-    patch: (now) =>
+    patch: now =>
       basePatch(now, {
         isMoving: true,
         facing: 1,
@@ -696,7 +702,7 @@ function workerSection(): HTMLElement {
   addCard('carry-log', 'Overhead: wood log', {
     kind: 'normal',
     worker: log,
-    patch: (now) =>
+    patch: now =>
       basePatch(now, {
         isCarrying: true,
         isOverheadCarry: true,
@@ -713,7 +719,7 @@ function workerSection(): HTMLElement {
   addCard('well-water', 'Well (water)', {
     kind: 'normal',
     worker: well,
-    patch: (now) =>
+    patch: now =>
       basePatch(now, {
         isCarrying: true,
         isOverheadCarry: true,
@@ -730,7 +736,7 @@ function workerSection(): HTMLElement {
   addCard('mill-flour', 'Mill (flour)', {
     kind: 'normal',
     worker: mill,
-    patch: (now) =>
+    patch: now =>
       basePatch(now, {
         isCarrying: true,
         isOverheadCarry: true,
@@ -744,7 +750,7 @@ function workerSection(): HTMLElement {
   addCard('military-rank-1', 'Military rank 1 (sword + shield)', {
     kind: 'normal',
     worker: soldierR1,
-    patch: (now) => basePatch(now, { isMoving: true, facing: 0, anim: 'none', armAnim: 'none' }),
+    patch: now => basePatch(now, { isMoving: true, facing: 0, anim: 'none', armAnim: 'none' }),
   });
 
   const soldierR2 = new Worker('Soldier R2', 'military');
@@ -752,7 +758,7 @@ function workerSection(): HTMLElement {
   addCard('military-rank-2', 'Military rank 2 (helmet)', {
     kind: 'normal',
     worker: soldierR2,
-    patch: (now) => basePatch(now, { facing: 0, anim: 'none' }),
+    patch: now => basePatch(now, { facing: 0, anim: 'none' }),
   });
 
   const soldierR3 = new Worker('Soldier R3', 'military');
@@ -760,7 +766,7 @@ function workerSection(): HTMLElement {
   addCard('military-rank-3', 'Military rank 3 (gold trim)', {
     kind: 'normal',
     worker: soldierR3,
-    patch: (now) => basePatch(now, { facing: 0, anim: 'none' }),
+    patch: now => basePatch(now, { facing: 0, anim: 'none' }),
   });
 
   wrap.appendChild(buildSectionToc('Jump to worker preview', workerToc));

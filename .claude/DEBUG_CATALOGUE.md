@@ -12,21 +12,21 @@ Agents and humans should **keep the catalogue accurate** whenever gameplay-visib
 
 ### Building sprites (PNG under `assets/buildings/`)
 
-| Change | Update |
-|--------|--------|
-| New or changed **completed** building sprite | `src/catalog/buildingSprites.ts` → `BUILDING_FINAL_SPRITES` (and ensure `EntityFactory` / preload still use the catalog — they import from here). |
-| New or changed **construction** frames (`*_build_*.png`) | `BUILDING_CONSTRUCTION_SPRITES` in the same file. |
+| Change                                                                 | Update                                                                                                                                              |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| New or changed **completed** building sprite                           | `src/catalog/buildingSprites.ts` → `BUILDING_FINAL_SPRITES` (and ensure `EntityFactory` / preload still use the catalog — they import from here).   |
+| New or changed **construction** frames (`*_build_*.png`)               | `BUILDING_CONSTRUCTION_SPRITES` in the same file.                                                                                                   |
 | New or changed **production / working** facade frames (`*_prod_*.png`) | `BUILDING_PRODUCTION_SPRITES` in the same file. The catalogue **only** shows a production column when this map has an entry for that building type. |
 
 The catalogue **reads** `buildings.json` via `DataManager` for the details column; no extra step for JSON-only field changes unless you want new fields surfaced in `buildingDetailsPanel()` in `catalogPage.ts`.
 
 ### Worker visuals (procedural canvas, not PNG sheets)
 
-| Change | Update |
-|--------|--------|
-| Drawing / pose / carry logic | `src/rendering/WorkerSpritePainter.ts` (shared with `RenderSystem`). |
+| Change                                                                                                                   | Update                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Drawing / pose / carry logic                                                                                             | `src/rendering/WorkerSpritePainter.ts` (shared with `RenderSystem`).                                                                                                                               |
 | New **role**, **appearance variant**, **idle animation**, **visual activity**, or held-item behaviour you want showcased | `src/components/Worker.ts` plus **`src/debug/catalogPage.ts`**: add a new **`addCard(anchorKey, caption, { … })`** cell in the worker grid (and use a stable `anchorKey` for `#worker-…` anchors). |
-| New **resource icons** drawn on workers | Ensure PNG exists under `assets/resources/` and add the path to **`WORKER_BODY_RESOURCE_SPRITE_PATHS`** in `WorkerSpritePainter.ts` if the catalogue should preload it. |
+| New **resource icons** drawn on workers                                                                                  | Ensure PNG exists under `assets/resources/` and add the path to **`WORKER_BODY_RESOURCE_SPRITE_PATHS`** in `WorkerSpritePainter.ts` if the catalogue should preload it.                            |
 
 Clothing variants in the grid are driven by **`WORKER_DEFS.peasant.variants`**; adding variants there automatically adds cards. One-off poses still need an explicit `addCard` row.
 

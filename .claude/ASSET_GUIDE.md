@@ -3,6 +3,7 @@
 This guide defines how to create, name, and integrate visual assets for The Settlement game in the style of The Settlers II.
 
 ## Table of Contents
+
 1. [Style Reference](#style-reference)
 2. [Technical Specifications](#technical-specifications)
 3. [Folder Structure](#folder-structure)
@@ -15,6 +16,7 @@ This guide defines how to create, name, and integrate visual assets for The Sett
 ## Style Reference
 
 ### The Settlers II Aesthetic
+
 - **Perspective**: Isometric (2:1 ratio) viewed from 45° angle
 - **Art Style**: Hand-painted, slightly cartoonish medieval fantasy
 - **Color Palette**: Warm, earthy tones with vibrant accents
@@ -29,6 +31,7 @@ This guide defines how to create, name, and integrate visual assets for The Sett
 - **Mood**: Cheerful, inviting, productive
 
 ### Key Characteristics
+
 - Clear silhouettes
 - Consistent shadow direction (bottom-right)
 - Slight texture/noise for organic feel
@@ -40,12 +43,14 @@ This guide defines how to create, name, and integrate visual assets for The Sett
 ## Technical Specifications
 
 ### Isometric Tile Dimensions
+
 - **Base Tile**: 64×32 pixels (width × height)
 - **Format**: PNG with transparency (RGBA)
 - **Color Depth**: 32-bit (RGB + Alpha)
 - **Tile Shape**: Diamond/rhombus (isometric projection)
 
 ### Terrain Tiles
+
 ```
 Dimensions: 64×32 pixels (base diamond)
 Format: PNG-24 with alpha
@@ -58,6 +63,7 @@ Examples:
 ```
 
 **Tile Structure**:
+
 ```
       32px
     ┌──┬──┐
@@ -72,6 +78,7 @@ Examples:
 ```
 
 ### Roads
+
 ```
 Dimensions: 64×32 pixels
 Format: PNG-24 with alpha (transparent edges)
@@ -91,6 +98,7 @@ Types needed:
 ```
 
 ### Buildings
+
 ```
 Dimensions: Variable (based on footprint)
 Format: PNG-24 with transparency
@@ -110,6 +118,7 @@ Naming: building_[name].png
 ```
 
 ### Units (Workers, Carriers)
+
 ```
 Dimensions: ~32×48 pixels (fits within one tile with headroom)
 Format: PNG-24 with transparency
@@ -125,6 +134,7 @@ Naming: unit_[type]_[action].png
 ```
 
 ### UI Elements
+
 ```
 Format: PNG-24 with transparency
 Size: Variable
@@ -188,11 +198,13 @@ assets/
 ## Naming Conventions
 
 ### Format
+
 ```
 [category]_[name]_[variant].png
 ```
 
 ### Rules
+
 1. **Lowercase only**: Use lowercase letters
 2. **Underscores**: Separate words with underscores
 3. **Descriptive**: Name should describe what it is
@@ -200,13 +212,16 @@ assets/
 5. **No version numbers**: Use git for versioning
 
 ### Examples
+
 ✅ Good:
+
 - `terrain_grass.png`
 - `building_warehouse.png`
 - `road_corner_ne.png`
 - `unit_worker_walk.png`
 
 ❌ Bad:
+
 - `Grass.png` (uppercase)
 - `warehouse-1.png` (version number)
 - `road NE.png` (space in name)
@@ -246,6 +261,7 @@ Reference style: The Settlers II, Anno 1602, classic isometric strategy games
 ### Specific Prompts
 
 #### Grass Terrain Tile
+
 ```
 Create an isometric grass terrain tile in the style of The Settlers II (1996).
 
@@ -273,6 +289,7 @@ Reference style: The Settlers II grass tiles
 ```
 
 #### Water Terrain Tile
+
 ```
 Create an isometric water terrain tile in the style of The Settlers II (1996).
 
@@ -300,6 +317,7 @@ Reference style: The Settlers II water tiles
 ```
 
 #### Road Tile
+
 ```
 Create an isometric dirt road tile in the style of The Settlers II (1996).
 
@@ -328,6 +346,7 @@ Reference style: The Settlers II road system
 ```
 
 #### Warehouse Building (3×3)
+
 ```
 Create an isometric warehouse building in the style of The Settlers II (1996).
 
@@ -359,6 +378,7 @@ Reference style: The Settlers II warehouse building
 ```
 
 #### Worker Unit (Spritesheet)
+
 ```
 Create an isometric worker character spritesheet in the style of The Settlers II (1996).
 
@@ -422,14 +442,14 @@ assets/buildings/<buildingType>.png
 
 Valid building type ids (see `src/types/GameData.ts` for the full list):
 
-| BuildingType     | Sprite path                          | Tile size |
-|------------------|--------------------------------------|-----------|
-| `base_camp`      | `assets/buildings/base_camp.png`     | 6x6       |
-| `warehouse`      | `assets/buildings/warehouse.png`     | 3x3       |
-| `lumberjack`     | `assets/buildings/lumberjack.png`    | 2x2       |
-| `sawmill`        | `assets/buildings/sawmill.png`       | 2x2       |
-| `quarry`         | `assets/buildings/quarry.png`        | 2x2       |
-| `farm`           | `assets/buildings/farm.png`          | 3x2       |
+| BuildingType | Sprite path                       | Tile size |
+| ------------ | --------------------------------- | --------- |
+| `base_camp`  | `assets/buildings/base_camp.png`  | 6x6       |
+| `warehouse`  | `assets/buildings/warehouse.png`  | 3x3       |
+| `lumberjack` | `assets/buildings/lumberjack.png` | 2x2       |
+| `sawmill`    | `assets/buildings/sawmill.png`    | 2x2       |
+| `quarry`     | `assets/buildings/quarry.png`     | 2x2       |
+| `farm`       | `assets/buildings/farm.png`       | 3x2       |
 
 ### Step 2: Register the completed sprite in `buildingSprites.ts`
 
@@ -439,7 +459,7 @@ In **`src/catalog/buildingSprites.ts`**, add the building type to **`BUILDING_FI
 export const BUILDING_FINAL_SPRITES: Record<string, string> = {
   base_camp: '/assets/buildings/base_camp.png',
   storehouse: '/assets/buildings/warehouse.png',
-  lumberjack: '/assets/buildings/lumberjack.png',  // <-- add new entries here
+  lumberjack: '/assets/buildings/lumberjack.png', // <-- add new entries here
 };
 ```
 
@@ -544,14 +564,14 @@ The image can be any pixel size — the renderer auto-scales. What matters is th
 
 These are the exact pixel dimensions of the isometric footprint for each building. The sprite image width should match (or be proportional to) the footprint width. The image height = base height + however tall the building structure is above ground.
 
-| Building     | Tiles (WxD) | Footprint width | Base height | Notes |
-|--------------|-------------|-----------------|-------------|-------|
+| Building     | Tiles (WxD) | Footprint width | Base height | Notes                        |
+| ------------ | ----------- | --------------- | ----------- | ---------------------------- |
 | `base_camp`  | 6x6         | 384px           | 192px       | Square — diamond is centered |
 | `warehouse`  | 3x3         | 192px           | 96px        | Square — diamond is centered |
 | `lumberjack` | 2x2         | 128px           | 64px        | Square — diamond is centered |
 | `sawmill`    | 2x2         | 128px           | 64px        | Square — diamond is centered |
 | `quarry`     | 2x2         | 128px           | 64px        | Square — diamond is centered |
-| `farm`       | 3x2         | 160px           | 80px        | Non-square — see below |
+| `farm`       | 3x2         | 160px           | 80px        | Non-square — see below       |
 
 **Formula:** footprint width = `(W + D) * 32`, base height = `(W + D) * 16`
 
@@ -590,11 +610,11 @@ Trees and rocks are rendered per-tile during the terrain pass. The renderer chec
 
 ### Sprite Paths
 
-| Terrain type | Sprite path | Placeholder |
-|---|---|---|
-| Single tree (`tree` terrain) | `assets/terrain/tree_single.png` | Pine tree (stacked green triangles) |
-| Forest cluster (`forest` terrain) | `assets/terrain/tree_forest.png` | 2-4 smaller pine trees per tile |
-| Rock / mountain (`mountain` terrain) | `assets/terrain/rock.png` | Rounded grey boulder dome |
+| Terrain type                         | Sprite path                      | Placeholder                         |
+| ------------------------------------ | -------------------------------- | ----------------------------------- |
+| Single tree (`tree` terrain)         | `assets/terrain/tree_single.png` | Pine tree (stacked green triangles) |
+| Forest cluster (`forest` terrain)    | `assets/terrain/tree_forest.png` | 2-4 smaller pine trees per tile     |
+| Rock / mountain (`mountain` terrain) | `assets/terrain/rock.png`        | Rounded grey boulder dome           |
 
 ### How it works
 
@@ -670,6 +690,7 @@ assets/resources/<resourceId>.png
 ```
 
 That's it. The icon will automatically appear in:
+
 - **Inventory panel** — before the resource name
 - **Building production bubble** — the small pill above buildings showing buffered output
 - **Building popover** — the detailed buffer breakdown when clicking a building
@@ -711,6 +732,7 @@ All three locations use the same path pattern `/assets/resources/{resourceId}.pn
 ## Future Expansion
 
 As the project grows, add:
+
 - Animation frames for units
 - Seasonal variations (winter grass, autumn trees)
 - More building construction stage sprites

@@ -6,15 +6,15 @@ The world is a 1000x1000 tile grid generated procedurally from a seed. Terrain i
 
 ## Terrain Types
 
-| Code | TerrainType | Walkable | Description |
-|------|-------------|----------|-------------|
-| `g`  | `grass`     | yes      | Default open ground |
-| `w`  | `water`     | no       | Lakes, rivers, ponds |
-| `m`  | `mountain`  | no       | Mountain ranges and rock formations |
+| Code | TerrainType | Walkable | Description                              |
+| ---- | ----------- | -------- | ---------------------------------------- |
+| `g`  | `grass`     | yes      | Default open ground                      |
+| `w`  | `water`     | no       | Lakes, rivers, ponds                     |
+| `m`  | `mountain`  | no       | Mountain ranges and rock formations      |
 | `f`  | `forest`    | yes      | Dense tree clusters (2-4 trees per tile) |
-| `t`  | `tree`      | yes      | Single scattered trees |
-| `h`  | `hill`      | yes      | Elevated terrain near mountains |
-| `d`  | `desert`    | yes      | Unused currently |
+| `t`  | `tree`      | yes      | Single scattered trees                   |
+| `h`  | `hill`      | yes      | Elevated terrain near mountains          |
+| `d`  | `desert`    | yes      | Unused currently                         |
 
 ## Generation Pipeline
 

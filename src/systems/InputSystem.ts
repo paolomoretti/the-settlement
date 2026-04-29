@@ -41,7 +41,12 @@ export class InputSystem {
     this.setupEventListeners();
 
     eventBus.on('build:success', () => {
-      if (this.mode !== 'view' && this.mode !== 'select' && this.mode !== 'build_road' && this.mode !== 'erase') {
+      if (
+        this.mode !== 'view' &&
+        this.mode !== 'select' &&
+        this.mode !== 'build_road' &&
+        this.mode !== 'erase'
+      ) {
         this.setMode('view');
       }
     });
@@ -64,10 +69,10 @@ export class InputSystem {
 
   private setupEventListeners(): void {
     // Mouse events
-    this.canvas.addEventListener('mousedown', (e) =>
+    this.canvas.addEventListener('mousedown', e =>
       this.handlePointerDown(e.clientX, e.clientY, e.shiftKey, e.button, e.buttons)
     );
-    this.canvas.addEventListener('mousemove', (e) =>
+    this.canvas.addEventListener('mousemove', e =>
       this.handlePointerMove(
         e.clientX,
         e.clientY,
@@ -75,23 +80,27 @@ export class InputSystem {
         'buttons' in e ? (e as MouseEvent).buttons : undefined
       )
     );
-    this.canvas.addEventListener('mouseup', (e) =>
+    this.canvas.addEventListener('mouseup', e =>
       this.handlePointerUp(e.clientX, e.clientY, e.shiftKey, e.button)
     );
-    this.canvas.addEventListener('wheel', (e) => this.handleWheel(e));
+    this.canvas.addEventListener('wheel', e => this.handleWheel(e));
 
     // Touch events
-    this.canvas.addEventListener('touchstart', (e) => this.handleTouchStart(e), { passive: false });
-    this.canvas.addEventListener('touchmove', (e) => this.handleTouchMove(e), { passive: false });
-    this.canvas.addEventListener('touchend', (e) => {
-      if (e.changedTouches.length > 0) {
-        const touch = e.changedTouches[0];
-        this.handlePointerUp(touch.clientX, touch.clientY);
-      }
-    }, { passive: false });
+    this.canvas.addEventListener('touchstart', e => this.handleTouchStart(e), { passive: false });
+    this.canvas.addEventListener('touchmove', e => this.handleTouchMove(e), { passive: false });
+    this.canvas.addEventListener(
+      'touchend',
+      e => {
+        if (e.changedTouches.length > 0) {
+          const touch = e.changedTouches[0];
+          this.handlePointerUp(touch.clientX, touch.clientY);
+        }
+      },
+      { passive: false }
+    );
 
     // Prevent context menu
-    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    this.canvas.addEventListener('contextmenu', e => e.preventDefault());
   }
 
   private handlePointerDown(
@@ -136,7 +145,7 @@ export class InputSystem {
     const worldPos = this.renderSystem.clientToGrid(clientX, clientY);
     this.dragStartGridPos = {
       x: worldPos.x,
-      y: worldPos.y
+      y: worldPos.y,
     };
 
     // Check if clicking on a selected entity to start dragging it
@@ -149,7 +158,7 @@ export class InputSystem {
       if (shiftKey && this.roadPathAnchorGridPos) {
         eventBus.emit('build:road_path', {
           from: { ...this.roadPathAnchorGridPos },
-          to: { x: this.dragStartGridPos.x, y: this.dragStartGridPos.y }
+          to: { x: this.dragStartGridPos.x, y: this.dragStartGridPos.y },
         });
       } else {
         eventBus.emit('build:road', { x: this.dragStartGridPos.x, y: this.dragStartGridPos.y });
@@ -164,15 +173,16 @@ export class InputSystem {
     }
   }
 
-  private handlePointerMove(clientX: number, clientY: number, shiftKey = false, mouseButtons?: number): void {
+  private handlePointerMove(
+    clientX: number,
+    clientY: number,
+    shiftKey = false,
+    mouseButtons?: number
+  ): void {
     this.hoverClientPos = { x: clientX, y: clientY };
     this.shiftKeyHeld = shiftKey;
 
-    if (
-      this.isRightButtonPan &&
-      mouseButtons !== undefined &&
-      (mouseButtons & 2) === 0
-    ) {
+    if (this.isRightButtonPan && mouseButtons !== undefined && (mouseButtons & 2) === 0) {
       this.handlePointerUp(clientX, clientY, shiftKey, 2);
       return;
     }
@@ -216,7 +226,11 @@ export class InputSystem {
         if (shiftKey && this.roadPathAnchorGridPos) return;
         const gx = this.hoverGridPos.x;
         const gy = this.hoverGridPos.y;
-        if (!this.lastRoadBuildPos || gx !== this.lastRoadBuildPos.x || gy !== this.lastRoadBuildPos.y) {
+        if (
+          !this.lastRoadBuildPos ||
+          gx !== this.lastRoadBuildPos.x ||
+          gy !== this.lastRoadBuildPos.y
+        ) {
           eventBus.emit('build:road', { x: gx, y: gy });
           this.lastRoadBuildPos = { x: gx, y: gy };
         }
@@ -229,7 +243,8 @@ export class InputSystem {
         }
       } else if (this.mode === 'view') {
         // Check if we should be dragging an entity instead of panning
-        const hasMoved = Math.abs(clientX - this.lastPos.x) > 5 || Math.abs(clientY - this.lastPos.y) > 5;
+        const hasMoved =
+          Math.abs(clientX - this.lastPos.x) > 5 || Math.abs(clientY - this.lastPos.y) > 5;
         if (!hasMoved) return; // Small movements don't count
 
         // If not dragging entity, pan camera
@@ -282,9 +297,10 @@ export class InputSystem {
         this.setMode('view'); // Return to view mode after drop
       } else if (this.mode === 'view') {
         // Check if this was a click (not a drag for panning)
-        const isSamePos = this.dragStartGridPos &&
-                         this.dragStartGridPos.x === gridX &&
-                         this.dragStartGridPos.y === gridY;
+        const isSamePos =
+          this.dragStartGridPos &&
+          this.dragStartGridPos.x === gridX &&
+          this.dragStartGridPos.y === gridY;
 
         if (isSamePos && !this.viewDragDidPan) {
           // It's a click - handle selection

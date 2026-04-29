@@ -14,7 +14,7 @@ src/
 │   └── GameData.ts          # TypeScript type definitions
 ├── data/
 │   ├── resources.json        # Resource definitions
-│   ├── buildings.json        # Building definitions  
+│   ├── buildings.json        # Building definitions
 │   └── DataManager.ts        # Data loader and utilities
 ├── config/
 │   └── gameConfig.ts         # Commented global gameplay tuning values
@@ -76,13 +76,13 @@ All buildings are defined in `src/data/buildings.json`.
   "id": "lumberjack",
   "name": "Lumberjack's Hut",
   "description": "Harvests wood logs from trees.",
-  
+
   // Physical size on map
   "size": {
     "width": 2,    // Tiles wide
     "height": 2    // Tiles deep
   },
-  
+
   // Visual properties
   "visual": {
     "buildingHeight": 60,  // Pixels above ground
@@ -101,7 +101,7 @@ All buildings are defined in `src/data/buildings.json`.
       "onSec": 5        // Emit duration within each cycle
     }
   },
-  
+
   // Construction requirements
   "buildCost": {
     "wood_plank": 3,
@@ -109,7 +109,7 @@ All buildings are defined in `src/data/buildings.json`.
   },
   "buildTime": 35,        // Seconds
   "requiresRoad": true,   // Must be connected to road network
-  
+
   // Production (optional)
   "production": {
     "outputs": {
@@ -119,7 +119,7 @@ All buildings are defined in `src/data/buildings.json`.
     "productionTime": 20, // Seconds per cycle
     "continuous": true    // Keeps producing
   },
-  
+
   // Storage (optional - for warehouses, or ingredient bin on processors)
   "storage": {
     "capacity": 200,
@@ -127,13 +127,13 @@ All buildings are defined in `src/data/buildings.json`.
   },
   // If the building has both production.inputs and storage, capacity counts ingredients only;
   // finished goods always stage in production.outputBuffer (see BUILDING_DEPENDENCIES.md).
-  
+
   // Population
   "population": {
     "provides": 0,  // Housing capacity (residential buildings)
     "requires": 1   // Workers needed to operate
   },
-  
+
   // Metadata
   "category": "production",
   "tier": 1,              // Tech tier: 1, 2, or 3
@@ -149,6 +149,7 @@ If `chimneySmoke.schedule` is present, smoke follows that schedule and does **no
 Buildings can have production rules:
 
 **Simple Gathering** (no inputs):
+
 ```json
 "production": {
   "outputs": { "wood_log": 1 },
@@ -158,6 +159,7 @@ Buildings can have production rules:
 ```
 
 **Processing** (inputs → outputs):
+
 ```json
 "production": {
   "outputs": { "wood_plank": 1 },
@@ -168,10 +170,11 @@ Buildings can have production rules:
 ```
 
 **Multi-input**:
+
 ```json
 "production": {
   "outputs": { "bread": 1 },
-  "inputs": { 
+  "inputs": {
     "flour": 1,
     "water": 1
   },
@@ -183,16 +186,19 @@ Buildings can have production rules:
 ### Example Production Chains
 
 **Wood Chain**:
+
 ```
 Forest → Lumberjack → Wood Logs → Sawmill → Wood Planks → Construction
 ```
 
 **Food Chain**:
+
 ```
 Farm → Grain → Mill → Flour + (Well → Water) → Bakery → Bread
 ```
 
 **Iron Chain**:
+
 ```
 Iron Mine → Iron Ore + (Coal Mine → Coal) → Iron Smelter → Iron Bars → Metalworks → Tools
 ```
@@ -212,20 +218,20 @@ Game-wide tuning settings live in `src/config/gameConfig.ts` as the exported `GA
 
 ```typescript
 export const GAME_CONFIG = {
-  "starting": {
-    "baseCamp": {
-      "position": "center",
-      "startingResources": {
-        "wood_plank": 48,
-        "stone": 48
+  starting: {
+    baseCamp: {
+      position: 'center',
+      startingResources: {
+        wood_plank: 48,
+        stone: 48,
       },
-      "startingPopulation": 100
+      startingPopulation: 100,
     },
-    "exploration": {
+    exploration: {
       // Chebyshev radius, in map cells, from the center of each headquarters.
-      "initialRadius": 12
-    }
-  }
+      initialRadius: 12,
+    },
+  },
 } satisfies GameConfig;
 ```
 
@@ -275,7 +281,7 @@ const tier1Buildings = dataManager.getBuildingsByTier(1);
 ```typescript
 const inventory = {
   wood_log: 10,
-  stone: 5
+  stone: 5,
 };
 
 // Can player afford this?
@@ -328,12 +334,14 @@ Production buildings require workers to operate:
 ```
 
 **Worker Assignment Flow**:
+
 1. Build production building
 2. Assign idle worker from population pool
 3. Worker walks to building
 4. Production begins
 
 **Population Balance**:
+
 - Total Population = Sum of all housing capacities
 - Idle Workers = Total Population - Assigned Workers
 - Must have idle workers to operate new buildings
@@ -374,7 +382,7 @@ Storage buildings provide capacity:
 Buildings produce resources over time:
 
 ```typescript
-productionTime = baseTime / baseProductionRate
+productionTime = baseTime / baseProductionRate;
 ```
 
 Example: Lumberjack produces 1 log every 20 seconds.
@@ -394,6 +402,7 @@ if (!validation.valid) {
 ```
 
 Checks:
+
 - Building costs reference valid resources
 - Production inputs/outputs reference valid resources
 - No circular dependencies (future)
@@ -408,12 +417,12 @@ All data is fully typed in `src/types/GameData.ts`:
 // Type-safe resource access
 const resource: ResourceDefinition = dataManager.getResource('wood_log')!;
 
-// Type-safe building access  
+// Type-safe building access
 const building: BuildingDefinition = dataManager.getBuilding('lumberjack')!;
 
 // Autocompletion works!
-building.production?.outputs  // ✓ Type-safe
-building.invalidProperty      // ✗ Compile error
+building.production?.outputs; // ✓ Type-safe
+building.invalidProperty; // ✗ Compile error
 ```
 
 ---

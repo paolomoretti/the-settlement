@@ -52,6 +52,7 @@ Road neighbors use **4-directional** (cardinal only) to match the pathfinding sy
 ### Spawning
 
 When a new segment needs a worker:
+
 1. Check available population (`population.current - roadWorkerCount - returningWorkerCount`)
 2. If no population available, segment gets no worker
 3. Find the road tile cardinally adjacent to the base camp entrance
@@ -62,6 +63,7 @@ When a new segment needs a worker:
 ### Freeing (Road Deletion)
 
 When a road is deleted and a segment's worker is freed:
+
 1. Worker pathfinds from their current position back to the base camp entrance
 2. Worker walks along the remaining road network
 3. On arrival at base camp, the worker entity is removed and population is restored
@@ -110,6 +112,7 @@ A building with an entrance is **connected** only when a road tile cardinally ad
 ### "Front" Definition
 
 In isometric view, a building's **front** is the **bottom-right side**. The entrance is placed at the center (or closest to center, biased toward the bottom/front) of this side. Building sprites are scaled down so the footprint tiles peek through underneath, making the entrance road visible behind/below the sprite:
+
 - Buildings < 5 tiles: 85% scale
 - Buildings ≥ 5 tiles (base camp): 72% scale
 
@@ -129,45 +132,46 @@ New games start with **zero roads**. The player builds the first road from the b
 
 ## File Map
 
-| File | Purpose |
-|------|---------|
-| `src/economics/RoadSegmentManager.ts` | Segment computation, worker reconciliation, segment CRUD |
-| `src/core/Game.ts` | Integration: spawn/free/move workers, road placement validation |
+| File                                  | Purpose                                                         |
+| ------------------------------------- | --------------------------------------------------------------- |
+| `src/economics/RoadSegmentManager.ts` | Segment computation, worker reconciliation, segment CRUD        |
+| `src/core/Game.ts`                    | Integration: spawn/free/move workers, road placement validation |
 
 ### RoadSegmentManager API
 
-| Method | Purpose |
-|--------|---------|
-| `addRoad(x, y)` | Track a newly placed road tile |
-| `removeRoad(x, y)` | Track a removed road tile (building placed on it) |
-| `recalculate(tileMap)` | Recompute all segments, reconcile workers |
-| `rebuildRoadTileSet(tileMap)` | Scan entire map for roads (used on load) |
-| `getSegments()` | Get current segment list |
-| `getWorkerCount()` | Number of workers assigned to segments |
-| `getCenterTile(segment)` | Middle tile of a segment |
-| `getSegmentForWorker(workerId)` | Find which segment a worker belongs to |
+| Method                          | Purpose                                           |
+| ------------------------------- | ------------------------------------------------- |
+| `addRoad(x, y)`                 | Track a newly placed road tile                    |
+| `removeRoad(x, y)`              | Track a removed road tile (building placed on it) |
+| `recalculate(tileMap)`          | Recompute all segments, reconcile workers         |
+| `rebuildRoadTileSet(tileMap)`   | Scan entire map for roads (used on load)          |
+| `getSegments()`                 | Get current segment list                          |
+| `getWorkerCount()`              | Number of workers assigned to segments            |
+| `getCenterTile(segment)`        | Middle tile of a segment                          |
+| `getSegmentForWorker(workerId)` | Find which segment a worker belongs to            |
 
 ### Game.ts methods (transport slice)
 
 Road worker **spawn / free / move** live in `GameWorkerRegistry`; the **relay task loop** below is in `Game.ts`.
 
-| Method | Purpose |
-|--------|---------|
-| `updateTransport()` | Each frame: rebuild `pendingBuildingPickups`, then for each segment worker idle and not returning, `tryStartTransport` or `advanceTransport` |
-| `tryStartTransport(...)` | Scans both segment endpoints for building output (`ep.entityId` + `checkBuildingForOutput`) and junction items; creates `TransportTask` |
-| `advanceTransport(...)` | `to_pickup` → `to_dropoff` → `to_center`; pulls from `Production.outputBuffer` (legacy: output-type stacks still in ingredient `Storage` on old saves) or junction |
-| `getSegmentPath(...)` | Ordered sub-path along `segment.tiles` between two positions (empty if same index) |
-| `recomputeTransportRoutes()` | `cancelInvalidTransportTasks`, `computeRoutes`, `computeRoutesToBuilding` for input buildings + construction sites, `rescueStrandedItems` |
-| `kickTransportRoutesForNewOutput()` | Wrapper: calls `recomputeTransportRoutes()` after production output or periodic heal |
-| `hasAnyUnroutedProductionOutput()` | True if any `outputBuffer` is non-empty, or legacy output still in ingredient `Storage` (used for periodic route refresh) |
-| `checkBuildingForOutput(entityId)` | Returns a resource type to haul, or `null` |
-| `cancelInvalidTransportTasks()` | Clears tasks whose pickup/dropoff no longer match segment endpoints (after topology change) |
+| Method                              | Purpose                                                                                                                                                            |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `updateTransport()`                 | Each frame: rebuild `pendingBuildingPickups`, then for each segment worker idle and not returning, `tryStartTransport` or `advanceTransport`                       |
+| `tryStartTransport(...)`            | Scans both segment endpoints for building output (`ep.entityId` + `checkBuildingForOutput`) and junction items; creates `TransportTask`                            |
+| `advanceTransport(...)`             | `to_pickup` → `to_dropoff` → `to_center`; pulls from `Production.outputBuffer` (legacy: output-type stacks still in ingredient `Storage` on old saves) or junction |
+| `getSegmentPath(...)`               | Ordered sub-path along `segment.tiles` between two positions (empty if same index)                                                                                 |
+| `recomputeTransportRoutes()`        | `cancelInvalidTransportTasks`, `computeRoutes`, `computeRoutesToBuilding` for input buildings + construction sites, `rescueStrandedItems`                          |
+| `kickTransportRoutesForNewOutput()` | Wrapper: calls `recomputeTransportRoutes()` after production output or periodic heal                                                                               |
+| `hasAnyUnroutedProductionOutput()`  | True if any `outputBuffer` is non-empty, or legacy output still in ingredient `Storage` (used for periodic route refresh)                                          |
+| `checkBuildingForOutput(entityId)`  | Returns a resource type to haul, or `null`                                                                                                                         |
+| `cancelInvalidTransportTasks()`     | Clears tasks whose pickup/dropoff no longer match segment endpoints (after topology change)                                                                        |
 
 ---
 
 ## Save/Load
 
 Segment data is saved as `roadSegments` in the save file. Junction items are saved as `transport`. On load:
+
 1. Road tile set is rebuilt from the map
 2. Segment assignments are restored
 3. Workers are spawned directly at segment centers (no walking animation on load)
@@ -206,10 +210,10 @@ Implemented in `Game.ts` (`tryStartTransport`, `advanceTransport`, `updateTransp
 
 `RoadSegmentManager.classifyTile()` sets `entityId` when a road tile is cardinally adjacent to a building tile that is **occupied and `hasRoad`** (the entrance cell). That happens for more than one **node `type`**:
 
-| `type`     | When |
-|------------|------|
+| `type`     | When                                                                    |
+| ---------- | ----------------------------------------------------------------------- |
 | `building` | 2 road neighbors, or 0–1 neighbors, and adjacent to a building entrance |
-| `junction` | **3+ road neighbors** and adjacent to a building entrance |
+| `junction` | **3+ road neighbors** and adjacent to a building entrance               |
 
 So a **T-junction** (or any 3-way tile) next to a woodcutter is classified as **`junction`**, not `building`, but it still carries the correct **`entityId`**.
 
@@ -245,7 +249,7 @@ Each segment worker cycles through transport phases:
    - If at junction (not final destination) → drops as junction item with destination tag
 6. **to_center** → walks back to segment center, then returns to idle
 
-Workers walk along the segment's tile list (not A* pathfinding), which is a direct ordered path between endpoints.
+Workers walk along the segment's tile list (not A\* pathfinding), which is a direct ordered path between endpoints.
 
 ### Junction Items
 
@@ -272,9 +276,9 @@ Items waiting at segment endpoints (junctions) for the next worker to pick up. E
 
 ### File Map
 
-| File | Purpose |
-|------|---------|
-| `src/economics/TransportManager.ts` | Junction items, route computation (BFS), pickup/dropoff endpoint helpers |
-| `src/core/Game.ts` | Transport update loop, worker state machine, integration with Production/Storage |
-| `src/components/Worker.ts` | `TransportTask` interface, `transportTask` field, `carryingResource` state |
-| `src/systems/RenderSystem.ts` | Carrying visual (raised arms, item on head) |
+| File                                | Purpose                                                                          |
+| ----------------------------------- | -------------------------------------------------------------------------------- |
+| `src/economics/TransportManager.ts` | Junction items, route computation (BFS), pickup/dropoff endpoint helpers         |
+| `src/core/Game.ts`                  | Transport update loop, worker state machine, integration with Production/Storage |
+| `src/components/Worker.ts`          | `TransportTask` interface, `transportTask` field, `carryingResource` state       |
+| `src/systems/RenderSystem.ts`       | Carrying visual (raised arms, item on head)                                      |

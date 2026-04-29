@@ -240,15 +240,15 @@ export interface BuildingDefinition {
 
   // Physical properties
   size: {
-    width: number;   // Tiles wide
-    height: number;  // Tiles deep
+    width: number; // Tiles wide
+    height: number; // Tiles deep
   };
 
   // Visual properties
   visual: {
     buildingHeight: number; // Pixels above ground (for rendering)
-    color: string;          // Base color (until sprites loaded)
-    sprite?: string;        // Path to sprite asset
+    color: string; // Base color (until sprites loaded)
+    sprite?: string; // Path to sprite asset
     /** Optional multiplier for the footprint-fitted sprite (default 1). Anchored at footprint bottom center. */
     spriteScale?: number;
     /** Optional screen-space nudge for the sprite (pixels); may be negative. */
@@ -272,8 +272,8 @@ export interface BuildingDefinition {
 
   // Population
   population?: {
-    provides?: number;  // Housing: adds to max population
-    requires?: number;  // Workers: needs this many workers to operate
+    provides?: number; // Housing: adds to max population
+    requires?: number; // Workers: needs this many workers to operate
   };
 
   // Worker requirements

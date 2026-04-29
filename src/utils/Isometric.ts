@@ -26,7 +26,7 @@ export class Isometric {
     const gridY = (screenY / (this.tileHeight / 2) - screenX / (this.tileWidth / 2)) / 2;
     return {
       x: Math.floor(gridX),
-      y: Math.floor(gridY)
+      y: Math.floor(gridY),
     };
   }
 
@@ -67,10 +67,10 @@ export class Isometric {
     const hh = this.tileHeight / 2;
 
     return [
-      { x: center.x, y: center.y - hh },      // Top
-      { x: center.x + hw, y: center.y },      // Right
-      { x: center.x, y: center.y + hh },      // Bottom
-      { x: center.x - hw, y: center.y }       // Left
+      { x: center.x, y: center.y - hh }, // Top
+      { x: center.x + hw, y: center.y }, // Right
+      { x: center.x, y: center.y + hh }, // Bottom
+      { x: center.x - hw, y: center.y }, // Left
     ];
   }
 }

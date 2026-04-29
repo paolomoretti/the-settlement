@@ -77,7 +77,9 @@ export class BuildingPopover {
     const content = isEnemyAttackTarget
       ? this.buildEnemyAttackContent(entity, building)
       : this.buildContent(building, def);
-    const name = isEnemyAttackTarget ? `Enemy ${def?.name || building.buildingType}` : def?.name || building.buildingType;
+    const name = isEnemyAttackTarget
+      ? `Enemy ${def?.name || building.buildingType}`
+      : def?.name || building.buildingType;
 
     const getAnchor = () => {
       this.popover.setTemporaryHidden(this.game.isDraggingEntity);
@@ -161,10 +163,11 @@ export class BuildingPopover {
     const resource = dataManager.getResource(resourceId as any);
     const fallbackSrc = `/assets/resources/${resourceId}.png`;
     const primarySrc = resource?.icon || fallbackSrc;
-    const fallbackAttr = primarySrc === fallbackSrc
-      ? ''
-      : ` data-fallback="${this.escapeHtml(fallbackSrc)}"`;
-    const fallback = this.escapeHtml(this.getResourceName(resourceId).slice(0, 1).toUpperCase() || '?');
+    const fallbackAttr =
+      primarySrc === fallbackSrc ? '' : ` data-fallback="${this.escapeHtml(fallbackSrc)}"`;
+    const fallback = this.escapeHtml(
+      this.getResourceName(resourceId).slice(0, 1).toUpperCase() || '?'
+    );
     return (
       `<span class="popover-resource-icon ${className}">` +
       `<span class="popover-resource-icon-fallback">${fallback}</span>` +
@@ -175,7 +178,8 @@ export class BuildingPopover {
 
   private renderResourceChip(resourceId: string, amount?: number, extraClass: string = ''): string {
     const name = this.escapeHtml(this.getResourceName(resourceId));
-    const amountText = amount && amount > 1 ? `<span class="popover-resource-amount">${amount}&times;</span>` : '';
+    const amountText =
+      amount && amount > 1 ? `<span class="popover-resource-amount">${amount}&times;</span>` : '';
     return (
       `<span class="popover-resource-chip ${extraClass}">` +
       this.renderResourceIcon(resourceId) +
@@ -207,10 +211,12 @@ export class BuildingPopover {
 
   private renderRecipeOutputs(def: BuildingDefinition): string {
     const outputs = def.production ? Object.entries(def.production.outputs) : [];
-    return outputs
-      .filter(([, amount]) => (amount ?? 0) > 0)
-      .map(([id, amount]) => this.renderResourceChip(id, amount))
-      .join('') || '<span class="popover-empty-note">None</span>';
+    return (
+      outputs
+        .filter(([, amount]) => (amount ?? 0) > 0)
+        .map(([id, amount]) => this.renderResourceChip(id, amount))
+        .join('') || '<span class="popover-empty-note">None</span>'
+    );
   }
 
   private updateMilitaryPanel(): void {
@@ -239,8 +245,14 @@ export class BuildingPopover {
     const def = dataManager.getBuilding(building.buildingType);
     const mapGather = def?.animation?.type === 'gather';
     const wellExhausted =
-      building.buildingType === 'well' && building.outOfMapResources && production.status === 'producing';
-    if ((!mapGather && !wellExhausted) || !building.outOfMapResources || production.status !== 'producing') {
+      building.buildingType === 'well' &&
+      building.outOfMapResources &&
+      production.status === 'producing';
+    if (
+      (!mapGather && !wellExhausted) ||
+      !building.outOfMapResources ||
+      production.status !== 'producing'
+    ) {
       this.gatherWarningEl.style.display = 'none';
       return;
     }
@@ -304,9 +316,7 @@ export class BuildingPopover {
           this.game.getProductionPriorities()
         )
       : production.currentCycleOutputs;
-    const entries = outputs
-      ? Object.entries(outputs).filter(([, amount]) => amount > 0)
-      : [];
+    const entries = outputs ? Object.entries(outputs).filter(([, amount]) => amount > 0) : [];
 
     if (!isProducing || entries.length === 0) {
       this.currentOutputContainer.style.display = 'none';
@@ -401,7 +411,10 @@ export class BuildingPopover {
       const title = this.escapeHtml(this.getResourceName(id));
       return (
         `<span class="popover-storage-cell popover-storage-cell--filled" title="${title}">` +
-        this.renderResourceIcon(id, 'popover-resource-icon--slot popover-resource-icon--storage-slot') +
+        this.renderResourceIcon(
+          id,
+          'popover-resource-icon--slot popover-resource-icon--storage-slot'
+        ) +
         `</span>`
       );
     }).join('');
@@ -411,9 +424,10 @@ export class BuildingPopover {
           .map(id => this.renderResourceChip(id, undefined, 'popover-resource-chip--compact'))
           .join('')}</div>`
       : '';
-    const previewNote = capacity > slotCount
-      ? `<span class="popover-empty-note">showing first ${slotCount}</span>`
-      : '';
+    const previewNote =
+      capacity > slotCount
+        ? `<span class="popover-empty-note">showing first ${slotCount}</span>`
+        : '';
 
     this.storageContainer.innerHTML =
       `<div class="popover-section-title">Storage</div>` +
@@ -446,9 +460,15 @@ export class BuildingPopover {
     const def = dataManager.getBuilding(building.buildingType as BuildingType);
 
     const lines: string[] = [];
-    const isMilitaryPost = typeof def?.military?.soldierCapacity === 'number' && (def?.military?.soldierCapacity ?? 0) > 0;
+    const isMilitaryPost =
+      typeof def?.military?.soldierCapacity === 'number' &&
+      (def?.military?.soldierCapacity ?? 0) > 0;
 
-    if (!isMilitaryPost && building.state === 'awaiting_materials' && building.constructionMaterials) {
+    if (
+      !isMilitaryPost &&
+      building.state === 'awaiting_materials' &&
+      building.constructionMaterials
+    ) {
       for (const [res, required] of Object.entries(building.constructionMaterials)) {
         const delivered = building.materialsDelivered[res] || 0;
         const resName = dataManager.getResource(res as any)?.name || res;
@@ -479,9 +499,10 @@ export class BuildingPopover {
 
     const desc = document.createElement('div');
     desc.className = 'popover-desc';
-    desc.textContent = building.buildingType === 'base_camp'
-      ? 'Attack this enemy headquarters to loot its stores and burn the civilian village.'
-      : 'Attack this enemy military building to capture its garrison and expand your border.';
+    desc.textContent =
+      building.buildingType === 'base_camp'
+        ? 'Attack this enemy headquarters to loot its stores and burn the civilian village.'
+        : 'Attack this enemy military building to capture its garrison and expand your border.';
     el.appendChild(desc);
 
     const range = document.createElement('div');
@@ -507,9 +528,10 @@ export class BuildingPopover {
 
     const update = () => {
       const total = selected[1] + selected[2] + selected[3];
-      totalEl.innerHTML = total > 0
-        ? `<span class="popover-label">Selected:</span> ${total} soldier${total === 1 ? '' : 's'}`
-        : `<span class="popover-label">Selected:</span> <span style="color:#ffb74d">Choose at least one soldier</span>`;
+      totalEl.innerHTML =
+        total > 0
+          ? `<span class="popover-label">Selected:</span> ${total} soldier${total === 1 ? '' : 's'}`
+          : `<span class="popover-label">Selected:</span> <span style="color:#ffb74d">Choose at least one soldier</span>`;
       attackBtn.disabled = total <= 0;
       attackBtn.style.opacity = total <= 0 ? '0.55' : '1';
       attackBtn.style.cursor = total <= 0 ? 'not-allowed' : 'pointer';
@@ -744,7 +766,7 @@ export class BuildingPopover {
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'popover-delete-btn';
     deleteBtn.textContent = 'Delete Building';
-    deleteBtn.addEventListener('click', (e) => {
+    deleteBtn.addEventListener('click', e => {
       e.stopPropagation();
       eventBus.emit('delete:selected');
     });

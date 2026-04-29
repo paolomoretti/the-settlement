@@ -15,14 +15,14 @@ Violations look like workers **teleporting** next to the well or hut; that must 
 
 ## Reference implementations
 
-| Role | Method | Spawn |
-|------|--------|--------|
-| Road segment worker | `spawnSegmentWorker` | Base camp road → segment center, via `queueHqStreetEntry` |
-| Builder | `spawnBuilder` | Base camp road → road near site, via `queueHqStreetEntry` |
-| Tool delivery | `spawnToolWorker` | Base camp road → road near building, via `queueHqStreetEntry` |
-| Soldier dispatch | `Game.tryDispatchSoldierToMilitaryBuilding` | Base camp road → military post, via `queueHqStreetEntry` |
-| Surveyor | `SurveyCoordinator.tryDispatchSurveyor` | Base camp road → survey site, via `queueHqStreetEntry` |
-| Well operator / `interior_operator` (workshop) | `spawnSiteOperator` | Base camp → road near building via `queueHqStreetEntry` → door → concealed inside until demolition (well: custom adjacent “draw” instead) |
+| Role                                           | Method                                      | Spawn                                                                                                                                     |
+| ---------------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Road segment worker                            | `spawnSegmentWorker`                        | Base camp road → segment center, via `queueHqStreetEntry`                                                                                 |
+| Builder                                        | `spawnBuilder`                              | Base camp road → road near site, via `queueHqStreetEntry`                                                                                 |
+| Tool delivery                                  | `spawnToolWorker`                           | Base camp road → road near building, via `queueHqStreetEntry`                                                                             |
+| Soldier dispatch                               | `Game.tryDispatchSoldierToMilitaryBuilding` | Base camp road → military post, via `queueHqStreetEntry`                                                                                  |
+| Surveyor                                       | `SurveyCoordinator.tryDispatchSurveyor`     | Base camp road → survey site, via `queueHqStreetEntry`                                                                                    |
+| Well operator / `interior_operator` (workshop) | `spawnSiteOperator`                         | Base camp → road near building via `queueHqStreetEntry` → door → concealed inside until demolition (well: custom adjacent “draw” instead) |
 
 Details: `.claude/BUILDING_WORKERS.md`.
 

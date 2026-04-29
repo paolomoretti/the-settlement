@@ -55,8 +55,9 @@ export class ResourceManager {
   }
 
   getAvailableAmount(resourceType: string): number {
-    return this.getGlobalAmount(resourceType) -
-      this.transportQueue.getInTransitAmount(resourceType);
+    return (
+      this.getGlobalAmount(resourceType) - this.transportQueue.getInTransitAmount(resourceType)
+    );
   }
 
   canAfford(costs: Record<string, number>): boolean {
@@ -130,7 +131,12 @@ export class ResourceManager {
     return true;
   }
 
-  deliverToNearestStorage(resourceType: string, amount: number, fromX: number, fromY: number): number {
+  deliverToNearestStorage(
+    resourceType: string,
+    amount: number,
+    fromX: number,
+    fromY: number
+  ): number {
     const storageEntities = this.getStorageBuildings();
     if (storageEntities.length === 0) return 0;
 

@@ -46,13 +46,13 @@ See [Building Dependencies](BUILDING_DEPENDENCIES.md) for full details on local 
 
 Every production building is in one of these states:
 
-| Status | Meaning | What To Show (UX) |
-|--------|---------|-------------------|
-| `idle` | Not producing (one-time production finished) | Nothing |
-| `producing` | Actively producing | Progress indicator |
-| `stopped_full` | Outside output buffer is full, waiting for pickup | **Stop icon** — items need to be collected |
-| `stopped_no_inputs` | Missing required input resources | Warning — missing ingredients |
-| `stopped_no_road` | Not connected to road network | Road disconnected indicator |
+| Status              | Meaning                                           | What To Show (UX)                          |
+| ------------------- | ------------------------------------------------- | ------------------------------------------ |
+| `idle`              | Not producing (one-time production finished)      | Nothing                                    |
+| `producing`         | Actively producing                                | Progress indicator                         |
+| `stopped_full`      | Outside output buffer is full, waiting for pickup | **Stop icon** — items need to be collected |
+| `stopped_no_inputs` | Missing required input resources                  | Warning — missing ingredients              |
+| `stopped_no_road`   | Not connected to road network                     | Road disconnected indicator                |
 
 ### Output Buffer
 
@@ -170,18 +170,18 @@ Worker arrives at dropoff
 
 ### Key Methods
 
-| Method | Purpose |
-|--------|---------|
-| `getGlobalInventory()` | Sum of all Storage components — the empire-wide inventory |
-| `getGlobalAmount(type)` | Total amount of one resource across all storage |
-| `canAfford(costs)` | Check if global inventory covers a cost map |
-| `deductResources(costs)` | Remove resources from storage buildings |
-| `consumeInputsForProduction(inputs)` | Check + deduct inputs for production |
-| `requestPickup(entityId, resource, amount)` | Emits `transport:pickup_available` and queues `TransportRequest` — **not wired** to the segment-worker relay; the live pipeline is **`Game.updateTransport` → `tryStartTransport`** reading `Production.outputBuffer`. Do not assume this call alone moves goods. |
-| `completeDelivery(requestId, resource, amount)` | Deliver item to headquarters storage |
-| `findNearestStorage(x, y, resourceType?)` | Find closest storage building by Manhattan distance |
-| `getStorageBuildings()` | All completed buildings with Storage component |
-| `getProductionBuildings()` | All buildings with Production component |
+| Method                                          | Purpose                                                                                                                                                                                                                                                           |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getGlobalInventory()`                          | Sum of all Storage components — the empire-wide inventory                                                                                                                                                                                                         |
+| `getGlobalAmount(type)`                         | Total amount of one resource across all storage                                                                                                                                                                                                                   |
+| `canAfford(costs)`                              | Check if global inventory covers a cost map                                                                                                                                                                                                                       |
+| `deductResources(costs)`                        | Remove resources from storage buildings                                                                                                                                                                                                                           |
+| `consumeInputsForProduction(inputs)`            | Check + deduct inputs for production                                                                                                                                                                                                                              |
+| `requestPickup(entityId, resource, amount)`     | Emits `transport:pickup_available` and queues `TransportRequest` — **not wired** to the segment-worker relay; the live pipeline is **`Game.updateTransport` → `tryStartTransport`** reading `Production.outputBuffer`. Do not assume this call alone moves goods. |
+| `completeDelivery(requestId, resource, amount)` | Deliver item to headquarters storage                                                                                                                                                                                                                              |
+| `findNearestStorage(x, y, resourceType?)`       | Find closest storage building by Manhattan distance                                                                                                                                                                                                               |
+| `getStorageBuildings()`                         | All completed buildings with Storage component                                                                                                                                                                                                                    |
+| `getProductionBuildings()`                      | All buildings with Production component                                                                                                                                                                                                                           |
 
 ### Entity Access
 
@@ -201,24 +201,24 @@ The economics system emits these events via `EventBus`:
 
 ### Production Events
 
-| Event | Payload | When |
-|-------|---------|------|
-| `production:complete` | `{ entityId, outputs }` | A production cycle finishes and items enter the buffer |
-| `production:stopped` | `{ entityId, reason }` | Production stops (reason: `buffer_full`, `no_inputs`, `no_road`) |
-| `production:resumed` | `{ entityId }` | Production restarts after being stopped |
+| Event                 | Payload                 | When                                                             |
+| --------------------- | ----------------------- | ---------------------------------------------------------------- |
+| `production:complete` | `{ entityId, outputs }` | A production cycle finishes and items enter the buffer           |
+| `production:stopped`  | `{ entityId, reason }`  | Production stops (reason: `buffer_full`, `no_inputs`, `no_road`) |
+| `production:resumed`  | `{ entityId }`          | Production restarts after being stopped                          |
 
 ### Transport Events
 
-| Event | Payload | When |
-|-------|---------|------|
+| Event                        | Payload                                               | When                                |
+| ---------------------------- | ----------------------------------------------------- | ----------------------------------- |
 | `transport:pickup_available` | `{ requestId, sourceEntityId, resourceType, amount }` | Item ready for pickup at a building |
 
 ### Resource Events
 
-| Event | Payload | When |
-|-------|---------|------|
-| `resource:updated` | none | Global inventory changed (production consumed inputs, build cost deducted, delivery completed) |
-| `resource:delivered` | `{ resourceType, amount }` | Item delivered to storage |
+| Event                | Payload                    | When                                                                                           |
+| -------------------- | -------------------------- | ---------------------------------------------------------------------------------------------- |
+| `resource:updated`   | none                       | Global inventory changed (production consumed inputs, build cost deducted, delivery completed) |
+| `resource:delivered` | `{ resourceType, amount }` | Item delivered to storage                                                                      |
 
 ---
 
@@ -231,7 +231,8 @@ All economics state is persisted:
 ```json
 {
   "type": "lumberjack",
-  "x": 505, "y": 500,
+  "x": 505,
+  "y": 500,
   "production": {
     "status": "producing",
     "timer": 12.5,
@@ -263,15 +264,15 @@ Old saves (before the economics system) have `inventory` at the top level instea
 
 ## File Map
 
-| File | Purpose |
-|------|---------|
-| `src/components/Production.ts` | Production component — timer, buffer, status, outputs, inputs |
-| `src/components/Storage.ts` | Storage component — items, capacity, accepts filter |
-| `src/systems/ProductionSystem.ts` | ECS system — processes production each frame |
-| `src/economics/ResourceManager.ts` | Singleton — global inventory, cost checks, transport queue |
-| `src/economics/TransportRequest.ts` | Transport queue — pickup request lifecycle |
-| `src/entities/EntityFactory.ts` | Attaches Production/Storage components based on building defs |
-| `src/core/Game.ts` | Registers ProductionSystem, syncs inventory, save/load |
+| File                                | Purpose                                                       |
+| ----------------------------------- | ------------------------------------------------------------- |
+| `src/components/Production.ts`      | Production component — timer, buffer, status, outputs, inputs |
+| `src/components/Storage.ts`         | Storage component — items, capacity, accepts filter           |
+| `src/systems/ProductionSystem.ts`   | ECS system — processes production each frame                  |
+| `src/economics/ResourceManager.ts`  | Singleton — global inventory, cost checks, transport queue    |
+| `src/economics/TransportRequest.ts` | Transport queue — pickup request lifecycle                    |
+| `src/entities/EntityFactory.ts`     | Attaches Production/Storage components based on building defs |
+| `src/core/Game.ts`                  | Registers ProductionSystem, syncs inventory, save/load        |
 
 ---
 
@@ -288,6 +289,7 @@ Old saves (before the economics system) have `inventory` at the top level instea
 ### Component Attachment (EntityFactory)
 
 When `createBuilding()` is called:
+
 - If building def has `production` with non-empty `outputs` → attach `Production` component
 - If building def has `storage` → attach `Storage` component (with `isHeadquarters` flag)
 

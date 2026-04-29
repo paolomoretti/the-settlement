@@ -39,6 +39,7 @@ Uses the same gather state machine (`to_target → chopping → returning`) but 
 ## Key Implementation Details
 
 ### Files Changed
+
 - **`src/types/GameData.ts`** — `AnimationConfig` interface, `animation?` field on `BuildingDefinition`
 - **`src/data/buildings.json`** — lumberjack has `animation` block, `productionTime` = 240s
 - **`src/components/Building.ts`** — `animationWorkerId: number | null` tracks active animation worker
@@ -47,16 +48,21 @@ Uses the same gather state machine (`to_target → chopping → returning`) but 
 - **`src/core/Game.ts`** — `animationWorkers` Map, `reservedTreeTiles` Set, state machine (`to_target → chopping → returning`)
 
 ### Off-Road Pathfinding
+
 `findOffRoadPath()` creates a bounded sub-grid (start↔end + 5 tile margin) where any walkable non-occupied tile is passable. This avoids allocating a full 1000×1000 grid.
 
 ### Reserved Trees
+
 `reservedTreeTiles` Set prevents multiple lumberjacks from targeting the same tree. Released when worker returns or building is deleted.
 
 ### Population Accounting
+
 Animation workers count against `getAvailablePopulation()`.
 
 ### Cleanup
+
 Animation workers are cleaned up on:
+
 - Building deletion (`deleteSelectedEntity`)
 - New game (`resetForNewGame`)
 - Save load (`loadSaveData`)
@@ -70,6 +76,7 @@ Animation workers are cleaned up on:
 - If **no** candidate has a path within the walk limit, `Building.outOfMapResources` is set, **production time is paused** (lumberjack / quarry / fisher), the **building popover** shows an extra warning under the description, and an **orange X** bobs above the roof in `RenderSystem`. A successful spawn clears the flag.
 
 ### Edge Cases
+
 - **No reachable map sources** (nothing in radius, depleted rock/fish, or path longer than `maxGatherWalkCells`): no worker spawns; production pauses until terrain changes or limits are adjusted in `buildings.json`.
 - **Building deleted while worker out**: worker entity removed, reserved tree released
 - **Worker returns before timer**: fine — sits idle until next cycle

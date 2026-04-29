@@ -32,7 +32,12 @@ function shuffleInPlace<T>(arr: T[]): void {
   }
 }
 
-function isValidStandTile(tileMap: TileMap, sx: number, sy: number, gatherExclude: Set<string>): boolean {
+function isValidStandTile(
+  tileMap: TileMap,
+  sx: number,
+  sy: number,
+  gatherExclude: Set<string>
+): boolean {
   const key = `${sx},${sy}`;
   if (gatherExclude.has(key)) return false;
   const t = tileMap.getTile(sx, sy);

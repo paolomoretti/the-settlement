@@ -28,7 +28,7 @@ export class GamePopover {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'game-popover-close';
     closeBtn.textContent = '\u2715';
-    closeBtn.addEventListener('click', (e) => {
+    closeBtn.addEventListener('click', e => {
       e.stopPropagation();
       this.hide();
     });
@@ -127,9 +127,15 @@ export class GamePopover {
 
     const virtualEl = {
       getBoundingClientRect: () => ({
-        x, y, width: 0, height: 0,
-        top: y, left: x, right: x, bottom: y
-      })
+        x,
+        y,
+        width: 0,
+        height: 0,
+        top: y,
+        left: x,
+        right: x,
+        bottom: y,
+      }),
     };
 
     computePosition(virtualEl, this.el, {
@@ -137,8 +143,8 @@ export class GamePopover {
       middleware: [
         offset(40),
         autoPlacement({ allowedPlacements: ['top', 'bottom', 'left', 'right'] }),
-        shift({ padding: 12 })
-      ]
+        shift({ padding: 12 }),
+      ],
     }).then(({ x: px, y: py }) => {
       this.el.style.left = `${px}px`;
       this.el.style.top = `${py}px`;

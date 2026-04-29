@@ -13,15 +13,15 @@
 
 ## Code map
 
-| Piece | Location |
-|--------|-----------|
-| Disk union, frontier, interior, fog reveal | `src/map/TerritoryCoordinator.ts` |
-| When to rebuild / apply fog | `Game.markTerritoryDirty`, `Game.refreshTerritoryIfDirty`, construction complete / destroy / drag-drop / load |
-| Build + road rules | `Game.buildGeneric`, `Game.buildRoad`, `Game.dropEntity` |
-| Build/road **preview** tint | `RenderSystem.placementPreviewHooks`, `RenderSystem.canPreviewAddRoadAt`, `RenderSystem.canPlacePreview` |
-| Cordon draw | `RenderSystem.renderDepthSorted` — sticks before trees, ropes after rear-depth trees (`buildCordonGeometry`, `renderCordonRopeBetweenCellTops`) |
-| Data | `buildings.json` → `military.territoryVisionRadius` (Chebyshev cells from **footprint center**); HQ radius from `GAME_CONFIG` → `starting.exploration.initialRadius` |
-| Types | `GameData.BuildingDefinition.military.territoryVisionRadius?` |
+| Piece                                      | Location                                                                                                                                                             |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Disk union, frontier, interior, fog reveal | `src/map/TerritoryCoordinator.ts`                                                                                                                                    |
+| When to rebuild / apply fog                | `Game.markTerritoryDirty`, `Game.refreshTerritoryIfDirty`, construction complete / destroy / drag-drop / load                                                        |
+| Build + road rules                         | `Game.buildGeneric`, `Game.buildRoad`, `Game.dropEntity`                                                                                                             |
+| Build/road **preview** tint                | `RenderSystem.placementPreviewHooks`, `RenderSystem.canPreviewAddRoadAt`, `RenderSystem.canPlacePreview`                                                             |
+| Cordon draw                                | `RenderSystem.renderDepthSorted` — sticks before trees, ropes after rear-depth trees (`buildCordonGeometry`, `renderCordonRopeBetweenCellTops`)                      |
+| Data                                       | `buildings.json` → `military.territoryVisionRadius` (Chebyshev cells from **footprint center**); HQ radius from `GAME_CONFIG` → `starting.exploration.initialRadius` |
+| Types                                      | `GameData.BuildingDefinition.military.territoryVisionRadius?`                                                                                                        |
 
 ## Future: scouts / spies
 

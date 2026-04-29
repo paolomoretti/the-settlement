@@ -22,15 +22,9 @@ export function createWorker(x: number, y: number, role: WorkerRole = 'peasant')
 
   entity.addComponent(new Position(x, y));
   entity.addComponent(new Owner('player'));
-  entity.addComponent(new Renderable(
-    'worker',
-    '#8b7355',
-    { width: 12, height: 20 },
-    0,
-    0,
-    undefined,
-    0
-  ));
+  entity.addComponent(
+    new Renderable('worker', '#8b7355', { width: 12, height: 20 }, 0, 0, undefined, 0)
+  );
   entity.addComponent(new Movable(def.speed));
   entity.addComponent(new Worker(role === 'military' ? 'Soldier' : 'Peasant', role));
 
@@ -45,11 +39,7 @@ export function createMilitaryWorker(x: number, y: number, rank: 1 | 2 | 3 = 1):
   return entity;
 }
 
-export function createBuilding(
-  buildingType: BuildingType,
-  x: number,
-  y: number
-): Entity {
+export function createBuilding(buildingType: BuildingType, x: number, y: number): Entity {
   const entity = new Entity();
 
   entity.addComponent(new Position(x, y));
@@ -65,15 +55,17 @@ export function createBuilding(
     const depth = 2;
     const height = 50;
 
-    entity.addComponent(new Renderable(
-      'rectangle',
-      color,
-      { width: width * 32, height: depth * 32 },
-      0,
-      0,
-      undefined,
-      0
-    ));
+    entity.addComponent(
+      new Renderable(
+        'rectangle',
+        color,
+        { width: width * 32, height: depth * 32 },
+        0,
+        0,
+        undefined,
+        0
+      )
+    );
 
     entity.addComponent(new Building(buildingType, width, depth, height));
 
@@ -85,15 +77,17 @@ export function createBuilding(
 
   const spritePath = BUILDING_FINAL_SPRITES[buildingType];
 
-  entity.addComponent(new Renderable(
-    spritePath ? 'sprite' : 'rectangle',
-    visual.color,
-    { width: size.width * 32, height: size.height * 32 },
-    visual.offsetX ?? 0,
-    visual.offsetY ?? 0,
-    spritePath,
-    0
-  ));
+  entity.addComponent(
+    new Renderable(
+      spritePath ? 'sprite' : 'rectangle',
+      visual.color,
+      { width: size.width * 32, height: size.height * 32 },
+      visual.offsetX ?? 0,
+      visual.offsetY ?? 0,
+      spritePath,
+      0
+    )
+  );
 
   const buildingComp = new Building(
     buildingType,
@@ -143,8 +137,7 @@ export function createBuilding(
     );
     const prod = buildingDef.production;
     const hasLocalRecipeInputs =
-      prod &&
-      (Object.keys(prod.inputs || {}).length > 0 || (prod.inputsAny?.length ?? 0) > 0);
+      prod && (Object.keys(prod.inputs || {}).length > 0 || (prod.inputsAny?.length ?? 0) > 0);
     if (hasLocalRecipeInputs) {
       storage.isProductionStorage = true;
     }
@@ -157,7 +150,6 @@ export function createBuilding(
 export function createBaseCamp(x: number, y: number): Entity {
   return createBuilding('base_camp', x, y);
 }
-
 
 export function createRoad(x: number, y: number): Entity {
   const entity = new Entity();

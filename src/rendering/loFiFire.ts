@@ -199,13 +199,15 @@ function emitGasBatch(
     const baseY = isoBaseY + (Math.random() - 0.5) * baseJitterY;
     const inwardPull = -Math.sign(spreadX) * edge * speed * 0.18;
 
-    gas.push(newGasParticle(gasPool, {
-      x: emitter.x + spreadX,
-      y: baseY,
-      size: gasRadius * (0.78 + Math.random() * 0.34),
-      speedX: Math.sin(subAngle) * subSpeed + inwardPull,
-      speedY: -Math.cos(subAngle) * subSpeed,
-    }));
+    gas.push(
+      newGasParticle(gasPool, {
+        x: emitter.x + spreadX,
+        y: baseY,
+        size: gasRadius * (0.78 + Math.random() * 0.34),
+        speedX: Math.sin(subAngle) * subSpeed + inwardPull,
+        speedY: -Math.cos(subAngle) * subSpeed,
+      })
+    );
   }
 }
 
@@ -235,7 +237,12 @@ function newGasParticle(
   return g;
 }
 
-function updateGas(gas: GasParticle[], gasPool: GasParticle[], simSpeed: number, dtMs: number): void {
+function updateGas(
+  gas: GasParticle[],
+  gasPool: GasParticle[],
+  simSpeed: number,
+  dtMs: number
+): void {
   const damp = Math.max(0, 1 - 0.04 * simSpeed);
   const gravity = 0.14;
 
@@ -274,11 +281,13 @@ function generateFlameGradientSprites(gasRadius: number): HTMLCanvasElement[] {
 
     for (let j = 1; j <= frameBatchSize; j++) {
       const t = j / frameBatchSize;
-      sprites.push(renderGradientSprite(gasRadius, {
-        start: interpolateStop(lastFrame.start, thisFrame.start, t),
-        middle: interpolateStop(lastFrame.middle, thisFrame.middle, t),
-        end: interpolateStop(lastFrame.end, thisFrame.end, t),
-      }));
+      sprites.push(
+        renderGradientSprite(gasRadius, {
+          start: interpolateStop(lastFrame.start, thisFrame.start, t),
+          middle: interpolateStop(lastFrame.middle, thisFrame.middle, t),
+          end: interpolateStop(lastFrame.end, thisFrame.end, t),
+        })
+      );
     }
   }
 
@@ -353,7 +362,10 @@ function expandKeyframes(keyframes: GradientKeyframe[]): ExpandedKeyframe[] {
   });
 }
 
-function completeStop(partial: Partial<GradientStop> & Pick<GradientStop, 'radius'>, fallback: GradientStop): GradientStop {
+function completeStop(
+  partial: Partial<GradientStop> & Pick<GradientStop, 'radius'>,
+  fallback: GradientStop
+): GradientStop {
   return {
     radius: partial.radius,
     r: partial.r ?? fallback.r,
@@ -385,14 +397,7 @@ function renderGradientSprite(
   if (!ctx) return canvas;
 
   const center = size / 2;
-  const gradient = ctx.createRadialGradient(
-    center,
-    size * 0.7,
-    0,
-    center,
-    center,
-    center
-  );
+  const gradient = ctx.createRadialGradient(center, size * 0.7, 0, center, center, center);
 
   gradient.addColorStop(clamp(frame.start.radius, 0, 1), rgba(frame.start));
   gradient.addColorStop(clamp(frame.middle.radius, 0, 1), rgba(frame.middle));

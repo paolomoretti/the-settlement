@@ -25,10 +25,18 @@ export const SHORTCUT_BINDINGS: ShortcutBinding[] = [
   { key: 'Arrow Down', description: 'Pan down', category: 'navigation' },
   { key: 'Arrow Left', description: 'Pan left', category: 'navigation' },
   { key: 'Arrow Right', description: 'Pan right', category: 'navigation' },
-  { key: 'V', description: 'Return to view mode / Close dialog (same as Escape)', category: 'general' },
+  {
+    key: 'V',
+    description: 'Return to view mode / Close dialog (same as Escape)',
+    category: 'general',
+  },
   { key: 'Escape', description: 'Return to view mode / Close dialog', category: 'general' },
   { key: 'Space (hold)', description: 'Pan mode (drag to pan)', category: 'navigation' },
-  { key: 'Alt / Option (hold)', description: 'Show tile grid; hover buildings or rock for instant info + highlight', category: 'navigation' },
+  {
+    key: 'Alt / Option (hold)',
+    description: 'Show tile grid; hover buildings or rock for instant info + highlight',
+    category: 'navigation',
+  },
 ];
 
 function isGamePanelOverlayOpen(overlayId: string): boolean {
@@ -49,7 +57,11 @@ function isModalOpen(): boolean {
 /** Close the topmost overlay if any. Returns true if Escape/V should not fall through to view mode. */
 function tryCloseTopOverlay(): boolean {
   const saveLoadDialog = document.getElementById('save-load-dialog');
-  if (saveLoadDialog && saveLoadDialog.style.display !== 'none' && saveLoadDialog.style.display !== '') {
+  if (
+    saveLoadDialog &&
+    saveLoadDialog.style.display !== 'none' &&
+    saveLoadDialog.style.display !== ''
+  ) {
     if (!saveLoadDialog.querySelector('.editing')) {
       saveLoadDialog.style.display = 'none';
     }
@@ -84,7 +96,7 @@ export function setupKeyboardShortcuts(game: Game): void {
   const { inputSystem, renderSystem } = game;
 
   // H — Center on base camp
-  hotkeys('h', (e) => {
+  hotkeys('h', e => {
     if (isModalOpen()) return;
     if (inputSystem.getMode() !== 'view') return;
     e.preventDefault();
@@ -94,42 +106,39 @@ export function setupKeyboardShortcuts(game: Game): void {
     const building = game.baseCampEntity.getComponent(Building);
     if (!pos || !building) return;
 
-    renderSystem.centerOnGrid(
-      pos.x + building.width / 2,
-      pos.y + building.height / 2,
-    );
+    renderSystem.centerOnGrid(pos.x + building.width / 2, pos.y + building.height / 2);
   });
 
   // I — Open base camp details
-  hotkeys('i', (e) => {
+  hotkeys('i', e => {
     if (isModalOpen()) return;
     e.preventDefault();
     eventBus.emit('open:inventory');
   });
 
   // R — Build road mode
-  hotkeys('r', (e) => {
+  hotkeys('r', e => {
     if (isModalOpen()) return;
     e.preventDefault();
     inputSystem.setMode('build_road');
   });
 
   // E — Erase tool
-  hotkeys('e', (e) => {
+  hotkeys('e', e => {
     if (isModalOpen()) return;
     e.preventDefault();
     inputSystem.setMode('erase');
   });
 
   // B — Open building menu
-  hotkeys('b', (e) => {
+  hotkeys('b', e => {
     if (isModalOpen()) return;
     e.preventDefault();
     eventBus.emit('toggle:building_menu');
   });
 
   // O — Toggle options
-  hotkeys('o', (e) => {
+  hotkeys('o', e => {
     const optionsOpen = isGamePanelOverlayOpen('options-overlay');
     if (!optionsOpen && isModalOpen()) return;
     e.preventDefault();
@@ -137,35 +146,35 @@ export function setupKeyboardShortcuts(game: Game): void {
   });
 
   // S — Quick save (auto-saves to last slot, or opens dialog if no previous save)
-  hotkeys('s', (e) => {
+  hotkeys('s', e => {
     if (isModalOpen()) return;
     e.preventDefault();
     eventBus.emit('quick:save');
   });
 
   // Arrow keys — Pan camera
-  hotkeys('up', (e) => {
+  hotkeys('up', e => {
     if (isModalOpen()) return;
     if (inputSystem.getMode() !== 'view') return;
     e.preventDefault();
     renderSystem.moveCamera(0, PAN_STEP);
   });
 
-  hotkeys('down', (e) => {
+  hotkeys('down', e => {
     if (isModalOpen()) return;
     if (inputSystem.getMode() !== 'view') return;
     e.preventDefault();
     renderSystem.moveCamera(0, -PAN_STEP);
   });
 
-  hotkeys('left', (e) => {
+  hotkeys('left', e => {
     if (isModalOpen()) return;
     if (inputSystem.getMode() !== 'view') return;
     e.preventDefault();
     renderSystem.moveCamera(PAN_STEP, 0);
   });
 
-  hotkeys('right', (e) => {
+  hotkeys('right', e => {
     if (isModalOpen()) return;
     if (inputSystem.getMode() !== 'view') return;
     e.preventDefault();
@@ -173,7 +182,7 @@ export function setupKeyboardShortcuts(game: Game): void {
   });
 
   // V — Same behavior as Escape: dismiss overlays in order, then view mode
-  hotkeys('v', (e) => {
+  hotkeys('v', e => {
     e.preventDefault();
     if (tryCloseTopOverlay()) return;
     inputSystem.setMode('view');
@@ -181,7 +190,7 @@ export function setupKeyboardShortcuts(game: Game): void {
   });
 
   // Escape — Close dialogs / return to view mode
-  hotkeys('escape', (e) => {
+  hotkeys('escape', e => {
     e.preventDefault();
     if (tryCloseTopOverlay()) return;
     inputSystem.setMode('view');
@@ -189,7 +198,7 @@ export function setupKeyboardShortcuts(game: Game): void {
   });
 
   // Space (hold) — Pan mode
-  hotkeys('space', { keyup: true }, (e) => {
+  hotkeys('space', { keyup: true }, e => {
     e.preventDefault();
     if (e.type === 'keydown') {
       if (!e.repeat) {

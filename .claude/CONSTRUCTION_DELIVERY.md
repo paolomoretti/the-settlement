@@ -41,6 +41,7 @@ When a building is placed, it immediately becomes a construction site even if he
 ```
 
 ### Example: Sawmill (cost: 2 boards)
+
 1. Player places sawmill → site appears even if boards are not currently available
 2. When HQ has boards, up to 2 wood_plank are deducted by priority and queued at base camp (destination = sawmill entity)
 3. Road workers carry the 2 wood_plank to sawmill's entrance
@@ -66,11 +67,11 @@ When a building is placed, it immediately becomes a construction site even if he
 
 ```typescript
 // Set during awaiting_materials state
-constructionMaterials: Record<string, number> | null  // Required amounts (from buildCost)
-materialsSent: Record<string, number>                  // Dispatched as junction items
-materialsDelivered: Record<string, number>             // Arrived at construction site
-builderEntityId: number | null                         // Builder worker entity
-builderArrived: boolean                                // Builder reached the site
+constructionMaterials: Record<string, number> | null; // Required amounts (from buildCost)
+materialsSent: Record<string, number>; // Dispatched as junction items
+materialsDelivered: Record<string, number>; // Arrived at construction site
+builderEntityId: number | null; // Builder worker entity
+builderArrived: boolean; // Builder reached the site
 ```
 
 All cleared when `beginConstruction()` is called.
@@ -117,6 +118,7 @@ Buildings without `requiredTool` (huts, storehouses, etc.) have `hasOperator = t
 ## Cancellation / Deletion
 
 When a building in `awaiting_materials` is deleted:
+
 1. **Unpaid materials** remain unowned and are not refunded
 2. **Delivered materials** (materialsDelivered) refunded to base camp storage
 3. **In-transit materials** (junction items) are orphaned — workers reroute them back to base camp automatically
@@ -151,9 +153,9 @@ Road workers are only spawned on road segments connected to base camp. `spawnSeg
 
 ## File Map
 
-| File | Change |
-|------|--------|
-| `src/components/Building.ts` | `awaiting_materials` state, material tracking fields, builder tracking |
-| `src/core/Game.ts` | `buildGeneric()` dispatch, `updateConstructionDelivery()`, builder spawn/return, `deleteSelectedEntity()` refund |
-| `src/entities/EntityFactory.ts` | Don't auto-start construction (store buildTimeSec only) |
-| `src/systems/RenderSystem.ts` | Show construction sprite for `awaiting_materials` state |
+| File                            | Change                                                                                                           |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `src/components/Building.ts`    | `awaiting_materials` state, material tracking fields, builder tracking                                           |
+| `src/core/Game.ts`              | `buildGeneric()` dispatch, `updateConstructionDelivery()`, builder spawn/return, `deleteSelectedEntity()` refund |
+| `src/entities/EntityFactory.ts` | Don't auto-start construction (store buildTimeSec only)                                                          |
+| `src/systems/RenderSystem.ts`   | Show construction sprite for `awaiting_materials` state                                                          |

@@ -54,7 +54,7 @@ export function showToast(message: string, options: ToastOptions = {}): void {
     action.textContent = options.action.label;
     action.title = options.action.title;
     action.setAttribute('aria-label', options.action.title);
-    action.addEventListener('click', (e) => {
+    action.addEventListener('click', e => {
       e.stopPropagation();
       options.action?.onClick();
       dismiss();

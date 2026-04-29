@@ -12,7 +12,12 @@ export class TransportManager {
   private buildingDirections = new Map<number, Map<number, number>>();
   private baseCampEntityId: number | null = null;
 
-  addJunctionItem(x: number, y: number, resourceType: string, destinationEntityId: number | null = null): void {
+  addJunctionItem(
+    x: number,
+    y: number,
+    resourceType: string,
+    destinationEntityId: number | null = null
+  ): void {
     const key = `${x},${y}`;
     const items = this.junctionItems.get(key) || [];
     items.push({ resourceType, destinationEntityId });
@@ -26,7 +31,12 @@ export class TransportManager {
     return items.shift()!;
   }
 
-  takeJunctionItemForDirection(x: number, y: number, segmentId: number, pickupEndpointIdx: number): JunctionItem | null {
+  takeJunctionItemForDirection(
+    x: number,
+    y: number,
+    segmentId: number,
+    pickupEndpointIdx: number
+  ): JunctionItem | null {
     const key = `${x},${y}`;
     const items = this.junctionItems.get(key);
     if (!items || items.length === 0) return null;
@@ -83,7 +93,7 @@ export class TransportManager {
     if (!items || items.length === 0 || maxCount <= 0) return [];
 
     const taken: JunctionItem[] = [];
-    for (let i = 0; i < items.length && taken.length < maxCount;) {
+    for (let i = 0; i < items.length && taken.length < maxCount; ) {
       const item = items[i]!;
       const dirIdx = this.getDirectionIndex(segmentId, item.destinationEntityId);
       if (dirIdx !== undefined && dirIdx !== pickupEndpointIdx) {
@@ -107,7 +117,12 @@ export class TransportManager {
     return items[0];
   }
 
-  peekJunctionItemForDirection(x: number, y: number, segmentId: number, pickupEndpointIdx: number): JunctionItem | null {
+  peekJunctionItemForDirection(
+    x: number,
+    y: number,
+    segmentId: number,
+    pickupEndpointIdx: number
+  ): JunctionItem | null {
     const items = this.junctionItems.get(`${x},${y}`);
     if (!items || items.length === 0) return null;
 
@@ -120,7 +135,12 @@ export class TransportManager {
     return null;
   }
 
-  addPendingPickupVisual(x: number, y: number, resourceType: string, destinationEntityId: number | null): void {
+  addPendingPickupVisual(
+    x: number,
+    y: number,
+    resourceType: string,
+    destinationEntityId: number | null
+  ): void {
     const key = `${x},${y}`;
     const items = this.pendingPickupVisuals.get(key) || [];
     items.push({ resourceType, destinationEntityId });
@@ -187,7 +207,9 @@ export class TransportManager {
     return this.buildingDirections.get(destEntityId)?.get(segmentId);
   }
 
-  private buildPositionToSegments(segments: RoadSegment[]): Map<string, { seg: RoadSegment; endpointIdx: number }[]> {
+  private buildPositionToSegments(
+    segments: RoadSegment[]
+  ): Map<string, { seg: RoadSegment; endpointIdx: number }[]> {
     const posToSegments = new Map<string, { seg: RoadSegment; endpointIdx: number }[]>();
     for (const seg of segments) {
       for (let i = 0; i < 2; i++) {
@@ -298,11 +320,21 @@ export class TransportManager {
   }
 
   serialize(): object {
-    const items: { x: number; y: number; resourceType: string; destinationEntityId: number | null }[] = [];
+    const items: {
+      x: number;
+      y: number;
+      resourceType: string;
+      destinationEntityId: number | null;
+    }[] = [];
     for (const [key, junctionItems] of this.junctionItems) {
       const [x, y] = key.split(',').map(Number);
       for (const item of junctionItems) {
-        items.push({ x, y, resourceType: item.resourceType, destinationEntityId: item.destinationEntityId });
+        items.push({
+          x,
+          y,
+          resourceType: item.resourceType,
+          destinationEntityId: item.destinationEntityId,
+        });
       }
     }
     return { junctionItems: items };

@@ -26,7 +26,7 @@ Wild rabbits are lightweight world objects (not ECS entities): they persist in `
 
 - **Config:** `buildings.json` → `hunter` uses `animation.type: "gather"` with **`gatherMode: "wild_hunt"`**, `productionTime` **180s**, outputs **`ham`**, `maxGatherRadius` **16**, `maxGatherWalkCells` **36**, `animation.searchRadius` **16** (same pattern as quarry/fisher; walk cap scales with radius so off-road paths can reach prey).
 - **Targeting:** `GameWorkerRegistry.spawnGatherAnimationWorker` calls `pickAndReserveReachableRabbit` so two huts cannot reserve the same prey in one tick.
-- **Path:** Off-road A* from the hut **entrance** to the rabbit’s cell (inclusive), same walk limits as other gather buildings.
+- **Path:** Off-road A\* from the hut **entrance** to the rabbit’s cell (inclusive), same walk limits as other gather buildings.
 - **Kill & carry:** On site, a short dig timer runs; then `removeRabbitAfterSuccessfulHunt`, worker picks up **`ham`** (per `carriedResource`), walks back; on arrival `applyProductionCycleOutputs` runs and the production timer resets (mirrors rock/fish depletion gather).
 - **Production clock:** `ProductionSystem` treats `wild_hunt` like depletion gathers: timer **pauses** while `animationWorkerId` is set, and **does not** fire the timer-based output branch for hunter.
 - **Out of prey:** If no reachable rabbit, `outOfMapResources` is set; `Building.lastHuntRabbitProbeAt` throttles reachability rescans (~500ms) so new spawns clear the orange-X state like the fisher.

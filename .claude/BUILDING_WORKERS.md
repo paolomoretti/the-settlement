@@ -4,13 +4,13 @@ This document defines how **staffed buildings** get a **map worker**: a peasant 
 
 ## Who gets a map worker?
 
-| Condition | Map worker |
-|-----------|------------|
-| `population.provides` only (hut, house, headquarters, warehouse, …) | **No** dedicated map worker for “housing capacity”. |
-| `population.requires` + `requiredTool` | **No extra map worker** — the delivered tool specialist is the building worker. They enter the building, are tracked on the building, and return to HQ if the building is demolished. |
-| `population.requires` + timed `production` + **no** `animation` in JSON + **no** `requiredTool` | **Yes** — runtime synthesizes **`interior_operator`**, except buildings deferred until custom outdoor animation exists (today: `hunter`, `farm`, `pig_farm`; see `resolveStaffingAnimation()`). |
-| `population.requires` + explicit `animation` | **Yes** — behaviour is whatever that block specifies, except `requiredTool` + `interior_operator` still uses only the tool specialist. |
-| `population.requires` but **no** `production` timer (e.g. donkey breeder, shipyard, lookout as of today) | **No** automatic interior worker; add `animation` later or extend systems when those buildings get timed work. |
+| Condition                                                                                                | Map worker                                                                                                                                                                                      |
+| -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `population.provides` only (hut, house, headquarters, warehouse, …)                                      | **No** dedicated map worker for “housing capacity”.                                                                                                                                             |
+| `population.requires` + `requiredTool`                                                                   | **No extra map worker** — the delivered tool specialist is the building worker. They enter the building, are tracked on the building, and return to HQ if the building is demolished.           |
+| `population.requires` + timed `production` + **no** `animation` in JSON + **no** `requiredTool`          | **Yes** — runtime synthesizes **`interior_operator`**, except buildings deferred until custom outdoor animation exists (today: `hunter`, `farm`, `pig_farm`; see `resolveStaffingAnimation()`). |
+| `population.requires` + explicit `animation`                                                             | **Yes** — behaviour is whatever that block specifies, except `requiredTool` + `interior_operator` still uses only the tool specialist.                                                          |
+| `population.requires` but **no** `production` timer (e.g. donkey breeder, shipyard, lookout as of today) | **No** automatic interior worker; add `animation` later or extend systems when those buildings get timed work.                                                                                  |
 
 Residential and pure storage/military buildings without `population.requires` do not use this staffing pipeline.
 
@@ -31,11 +31,11 @@ Residential and pure storage/military buildings without `population.requires` do
 
 Used when the worker should **leave the workshop** and do something on the map:
 
-| `animation.type` | Example buildings | Role |
-|------------------|-------------------|------|
-| `gather` | Lumberjack, quarry, fisher, mines (`gatherMode: mine_site`) | Terrain interaction (or adjacent dig tile for mines), carry resources, depletion rules, etc. |
-| `well_operator` | Well | Adjacent tiles, timed “draw” pose with water, etc. |
-| `plant_tree` | Forester | Reserved tile, dig, tree placement |
+| `animation.type` | Example buildings                                           | Role                                                                                         |
+| ---------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `gather`         | Lumberjack, quarry, fisher, mines (`gatherMode: mine_site`) | Terrain interaction (or adjacent dig tile for mines), carry resources, depletion rules, etc. |
+| `well_operator`  | Well                                                        | Adjacent tiles, timed “draw” pose with water, etc.                                           |
+| `plant_tree`     | Forester                                                    | Reserved tile, dig, tree placement                                                           |
 
 Each of these is a **different state machine** in `GameWorkerRegistry` (`updateAnimationWorkers`). Adding a new style means new `AnimationConfig` variant + implementation, not reusing `interior_operator`.
 
@@ -50,14 +50,14 @@ For `interior_operator`, **`operatorRole`** is the stable key for “which worke
 
 ## Adding or changing behaviour
 
-1. **Workshop, worker mostly inside**  
-   - Prefer **no** `animation` key → inferred `interior_operator`.  
+1. **Workshop, worker mostly inside**
+   - Prefer **no** `animation` key → inferred `interior_operator`.
    - Or add `animation: { "type": "interior_operator", "operatorRole": "…", "workerSpeed", "drawingPhaseSec", "walkLeadSec" }` to tune timings.
 
-2. **Worker must walk the map / interact with terrain**  
+2. **Worker must walk the map / interact with terrain**
    - Add or keep a **custom** `animation` block (`gather`, `well_operator`, `plant_tree`, or a new type once implemented).
 
-3. **Staffed building but no production timer yet**  
+3. **Staffed building but no production timer yet**
    - No automatic interior worker; document in this file when you add `production` or a bespoke `animation`.
 
 ## Type references

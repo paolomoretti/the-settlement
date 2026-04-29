@@ -7,7 +7,9 @@ export function rollWellAquiferCapacity(): number {
 }
 
 /** First well completion on this cell: roll capacity. No-op if already assigned (including `0`). */
-export function ensureWellAquiferInitialized(tile: { cellWellWaterRemaining?: number } | null | undefined): void {
+export function ensureWellAquiferInitialized(
+  tile: { cellWellWaterRemaining?: number } | null | undefined
+): void {
   if (!tile || tile.cellWellWaterRemaining !== undefined) return;
   tile.cellWellWaterRemaining = rollWellAquiferCapacity();
 }

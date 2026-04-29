@@ -185,7 +185,7 @@ export class GameSaveSession {
     const slotsContainer = document.getElementById('save-load-slots')!;
 
     title.textContent = 'Load Game';
-    this.renderSlots(slotsContainer, 'load', (slotIndex) => {
+    this.renderSlots(slotsContainer, 'load', slotIndex => {
       dialog.style.display = 'none';
       onLoad(slotIndex);
     });
@@ -246,7 +246,7 @@ export class GameSaveSession {
           input.select();
         });
 
-        input.addEventListener('keydown', (e) => {
+        input.addEventListener('keydown', e => {
           if (e.key === 'Enter') {
             e.stopPropagation();
             onAction(i, input.value.trim() || `Save ${i + 1}`);
@@ -256,7 +256,7 @@ export class GameSaveSession {
           }
         });
       } else if (mode === 'save' && meta) {
-        slot.addEventListener('click', (e) => {
+        slot.addEventListener('click', e => {
           const target = e.target as HTMLElement;
           if (target.closest('.slot-clear-btn')) {
             e.stopPropagation();
@@ -275,7 +275,7 @@ export class GameSaveSession {
           this.renderSlots(container, mode, onAction, i);
         });
       } else if (mode === 'load' && meta) {
-        slot.addEventListener('click', (e) => {
+        slot.addEventListener('click', e => {
           const target = e.target as HTMLElement;
           if (target.closest('.slot-clear-btn')) {
             e.stopPropagation();
@@ -377,6 +377,7 @@ export class GameSaveSession {
       this.autoSaveDebounceTimer = null;
     }
     if (!this.deps.isAutosaveEnabled() || !this.deps.getGame()) return;
+    if (this.currentSlot === null) return; // user exited to welcome — don't re-write resume key
     if (!this.ensureAutoSaveSlot()) return;
     const meta = this.getSlotMeta(this.currentSlot!);
     this.saveToSlot(this.currentSlot!, meta?.name ?? 'autosave', { manual: meta?.manual ?? false });

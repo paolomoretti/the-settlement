@@ -36,7 +36,10 @@ function buildSectionToc(
 }
 
 function mermaidSafeLabel(s: string): string {
-  return s.replace(/["#[\]]/g, ' ').replace(/\s+/g, ' ').trim();
+  return s
+    .replace(/["#[\]]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function rid(id: string): string {
@@ -59,10 +62,7 @@ function formatInputsAny(
 ): string {
   if (!groups?.length) return '—';
   return groups
-    .map(
-      (g) =>
-        `${g.amount} from (${g.resourceTypes.map((t) => resourceLabel(t)).join(' OR ')})`
-    )
+    .map(g => `${g.amount} from (${g.resourceTypes.map(t => resourceLabel(t)).join(' OR ')})`)
     .join('; ');
 }
 
@@ -342,7 +342,13 @@ export function economySection(): HTMLElement {
     const table = el('table', 'economy-table');
     const thead = el('thead');
     const hr = el('tr');
-    for (const lab of ['Resource', 'Produced by', 'Recipe input at', 'Build cost for', 'Required tool at']) {
+    for (const lab of [
+      'Resource',
+      'Produced by',
+      'Recipe input at',
+      'Build cost for',
+      'Required tool at',
+    ]) {
       hr.appendChild(el('th', '', lab));
     }
     thead.appendChild(hr);

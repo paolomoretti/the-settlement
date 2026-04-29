@@ -69,21 +69,21 @@ Behavior depends on **input mode** (toolbar, hotkeys, or post-placement return t
 
 ## Dock toolbar (in-game)
 
-| Control | Action |
-|--------|--------|
-| **Build Road** `[R]` | Enter road building mode. |
-| **Erase** `[E]` | Enter erase mode. |
-| **Buildings** `[B]` | Open / toggle the building menu overlay. |
-| **Save Game** `[S]` | Save to the current manually picked slot, or open the save dialog if this game has not been manually saved yet. Successful saves show a top toast with a pencil action for picking a different slot. |
-| **Load Game** | Open load / save dialog focused on loading. |
+| Control              | Action                                                                                                                                                                                               |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Build Road** `[R]` | Enter road building mode.                                                                                                                                                                            |
+| **Erase** `[E]`      | Enter erase mode.                                                                                                                                                                                    |
+| **Buildings** `[B]`  | Open / toggle the building menu overlay.                                                                                                                                                             |
+| **Save Game** `[S]`  | Save to the current manually picked slot, or open the save dialog if this game has not been manually saved yet. Successful saves show a top toast with a pencil action for picking a different slot. |
+| **Load Game**        | Open load / save dialog focused on loading.                                                                                                                                                          |
 
 ## Top-right chrome
 
-| Control | Action |
-|--------|--------|
-| **Fast forward** | Toggle full gameplay simulation speed between normal `1x` and fast `3x`. |
+| Control                           | Action                                                                                        |
+| --------------------------------- | --------------------------------------------------------------------------------------------- |
+| **Fast forward**                  | Toggle full gameplay simulation speed between normal `1x` and fast `3x`.                      |
 | **Settings** (options icon) `[O]` | Toggle options overlay (when not blocked by stricter modal checks — see `KeyboardShortcuts`). |
-| **Exit** | Flow to exit / save-and-exit dialogs. |
+| **Exit**                          | Flow to exit / save-and-exit dialogs.                                                         |
 
 ---
 
@@ -91,17 +91,17 @@ Behavior depends on **input mode** (toolbar, hotkeys, or post-placement return t
 
 Full table and extension notes: [KEYBOARD_SHORTCUTS.md](KEYBOARD_SHORTCUTS.md).
 
-| Input | Typical action |
-|-------|----------------|
-| **H** | Center camera on base camp (view mode only; no modal). |
-| **R** | Build road mode. |
-| **E** | Erase mode. |
-| **B** | Toggle building menu. |
-| **O** | Toggle options. |
-| **S** | Quick save. |
-| **Arrow keys** | Pan camera (view mode only; no modal). |
+| Input              | Typical action                                                                      |
+| ------------------ | ----------------------------------------------------------------------------------- |
+| **H**              | Center camera on base camp (view mode only; no modal).                              |
+| **R**              | Build road mode.                                                                    |
+| **E**              | Erase mode.                                                                         |
+| **B**              | Toggle building menu.                                                               |
+| **O**              | Toggle options.                                                                     |
+| **S**              | Quick save.                                                                         |
+| **Arrow keys**     | Pan camera (view mode only; no modal).                                              |
 | **V** / **Escape** | Close overlays in priority order, then return to view mode and clear map selection. |
-| **Space** (hold) | Pan-only while dragging on the canvas. |
+| **Space** (hold)   | Pan-only while dragging on the canvas.                                              |
 
 **Modal blocking:** Save/load dialog, exit dialog, and (for some keys) open options / inventory / building menu block or alter shortcut behavior — see `isModalOpen()` in `KeyboardShortcuts.ts`.
 
@@ -133,13 +133,13 @@ Full table and extension notes: [KEYBOARD_SHORTCUTS.md](KEYBOARD_SHORTCUTS.md).
 
 ## Implementation map (for maintainers)
 
-| Concern | Primary code |
-|--------|----------------|
-| Canvas pointer modes, right-pan, road/erase/build | `src/systems/InputSystem.ts` |
-| Hotkeys | `src/input/KeyboardShortcuts.ts`, `src/input/InsightAltKey.ts` |
-| Selection, placement, survey, inventory open | `src/core/Game.ts` |
-| Toolbar / top-right chrome wiring | `src/main.ts` (`setupGameUI`) |
-| Minimap | `src/systems/RenderSystem.ts` |
-| Canvas hover tooltip (Alt) | `src/ui/CanvasHoverTooltip.ts`, `src/ui/hoverInsight/buildHoverLines.ts` |
+| Concern                                           | Primary code                                                             |
+| ------------------------------------------------- | ------------------------------------------------------------------------ |
+| Canvas pointer modes, right-pan, road/erase/build | `src/systems/InputSystem.ts`                                             |
+| Hotkeys                                           | `src/input/KeyboardShortcuts.ts`, `src/input/InsightAltKey.ts`           |
+| Selection, placement, survey, inventory open      | `src/core/Game.ts`                                                       |
+| Toolbar / top-right chrome wiring                 | `src/main.ts` (`setupGameUI`)                                            |
+| Minimap                                           | `src/systems/RenderSystem.ts`                                            |
+| Canvas hover tooltip (Alt)                        | `src/ui/CanvasHoverTooltip.ts`, `src/ui/hoverInsight/buildHoverLines.ts` |
 
 When you change default behavior for clicks, modes, or shortcuts, **update this file** so future help text and AI context stay accurate.

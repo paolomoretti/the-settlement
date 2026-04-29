@@ -1,7 +1,12 @@
 import { Component } from '@/core/Component';
 import type { BuildingType, ResourceType } from '@/types/GameData';
 
-export type ProductionStatus = 'idle' | 'producing' | 'stopped_full' | 'stopped_no_inputs' | 'stopped_no_road';
+export type ProductionStatus =
+  | 'idle'
+  | 'producing'
+  | 'stopped_full'
+  | 'stopped_no_inputs'
+  | 'stopped_no_road';
 
 /** Consume `amount` total per cycle from any of `resourceTypes` (e.g. miner food). */
 export type ProductionInputAnyGroup = { resourceTypes: ResourceType[]; amount: number };
@@ -106,7 +111,10 @@ export class Production extends Component {
     return this.outputs;
   }
 
-  prepareCycleOutputs(buildingType: BuildingType, priorities?: ProductionPriorityState): Record<string, number> {
+  prepareCycleOutputs(
+    buildingType: BuildingType,
+    priorities?: ProductionPriorityState
+  ): Record<string, number> {
     if (!this.currentCycleOutputs) {
       this.currentCycleOutputs = this.getEffectiveOutputs(buildingType, priorities);
     }
@@ -124,8 +132,8 @@ export class Production extends Component {
   }
 
   hasBufferSpace(): boolean {
-    const totalAfterProduction = this.getTotalBuffered() +
-      Object.values(this.outputs).reduce((sum, n) => sum + n, 0);
+    const totalAfterProduction =
+      this.getTotalBuffered() + Object.values(this.outputs).reduce((sum, n) => sum + n, 0);
     return totalAfterProduction <= this.maxOutputBuffer;
   }
 

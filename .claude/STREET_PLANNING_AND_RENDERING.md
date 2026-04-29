@@ -7,7 +7,7 @@ Roads are still stored as plain `Tile.hasRoad` cells. The build tool and rendere
 - In road build mode, a normal road click becomes the anchor point.
 - Holding Shift previews a planned route from that anchor to the current hover cell.
 - Shift-click builds the planned route in one batch.
-- Planning uses `PathFinder.findBuildableRoadPath`, a bounded A* search over buildable/existing road cells.
+- Planning uses `PathFinder.findBuildableRoadPath`, a bounded A\* search over buildable/existing road cells.
 - Existing roads are valid and discounted, so planned routes naturally reuse streets.
 - Candidate cells must pass the same practical placement gates as road building: explored, inside player territory, not blocked by demolition fire, not water/mountain, and not occupied unless they are already unoccupied road cells.
 

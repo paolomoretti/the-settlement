@@ -56,20 +56,36 @@ export const WORKER_DEFS: Record<WorkerRole, WorkerDef> = {
     speed: 1.8,
     variants: [
       {
-        skin: '#d4a66a', hair: '#4a3020', tunic: '#8b7355',
-        pants: '#6b5c45', boots: '#3a2a1a', variant: 'default',
+        skin: '#d4a66a',
+        hair: '#4a3020',
+        tunic: '#8b7355',
+        pants: '#6b5c45',
+        boots: '#3a2a1a',
+        variant: 'default',
       },
       {
-        skin: '#d4a66a', hair: '#6b5033', tunic: '#7a6a4a',
-        pants: '#5a5038', boots: '#3a2a1a', variant: 'hat',
+        skin: '#d4a66a',
+        hair: '#6b5033',
+        tunic: '#7a6a4a',
+        pants: '#5a5038',
+        boots: '#3a2a1a',
+        variant: 'hat',
       },
       {
-        skin: '#c89858', hair: '#3a2518', tunic: '#6a7a55',
-        pants: '#5c5540', boots: '#3a2a1a', variant: 'tunic2',
+        skin: '#c89858',
+        hair: '#3a2518',
+        tunic: '#6a7a55',
+        pants: '#5c5540',
+        boots: '#3a2a1a',
+        variant: 'tunic2',
       },
       {
-        skin: '#dbb07a', hair: '#6a3828', tunic: '#7a6068',
-        pants: '#7a6068', boots: '#4a3528', variant: 'dress',
+        skin: '#dbb07a',
+        hair: '#6a3828',
+        tunic: '#7a6068',
+        pants: '#7a6068',
+        boots: '#4a3528',
+        variant: 'dress',
       },
     ],
   },
@@ -105,7 +121,13 @@ export interface TransportLoadItem {
   destinationEntityId: number | null;
 }
 
-export type IdleAnim = 'none' | 'look_around' | 'scratch_head' | 'read' | 'stretch' | 'hands_on_hips';
+export type IdleAnim =
+  | 'none'
+  | 'look_around'
+  | 'scratch_head'
+  | 'read'
+  | 'stretch'
+  | 'hands_on_hips';
 
 export class Worker extends Component {
   public state: WorkerState = 'idle';
@@ -157,7 +179,10 @@ export class Worker extends Component {
   /** Next simulation time to roll for starting a floor nap (throttles probability). */
   public nextFloorSleepProbeMs: number | null = null;
 
-  constructor(public name: string = 'Peasant', role: WorkerRole = 'peasant') {
+  constructor(
+    public name: string = 'Peasant',
+    role: WorkerRole = 'peasant'
+  ) {
     super();
     this.role = role;
     const variants = WORKER_DEFS[role].variants;
@@ -223,7 +248,9 @@ export class Worker extends Component {
     this.carryingAmount = this.carryingItems.length;
     this.carryingResource = this.carryingItems[0]?.resourceType;
     this.state = this.carryingAmount > 0 ? 'carrying' : 'idle';
-    this.heldItemStyle = heldOverride ?? (this.carryingResource ? inferHeldItemStyle(this.carryingResource) : 'overhead');
+    this.heldItemStyle =
+      heldOverride ??
+      (this.carryingResource ? inferHeldItemStyle(this.carryingResource) : 'overhead');
   }
 
   dropResource(): void {

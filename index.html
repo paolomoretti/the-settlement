@@ -1,2456 +1,2218 @@
 <!doctype html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <meta
-            name="viewport"
-            content="width=device-width, initial-scale=1.0, user-scalable=no"
-        />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="mobile-web-app-capable" content="yes" />
-        <title>Settler - A Tribute to Classic City Building</title>
-        <style>
-            * {
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-            }
-
-            body {
-                overflow: hidden;
-                font-family: "Courier New", monospace;
-                background: #1a1a1a;
-                color: #fff;
-            }
-
-            #game-container {
-                width: 100vw;
-                height: 100vh;
-                position: relative;
-                touch-action: none;
-            }
-
-            #game-canvas {
-                display: block;
-                background: #2d5016;
-            }
-
-            #ui-overlay {
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                pointer-events: none;
-            }
-
-            #debug-info {
-                position: absolute;
-                top: 10px;
-                left: 10px;
-                background: rgba(0, 0, 0, 0.7);
-                padding: 10px;
-                border-radius: 4px;
-                font-size: 12px;
-                pointer-events: auto;
-            }
-
-            #top-right-actions {
-                position: absolute;
-                top: 10px;
-                right: 10px;
-                display: flex;
-                align-items: center;
-                gap: 4px;
-                z-index: 50;
-                pointer-events: auto;
-            }
-
-            /* Icon-only controls: no green chrome; light hover wash + glow on artwork */
-            button.chromeless-icon-btn {
-                padding: 6px;
-                margin: 0;
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                background: transparent !important;
-                border: none !important;
-                box-shadow: none !important;
-                border-radius: 10px;
-                line-height: 0;
-                cursor: pointer;
-                font-family: "Courier New", monospace;
-                box-sizing: border-box;
-            }
-
-            button.chromeless-icon-btn:hover,
-            button.chromeless-icon-btn:active {
-                background: rgba(255, 255, 255, 0.06) !important;
-                border: none !important;
-            }
-
-            button.chromeless-icon-btn:focus-visible {
-                outline: 2px solid #9ab791;
-                outline-offset: 3px;
-            }
-
-            button.chromeless-icon-btn:hover img,
-            button.chromeless-icon-btn:hover
-                .icon-palette-img-wrap--placeholder {
-                filter: brightness(1.15)
-                    drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45));
-            }
-
-            #top-right-actions button.chromeless-icon-btn.is-active,
-            #top-right-actions button.chromeless-icon-btn[aria-pressed="true"] {
-                background: rgba(255, 255, 255, 0.08) !important;
-            }
-
-            #top-right-actions button.chromeless-icon-btn {
-                min-width: 72px;
-                min-height: 72px;
-            }
-
-            #top-right-actions button.chromeless-icon-btn .btn-options-icon,
-            #top-right-actions button.chromeless-icon-btn .btn-exit-icon,
-            #top-right-actions
-                button.chromeless-icon-btn
-                .btn-fast-forward-icon {
-                width: 64px;
-                height: 64px;
-                display: block;
-                object-fit: contain;
-                image-rendering: pixelated;
-                image-rendering: crisp-edges;
-                flex-shrink: 0;
-                pointer-events: none;
-            }
-
-            #controls {
-                position: absolute;
-                bottom: 6px;
-                left: 6px;
-                background: rgba(0, 0, 0, 0.38);
-                /* Less pad above content, more below labels — total bar height stays stable */
-                padding: 2px 5px 11px 5px;
-                border-radius: 6px;
-                pointer-events: auto;
-                box-sizing: border-box;
-                min-height: 120px;
-                display: flex;
-                align-items: flex-start;
-            }
-
-            #controls .controls-row {
-                display: flex;
-                flex-direction: row;
-                flex-wrap: nowrap;
-                align-items: flex-start;
-                gap: 0;
-                overflow-x: auto;
-                flex: 1;
-                min-height: 106px;
-            }
-
-            /* Bottom dock: same chromeless treatment as top-right; icon + caption column */
-            #controls button.chromeless-icon-btn.dock-toolbar-btn {
-                flex-direction: column;
-                align-items: center;
-                justify-content: flex-start;
-                gap: 0;
-                padding: 0 3px 0;
-                min-width: 92px;
-                max-width: 104px;
-                min-height: 106px;
-                line-height: normal;
-                box-sizing: border-box;
-            }
-
-            #controls button.chromeless-icon-btn.dock-toolbar-btn.selected {
-                background: rgba(255, 255, 255, 0.06) !important;
-            }
-
-            #controls button.chromeless-icon-btn.dock-toolbar-btn.selected img,
-            #controls
-                button.chromeless-icon-btn.dock-toolbar-btn.selected
-                .icon-palette-img-wrap--placeholder {
-                filter: brightness(1.2)
-                    drop-shadow(0 0 10px rgba(200, 220, 160, 0.42));
-            }
-
-            #controls .dock-toolbar-btn .icon-palette-img-wrap {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                width: 100%;
-                min-height: 86px;
-                flex-shrink: 0;
-            }
-
-            #controls .dock-toolbar-btn .icon-palette-img-wrap--placeholder {
-                font-size: 54px;
-                line-height: 1;
-                color: #8a9a82;
-                font-weight: bold;
-                letter-spacing: 0;
-            }
-
-            #controls .dock-toolbar-btn img {
-                width: 86px;
-                height: 86px;
-                object-fit: contain;
-                image-rendering: pixelated;
-                image-rendering: crisp-edges;
-                display: block;
-                pointer-events: none;
-            }
-
-            #controls .dock-toolbar-btn .icon-palette-label {
-                display: block;
-                text-align: center;
-                width: 100%;
-                padding: 0 1px 0;
-                margin-top: -4px;
-                flex-shrink: 0;
-            }
-
-            #controls .dock-toolbar-btn .dock-toolbar-caption {
-                display: block;
-                font-size: 10px;
-                line-height: 1.15;
-                color: #e8e8e8;
-                font-weight: normal;
-                white-space: normal;
-            }
-
-            #controls .dock-toolbar-btn .dock-toolbar-caption .shortcut-hint {
-                font-size: 9px;
-                margin-left: 3px;
-                color: #9ab791;
-                opacity: 0.9;
-            }
-
-            #controls .dock-toolbar-btn .dock-toolbar-subhint {
-                font-size: 9px;
-                color: #9ab791;
-                opacity: 0.85;
-                margin-left: 3px;
-                font-weight: normal;
-            }
-
-            /* Welcome only: tiled green buttons */
-            .welcome-buttons button.icon-palette-btn {
-                display: inline-flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: flex-start;
-                gap: 6px;
-                width: 132px;
-                max-width: none;
-                padding: 10px 8px 8px;
-                margin: 0;
-                background: rgba(36, 48, 32, 0.92);
-                border: 2px solid #5d7a52;
-                border-radius: 8px;
-                color: #eaeaea;
-                cursor: pointer;
-                font-family: "Courier New", monospace;
-                box-sizing: border-box;
-            }
-
-            .welcome-buttons button.icon-palette-btn:hover {
-                background: rgba(50, 68, 44, 0.95);
-                border-color: #7a9a6a;
-            }
-
-            .welcome-buttons button.icon-palette-btn:active {
-                background: rgba(30, 42, 26, 0.98);
-            }
-
-            .welcome-buttons .icon-palette-img-wrap {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                width: 100%;
-                min-height: 56px;
-            }
-
-            .welcome-buttons .icon-palette-img-wrap--placeholder {
-                font-size: 36px;
-                line-height: 1;
-                color: #7a8a72;
-                font-weight: bold;
-                letter-spacing: 0;
-            }
-
-            .welcome-buttons .icon-palette-img-wrap--symbol {
-                font-size: 44px;
-                line-height: 56px;
-                color: #c8dc6a;
-                text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
-            }
-
-            .welcome-buttons button.icon-palette-btn img {
-                width: 52px;
-                height: 52px;
-                object-fit: contain;
-                image-rendering: pixelated;
-                image-rendering: crisp-edges;
-                display: block;
-            }
-
-            .welcome-buttons .icon-palette-label {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                gap: 2px;
-                text-align: center;
-                width: 100%;
-            }
-
-            .welcome-buttons .icon-palette-title {
-                font-size: 10px;
-                line-height: 1.2;
-                color: #ddd;
-                font-weight: normal;
-            }
-
-            .welcome-buttons .icon-palette-meta {
-                font-size: 9px;
-                line-height: 1.2;
-                color: #9ab791;
-                opacity: 0.85;
-            }
-
-            button {
-                background: #4a6741;
-                color: white;
-                border: 2px solid #6b8e5f;
-                padding: 8px 16px;
-                cursor: pointer;
-                font-family: "Courier New", monospace;
-                font-size: 14px;
-                border-radius: 4px;
-            }
-
-            button:hover {
-                background: #5a7751;
-            }
-
-            button:active {
-                background: #3a5731;
-            }
-
-            button.selected {
-                background: #7a9771;
-                border-color: #9ab791;
-            }
-
-            .game-popover {
-                position: absolute;
-                z-index: 10;
-                background: rgba(10, 10, 10, 0.92);
-                min-width: 320px;
-                max-width: 460px;
-                max-height: 82vh;
-                pointer-events: auto;
-                font-size: 12px;
-            }
-
-            .game-popover-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                padding: 4px 0 10px;
-                border-bottom: 1px solid #3a5731;
-            }
-
-            .game-popover-title {
-                color: #ffff00;
-                font-weight: bold;
-                font-size: 13px;
-            }
-
-            .game-popover-close {
-                background: none;
-                border: 1px solid transparent;
-                color: #888;
-                cursor: pointer;
-                padding: 2px 6px;
-                font-size: 14px;
-                margin: 0;
-                border-radius: 3px;
-                font-family: "Courier New", monospace;
-            }
-
-            .game-popover-close:hover {
-                color: #fff;
-                background: rgba(255, 255, 255, 0.1);
-                border-color: #555;
-            }
-
-            .game-popover-body {
-                padding: 8px 0 0;
-                max-height: calc(82vh - 70px);
-                overflow-y: auto;
-            }
-
-            .popover-desc {
-                color: #aaa;
-                font-size: 11px;
-                margin-bottom: 8px;
-                line-height: 1.4;
-            }
-
-            .popover-row {
-                margin: 4px 0;
-                color: #ccc;
-                font-size: 11px;
-            }
-
-            .popover-label {
-                color: #888;
-            }
-
-            .popover-production {
-                color: #ccc;
-            }
-
-            .popover-detail-card {
-                margin: 8px 0;
-                padding: 7px 8px;
-                background: rgba(255, 255, 255, 0.045);
-                border: 1px solid rgba(154, 183, 145, 0.18);
-                border-radius: 4px;
-                color: #ccc;
-                font-size: 11px;
-                line-height: 1.35;
-            }
-
-            .popover-section-title {
-                color: #9ab791;
-                font-size: 10px;
-                line-height: 1;
-                margin-bottom: 6px;
-                text-transform: uppercase;
-                letter-spacing: 0.08em;
-            }
-
-            .popover-section-title--spaced {
-                margin-top: 8px;
-            }
-
-            .popover-chip-row {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 5px;
-                align-items: center;
-            }
-
-            .popover-resource-chip {
-                display: inline-flex;
-                align-items: center;
-                gap: 5px;
-                min-width: 0;
-                padding: 3px 6px 3px 4px;
-                background: rgba(0, 0, 0, 0.24);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 999px;
-                color: #e0e0d0;
-                white-space: nowrap;
-            }
-
-            .popover-resource-chip--compact {
-                padding-right: 4px;
-            }
-
-            .popover-resource-chip--tool {
-                border-color: rgba(255, 183, 77, 0.35);
-                background: rgba(255, 183, 77, 0.08);
-            }
-
-            .popover-resource-icon {
-                position: relative;
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                width: 18px;
-                height: 18px;
-                flex-shrink: 0;
-                border-radius: 3px;
-                background: rgba(255, 255, 255, 0.08);
-                overflow: hidden;
-                color: #9ab791;
-                font-size: 10px;
-                font-weight: bold;
-            }
-
-            .popover-resource-icon img {
-                position: absolute;
-                inset: 0;
-                width: 100%;
-                height: 100%;
-                object-fit: contain;
-                image-rendering: pixelated;
-                image-rendering: crisp-edges;
-            }
-
-            .popover-resource-icon--slot {
-                width: 100%;
-                height: 100%;
-                background: transparent;
-            }
-
-            .popover-resource-icon--storage-slot {
-                display: flex;
-            }
-
-            .popover-resource-icon--storage-slot
-                .popover-resource-icon-fallback {
-                display: none;
-            }
-
-            .popover-resource-icon--storage-slot img {
-                position: static;
-                width: 86%;
-                height: 86%;
-            }
-
-            .popover-resource-icon-fallback {
-                opacity: 0.8;
-            }
-
-            .popover-resource-name {
-                min-width: 0;
-                overflow: hidden;
-                text-overflow: ellipsis;
-            }
-
-            .popover-resource-amount {
-                color: #ffff99;
-                margin-right: 2px;
-            }
-
-            .popover-any-input {
-                display: flex;
-                align-items: center;
-                gap: 5px;
-                min-width: 100%;
-            }
-
-            .popover-any-input-label {
-                color: #ffcc80;
-                font-size: 10px;
-                white-space: nowrap;
-            }
-
-            .popover-any-input-options {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 4px;
-            }
-
-            .popover-cycle-note,
-            .popover-empty-note {
-                color: #888;
-                font-size: 10px;
-            }
-
-            .popover-cycle-note {
-                margin-top: 8px;
-            }
-
-            .popover-staff-row {
-                display: grid;
-                grid-template-columns: minmax(0, 1fr) auto;
-                gap: 6px;
-                align-items: center;
-            }
-
-            .popover-worker-name {
-                color: #eee;
-                min-width: 0;
-            }
-
-            .popover-staff-tool {
-                grid-column: 1 / -1;
-            }
-
-            .popover-staff-status {
-                justify-self: end;
-                font-size: 10px;
-            }
-
-            .popover-status-good {
-                color: #7cb342;
-            }
-
-            .popover-status-warn {
-                color: #ffb74d;
-            }
-
-            .popover-status-bad {
-                color: #f44336;
-            }
-
-            .popover-storage-meta {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 8px;
-                margin-bottom: 6px;
-                color: #aaa;
-                font-size: 10px;
-            }
-
-            .popover-storage-grid {
-                display: grid;
-                grid-template-columns: repeat(
-                    var(--storage-slots, 10),
-                    minmax(0, 1fr)
-                );
-                gap: 3px;
-                width: 100%;
-            }
-
-            .popover-storage-cell {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                aspect-ratio: 1;
-                min-width: 0;
-                border: 1px solid rgba(154, 183, 145, 0.28);
-                border-radius: 3px;
-                background: rgba(0, 0, 0, 0.22);
-                box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
-                overflow: hidden;
-            }
-
-            .popover-storage-cell--filled {
-                background: rgba(122, 151, 113, 0.16);
-                border-color: rgba(154, 183, 145, 0.5);
-            }
-
-            .popover-storage-accepts {
-                display: flex;
-                flex-wrap: wrap;
-                align-items: center;
-                gap: 4px;
-                margin-top: 6px;
-                color: #888;
-                font-size: 10px;
-            }
-
-            .popover-current-output {
-                display: flex;
-                align-items: center;
-                gap: 6px;
-                margin-top: 8px;
-                color: #ccc;
-                font-size: 11px;
-            }
-
-            .popover-current-output-chips {
-                display: inline-flex;
-                flex-wrap: wrap;
-                gap: 4px;
-            }
-
-            .popover-progress {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                margin-top: 6px;
-            }
-
-            .popover-progress-track {
-                flex: 1;
-                height: 6px;
-                background: rgba(255, 255, 255, 0.08);
-                border-radius: 3px;
-                overflow: hidden;
-            }
-
-            .popover-progress-fill {
-                height: 100%;
-                width: 0%;
-                background: #7cb342;
-                border-radius: 3px;
-                transition: width 0.3s linear;
-            }
-
-            .popover-progress-label {
-                color: #888;
-                font-size: 10px;
-                min-width: 24px;
-                text-align: right;
-            }
-
-            .popover-delete-btn {
-                width: 100%;
-                margin-top: 10px;
-                padding: 6px;
-                background: #5a1a1a;
-                border: 1px solid #7a2a2a;
-                color: #ccc;
-                cursor: pointer;
-                border-radius: 4px;
-                font-size: 11px;
-                font-family: "Courier New", monospace;
-            }
-
-            .popover-delete-btn:hover {
-                background: #7a2222;
-                border-color: #a33;
-                color: #fff;
-            }
-
-            /* Full-screen dimmer; click backdrop (outside sheet) to close */
-            .game-panel-overlay {
-                position: fixed;
-                inset: 0;
-                z-index: 70;
-                display: none;
-                align-items: center;
-                justify-content: center;
-                padding: 16px;
-                background: rgba(0, 0, 0, 0.55);
-                pointer-events: auto;
-            }
-
-            .game-panel-overlay.is-open {
-                display: flex;
-            }
-
-            #inventory-panel {
-                position: relative;
-                pointer-events: auto;
-                width: min(720px, calc(100vw - 32px));
-                min-width: min(560px, calc(100vw - 32px));
-                max-width: 720px;
-                max-height: 94vh;
-                display: flex;
-                flex-direction: column;
-            }
-
-            #inventory-panel h3 {
-                margin: 0;
-                font-size: 16px;
-                color: #ffff00;
-            }
-
-            #inventory-panel h4 {
-                color: #ddd;
-                border-bottom: 1px solid #444;
-                padding-bottom: 5px;
-            }
-
-            #inventory-list {
-                display: grid;
-                grid-template-columns: repeat(2, 1fr);
-                gap: 8px;
-            }
-
-            .inventory-tabs {
-                display: flex;
-                gap: 8px;
-                margin: 10px 0 8px 0;
-                border-bottom: 1px solid #444;
-                padding-bottom: 8px;
-            }
-
-            .inventory-tab-btn {
-                background: rgba(255, 255, 255, 0.05);
-                border: 1px solid #555;
-                color: #ccc;
-                padding: 6px 10px;
-                font-size: 11px;
-                border-radius: 4px;
-                cursor: pointer;
-                font-family: "Courier New", monospace;
-            }
-
-            .inventory-tab-btn.active {
-                background: #4a6741;
-                border-color: #6b8e5f;
-                color: #ffff00;
-            }
-
-            .inventory-section {
-                display: none;
-            }
-
-            .inventory-section.active {
-                display: block;
-            }
-
-            .basecamp-tab-note {
-                grid-column: 1 / -1;
-                padding: 7px 9px;
-                margin-bottom: 2px;
-                color: #aaa;
-                font-size: 10px;
-                line-height: 1.35;
-                background: rgba(0, 0, 0, 0.18);
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                border-radius: 4px;
-            }
-
-            .inventory-item {
-                background: rgba(255, 255, 255, 0.05);
-                padding: 8px;
-                border-radius: 4px;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-
-            .inventory-item-name {
-                color: #ccc;
-                display: flex;
-                align-items: center;
-                gap: 6px;
-            }
-
-            .resource-icon {
-                width: 25px;
-                height: 25px;
-                image-rendering: pixelated;
-                vertical-align: middle;
-                flex-shrink: 0;
-            }
-
-            .inventory-item-count {
-                color: #ffff00;
-                font-weight: bold;
-            }
-
-            .inventory-item--zero {
-                opacity: 0.55;
-            }
-
-            .inventory-item--zero .inventory-item-count {
-                color: #888;
-                font-weight: normal;
-            }
-
-            #workers-list {
-                display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 8px;
-                align-items: start;
-            }
-
-            .worker-summary-item {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 10px;
-                padding: 8px 10px;
-                background: rgba(255, 255, 255, 0.05);
-                border: 1px solid rgba(154, 183, 145, 0.16);
-                border-radius: 4px;
-            }
-
-            .worker-summary-item--idle {
-                border-color: rgba(255, 183, 77, 0.35);
-                background: rgba(255, 183, 77, 0.07);
-            }
-
-            .worker-summary-name {
-                display: flex;
-                align-items: center;
-                gap: 6px;
-                color: #ddd;
-                min-width: 0;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-            }
-
-            .worker-summary-icon {
-                width: 18px;
-                height: 18px;
-            }
-
-            .worker-summary-count {
-                color: #7cb342;
-                font-weight: bold;
-                flex-shrink: 0;
-            }
-
-            .worker-summary-item--idle .worker-summary-count {
-                color: #ffb74d;
-            }
-
-            .building-summary-list {
-                display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 8px;
-            }
-
-            .building-summary-item {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 10px;
-                padding: 8px 10px;
-                background: rgba(255, 255, 255, 0.05);
-                border: 1px solid rgba(154, 183, 145, 0.16);
-                border-radius: 4px;
-            }
-
-            .building-summary-item--warning {
-                border-color: rgba(255, 183, 77, 0.35);
-                background: rgba(255, 183, 77, 0.07);
-            }
-
-            .building-summary-name {
-                color: #ddd;
-                min-width: 0;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-            }
-
-            .building-summary-name--zero {
-                color: #888;
-            }
-
-            .building-summary-count {
-                color: #7cb342;
-                font-weight: bold;
-                flex-shrink: 0;
-            }
-
-            .building-summary-item--warning .building-summary-count {
-                color: #ffb74d;
-            }
-
-            .production-priority-building {
-                margin-bottom: 12px;
-                padding: 10px;
-                background: rgba(255, 255, 255, 0.045);
-                border: 1px solid rgba(154, 183, 145, 0.18);
-                border-radius: 6px;
-            }
-
-            .production-priority-building-title {
-                color: #ffff00;
-                font-size: 13px;
-                font-weight: bold;
-                margin-bottom: 4px;
-            }
-
-            .production-priority-hint {
-                color: #888;
-                font-size: 10px;
-                line-height: 1.35;
-                margin-bottom: 8px;
-            }
-
-            .production-priority-row {
-                display: grid;
-                grid-template-columns: minmax(130px, 1fr) 44px 24px minmax(
-                        100px,
-                        150px
-                    ) 24px;
-                column-gap: 8px;
-                row-gap: 6px;
-                align-items: center;
-                padding: 5px 0;
-                border-top: 1px solid rgba(255, 255, 255, 0.06);
-            }
-
-            .production-priority-row:first-of-type {
-                border-top: 0;
-            }
-
-            .production-priority-name {
-                display: flex;
-                align-items: center;
-                gap: 6px;
-                color: #ddd;
-                min-width: 0;
-            }
-
-            .production-priority-icon {
-                width: 20px;
-                height: 20px;
-            }
-
-            .production-priority-quantity {
-                color: #ffff00;
-                font-size: 10px;
-                font-weight: bold;
-                text-align: right;
-                white-space: nowrap;
-                margin-right: 4px;
-            }
-
-            .production-priority-step {
-                width: 24px;
-                height: 24px;
-                padding: 0;
-                margin: 0;
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                border-radius: 4px;
-                font-size: 13px;
-                line-height: 1;
-            }
-
-            .production-priority-step:disabled {
-                opacity: 0.35;
-                cursor: default;
-            }
-
-            .production-priority-meter {
-                position: relative;
-                height: 18px;
-                background: rgba(0, 0, 0, 0.28);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 999px;
-                overflow: hidden;
-            }
-
-            .production-priority-meter-fill {
-                display: block;
-                height: 100%;
-                background: #7cb342;
-                border-radius: 999px;
-            }
-
-            .production-priority-meter-label {
-                position: absolute;
-                inset: 0;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                color: #f7ffd8;
-                font-size: 10px;
-                font-weight: bold;
-                white-space: nowrap;
-                text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
-            }
-
-            #building-menu-panel {
-                position: relative;
-                pointer-events: auto;
-                width: min(700px, 100%);
-                max-height: 85vh;
-                display: flex;
-                flex-direction: column;
-                overflow: hidden;
-            }
-
-            #building-menu-panel h3 {
-                margin: 0;
-                font-size: 18px;
-                color: #ffff00;
-            }
-
-            .building-tabs {
-                display: flex;
-                gap: 8px;
-                margin-bottom: 15px;
-                border-bottom: 2px solid #444;
-                padding-bottom: 10px;
-            }
-
-            .tab-button {
-                background: rgba(255, 255, 255, 0.05);
-                border: 1px solid #555;
-                padding: 8px 16px;
-                font-size: 12px;
-                cursor: pointer;
-                border-radius: 4px 4px 0 0;
-                transition: all 0.2s;
-            }
-
-            .tab-button:hover {
-                background: rgba(255, 255, 255, 0.1);
-            }
-
-            .tab-button.active {
-                background: #4a6741;
-                border-color: #6b8e5f;
-                color: #ffff00;
-            }
-
-            .production-subtabs {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 6px;
-                margin: -4px 10px 8px;
-                padding: 8px;
-                background: rgba(0, 0, 0, 0.2);
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                border-radius: 6px;
-            }
-
-            .production-subtab {
-                display: inline-flex;
-                align-items: center;
-                gap: 5px;
-                padding: 6px 9px;
-                border: 1px solid rgba(154, 183, 145, 0.28);
-                border-radius: 999px;
-                background: rgba(255, 255, 255, 0.045);
-                color: #cfc7a7;
-                font-size: 10px;
-                cursor: pointer;
-                transition: all 0.18s;
-            }
-
-            .production-subtab:hover {
-                background: rgba(255, 255, 255, 0.09);
-                border-color: rgba(154, 183, 145, 0.5);
-            }
-
-            .production-subtab.active {
-                background: rgba(74, 103, 65, 0.88);
-                border-color: #8fbf78;
-                color: #ffffaa;
-            }
-
-            .building-cards-container {
-                display: grid;
-                grid-template-columns: repeat(2, 1fr);
-                gap: 15px;
-                max-height: 500px;
-                overflow-y: auto;
-                padding: 10px;
-                scrollbar-width: none;
-                -ms-overflow-style: none;
-            }
-
-            .building-cards-container::-webkit-scrollbar {
-                display: none;
-            }
-
-            #building-menu-panel .building-cards-container {
-                flex: 1;
-                min-height: 0;
-            }
-
-            .building-card {
-                background: linear-gradient(
-                    180deg,
-                    rgba(255, 255, 255, 0.07),
-                    rgba(0, 0, 0, 0.18)
-                );
-                border: 2px solid #4a6741;
-                border-radius: 8px;
-                padding: 12px;
-                transition: all 0.3s;
-                cursor: pointer;
-                min-height: 252px;
-                display: flex;
-                flex-direction: column;
-                gap: 8px;
-            }
-
-            .building-card:hover,
-            .building-card:focus-visible {
-                background: rgba(255, 255, 255, 0.08);
-                border-color: #6b8e5f;
-                transform: translateY(-2px);
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-                outline: none;
-            }
-
-            .building-card.unaffordable {
-                opacity: 0.6;
-                border-color: #666;
-            }
-
-            .building-card.unaffordable:hover {
-                border-color: #888;
-            }
-
-            .building-preview {
-                margin: 0 auto;
-                border: 2px solid rgba(255, 255, 255, 0.2);
-                width: 150px;
-                height: 104px;
-                border-radius: 6px;
-                background-size: contain;
-                background-position: center bottom;
-                background-repeat: no-repeat;
-                background-color: rgba(0, 0, 0, 0.24);
-                box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.28);
-            }
-
-            .building-name {
-                font-size: 14px;
-                font-weight: bold;
-                color: #ffff00;
-                margin-bottom: 0;
-                text-align: center;
-            }
-
-            .building-description {
-                font-size: 10px;
-                color: #aaa;
-                margin-bottom: 0;
-                text-align: center;
-                line-height: 1.4;
-                min-height: 28px;
-            }
-
-            .building-meta-row,
-            .building-role-row {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                flex-wrap: wrap;
-                gap: 6px;
-                font-size: 11px;
-                color: #ccc;
-            }
-
-            .building-meta-row {
-                padding: 7px 8px;
-                background: rgba(0, 0, 0, 0.3);
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                border-radius: 4px;
-            }
-
-            .building-meta-item,
-            .building-pop-badge,
-            .building-cadence {
-                display: inline-flex;
-                align-items: center;
-                gap: 4px;
-                white-space: nowrap;
-            }
-
-            .building-meta-item i,
-            .building-role-label,
-            .building-pop-badge i,
-            .building-cadence i {
-                color: #d7b46a;
-            }
-
-            .building-meta-separator {
-                color: #6f6246;
-            }
-
-            .building-resource-chips {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                flex-wrap: wrap;
-                gap: 6px;
-            }
-
-            .building-resource-chip {
-                position: relative;
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                width: 24px;
-                height: 24px;
-                border-radius: 999px;
-                background: rgba(84, 63, 35, 0.8);
-                border: 1px solid rgba(222, 190, 111, 0.36);
-                box-shadow:
-                    inset 0 1px 2px rgba(255, 255, 255, 0.12),
-                    0 1px 2px rgba(0, 0, 0, 0.45);
-            }
-
-            .building-resource-chip.is-missing {
-                border-color: rgba(239, 83, 80, 0.75);
-                background: rgba(82, 25, 24, 0.78);
-                filter: saturate(0.8);
-            }
-
-            .building-resource-icon {
-                width: 19px;
-                height: 19px;
-                object-fit: contain;
-                image-rendering: auto;
-            }
-
-            .building-resource-fallback {
-                color: #f4dca0;
-                font-size: 9px;
-                line-height: 1;
-                font-weight: bold;
-                letter-spacing: -0.04em;
-                text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
-            }
-
-            .building-resource-amount {
-                position: absolute;
-                right: -5px;
-                bottom: -5px;
-                min-width: 14px;
-                height: 14px;
-                padding: 0 2px;
-                border-radius: 999px;
-                background: #1e160f;
-                border: 1px solid rgba(255, 226, 135, 0.52);
-                color: #fff3c4;
-                font-size: 8px;
-                line-height: 13px;
-                text-align: center;
-                font-weight: bold;
-            }
-
-            .building-role-row {
-                flex-direction: column;
-                min-height: 30px;
-                padding-top: 2px;
-                border-top: 1px solid rgba(255, 255, 255, 0.08);
-                font-size: 10px;
-                color: #9acd32;
-            }
-
-            .building-role-line {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                flex-wrap: wrap;
-                gap: 6px;
-                width: 100%;
-            }
-
-            .building-role-label {
-                text-transform: uppercase;
-                letter-spacing: 0.04em;
-                font-weight: bold;
-                color: #7cb342;
-            }
-
-            .building-role-line.is-requirement .building-role-label,
-            .building-role-line.is-requirement .building-resource-chip {
-                color: #9acd32;
-                border-color: rgba(124, 179, 66, 0.58);
-            }
-
-            .building-role-text {
-                color: #ddd;
-            }
-
-            .building-any-resource-group {
-                display: inline-flex;
-                align-items: center;
-                gap: 3px;
-            }
-
-            .building-any-separator {
-                color: #88795a;
-                font-size: 11px;
-            }
-
-            .building-output-chips {
-                gap: 8px;
-            }
-
-            .building-cadence {
-                color: #b9aa83;
-                margin-left: 2px;
-            }
-
-            /*
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Settler - A Tribute to Classic City Building</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        overflow: hidden;
+        font-family: 'Courier New', monospace;
+        background: #1a1a1a;
+        color: #fff;
+      }
+
+      #game-container {
+        width: 100vw;
+        height: 100vh;
+        position: relative;
+        touch-action: none;
+      }
+
+      #game-canvas {
+        display: block;
+        background: #2d5016;
+      }
+
+      #ui-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
+
+      #debug-info {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 10px;
+        border-radius: 4px;
+        font-size: 12px;
+        pointer-events: auto;
+      }
+
+      #top-right-actions {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        z-index: 50;
+        pointer-events: auto;
+      }
+
+      /* Icon-only controls: no green chrome; light hover wash + glow on artwork */
+      button.chromeless-icon-btn {
+        padding: 6px;
+        margin: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 10px;
+        line-height: 0;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+        box-sizing: border-box;
+      }
+
+      button.chromeless-icon-btn:hover,
+      button.chromeless-icon-btn:active {
+        background: rgba(255, 255, 255, 0.06) !important;
+        border: none !important;
+      }
+
+      button.chromeless-icon-btn:focus-visible {
+        outline: 2px solid #9ab791;
+        outline-offset: 3px;
+      }
+
+      button.chromeless-icon-btn:hover img,
+      button.chromeless-icon-btn:hover .icon-palette-img-wrap--placeholder {
+        filter: brightness(1.15) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45));
+      }
+
+      #top-right-actions button.chromeless-icon-btn.is-active,
+      #top-right-actions button.chromeless-icon-btn[aria-pressed='true'] {
+        background: rgba(255, 255, 255, 0.08) !important;
+      }
+
+      #top-right-actions button.chromeless-icon-btn {
+        min-width: 72px;
+        min-height: 72px;
+      }
+
+      #top-right-actions button.chromeless-icon-btn .btn-options-icon,
+      #top-right-actions button.chromeless-icon-btn .btn-exit-icon,
+      #top-right-actions button.chromeless-icon-btn .btn-fast-forward-icon {
+        width: 64px;
+        height: 64px;
+        display: block;
+        object-fit: contain;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+        flex-shrink: 0;
+        pointer-events: none;
+      }
+
+      #controls {
+        position: absolute;
+        bottom: 6px;
+        left: 6px;
+        background: rgba(0, 0, 0, 0.38);
+        /* Less pad above content, more below labels — total bar height stays stable */
+        padding: 2px 5px 11px 5px;
+        border-radius: 6px;
+        pointer-events: auto;
+        box-sizing: border-box;
+        min-height: 120px;
+        display: flex;
+        align-items: flex-start;
+      }
+
+      #controls .controls-row {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        align-items: flex-start;
+        gap: 0;
+        overflow-x: auto;
+        flex: 1;
+        min-height: 106px;
+      }
+
+      /* Bottom dock: same chromeless treatment as top-right; icon + caption column */
+      #controls button.chromeless-icon-btn.dock-toolbar-btn {
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 0;
+        padding: 0 3px 0;
+        min-width: 92px;
+        max-width: 104px;
+        min-height: 106px;
+        line-height: normal;
+        box-sizing: border-box;
+      }
+
+      #controls button.chromeless-icon-btn.dock-toolbar-btn.selected {
+        background: rgba(255, 255, 255, 0.06) !important;
+      }
+
+      #controls button.chromeless-icon-btn.dock-toolbar-btn.selected img,
+      #controls
+        button.chromeless-icon-btn.dock-toolbar-btn.selected
+        .icon-palette-img-wrap--placeholder {
+        filter: brightness(1.2) drop-shadow(0 0 10px rgba(200, 220, 160, 0.42));
+      }
+
+      #controls .dock-toolbar-btn .icon-palette-img-wrap {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        min-height: 86px;
+        flex-shrink: 0;
+      }
+
+      #controls .dock-toolbar-btn .icon-palette-img-wrap--placeholder {
+        font-size: 54px;
+        line-height: 1;
+        color: #8a9a82;
+        font-weight: bold;
+        letter-spacing: 0;
+      }
+
+      #controls .dock-toolbar-btn img {
+        width: 86px;
+        height: 86px;
+        object-fit: contain;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+        display: block;
+        pointer-events: none;
+      }
+
+      #controls .dock-toolbar-btn .icon-palette-label {
+        display: block;
+        text-align: center;
+        width: 100%;
+        padding: 0 1px 0;
+        margin-top: -4px;
+        flex-shrink: 0;
+      }
+
+      #controls .dock-toolbar-btn .dock-toolbar-caption {
+        display: block;
+        font-size: 10px;
+        line-height: 1.15;
+        color: #e8e8e8;
+        font-weight: normal;
+        white-space: normal;
+      }
+
+      #controls .dock-toolbar-btn .dock-toolbar-caption .shortcut-hint {
+        font-size: 9px;
+        margin-left: 3px;
+        color: #9ab791;
+        opacity: 0.9;
+      }
+
+      #controls .dock-toolbar-btn .dock-toolbar-subhint {
+        font-size: 9px;
+        color: #9ab791;
+        opacity: 0.85;
+        margin-left: 3px;
+        font-weight: normal;
+      }
+
+      /* Welcome only: tiled green buttons */
+      .welcome-buttons button.icon-palette-btn {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 6px;
+        width: 132px;
+        max-width: none;
+        padding: 10px 8px 8px;
+        margin: 0;
+        background: rgba(36, 48, 32, 0.92);
+        border: 2px solid #5d7a52;
+        border-radius: 8px;
+        color: #eaeaea;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+        box-sizing: border-box;
+      }
+
+      .welcome-buttons button.icon-palette-btn:hover {
+        background: rgba(50, 68, 44, 0.95);
+        border-color: #7a9a6a;
+      }
+
+      .welcome-buttons button.icon-palette-btn:active {
+        background: rgba(30, 42, 26, 0.98);
+      }
+
+      .welcome-buttons .icon-palette-img-wrap {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        min-height: 56px;
+      }
+
+      .welcome-buttons .icon-palette-img-wrap--placeholder {
+        font-size: 36px;
+        line-height: 1;
+        color: #7a8a72;
+        font-weight: bold;
+        letter-spacing: 0;
+      }
+
+      .welcome-buttons .icon-palette-img-wrap--symbol {
+        font-size: 44px;
+        line-height: 56px;
+        color: #c8dc6a;
+        text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+      }
+
+      .welcome-buttons button.icon-palette-btn img {
+        width: 52px;
+        height: 52px;
+        object-fit: contain;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+        display: block;
+      }
+
+      .welcome-buttons .icon-palette-label {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        text-align: center;
+        width: 100%;
+      }
+
+      .welcome-buttons .icon-palette-title {
+        font-size: 10px;
+        line-height: 1.2;
+        color: #ddd;
+        font-weight: normal;
+      }
+
+      .welcome-buttons .icon-palette-meta {
+        font-size: 9px;
+        line-height: 1.2;
+        color: #9ab791;
+        opacity: 0.85;
+      }
+
+      button {
+        background: #4a6741;
+        color: white;
+        border: 2px solid #6b8e5f;
+        padding: 8px 16px;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+        font-size: 14px;
+        border-radius: 4px;
+      }
+
+      button:hover {
+        background: #5a7751;
+      }
+
+      button:active {
+        background: #3a5731;
+      }
+
+      button.selected {
+        background: #7a9771;
+        border-color: #9ab791;
+      }
+
+      .game-popover {
+        position: absolute;
+        z-index: 10;
+        background: rgba(10, 10, 10, 0.92);
+        min-width: 320px;
+        max-width: 460px;
+        max-height: 82vh;
+        pointer-events: auto;
+        font-size: 12px;
+      }
+
+      .game-popover-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 4px 0 10px;
+        border-bottom: 1px solid #3a5731;
+      }
+
+      .game-popover-title {
+        color: #ffff00;
+        font-weight: bold;
+        font-size: 13px;
+      }
+
+      .game-popover-close {
+        background: none;
+        border: 1px solid transparent;
+        color: #888;
+        cursor: pointer;
+        padding: 2px 6px;
+        font-size: 14px;
+        margin: 0;
+        border-radius: 3px;
+        font-family: 'Courier New', monospace;
+      }
+
+      .game-popover-close:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.1);
+        border-color: #555;
+      }
+
+      .game-popover-body {
+        padding: 8px 0 0;
+        max-height: calc(82vh - 70px);
+        overflow-y: auto;
+      }
+
+      .popover-desc {
+        color: #aaa;
+        font-size: 11px;
+        margin-bottom: 8px;
+        line-height: 1.4;
+      }
+
+      .popover-row {
+        margin: 4px 0;
+        color: #ccc;
+        font-size: 11px;
+      }
+
+      .popover-label {
+        color: #888;
+      }
+
+      .popover-production {
+        color: #ccc;
+      }
+
+      .popover-detail-card {
+        margin: 8px 0;
+        padding: 7px 8px;
+        background: rgba(255, 255, 255, 0.045);
+        border: 1px solid rgba(154, 183, 145, 0.18);
+        border-radius: 4px;
+        color: #ccc;
+        font-size: 11px;
+        line-height: 1.35;
+      }
+
+      .popover-section-title {
+        color: #9ab791;
+        font-size: 10px;
+        line-height: 1;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .popover-section-title--spaced {
+        margin-top: 8px;
+      }
+
+      .popover-chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        align-items: center;
+      }
+
+      .popover-resource-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        min-width: 0;
+        padding: 3px 6px 3px 4px;
+        background: rgba(0, 0, 0, 0.24);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 999px;
+        color: #e0e0d0;
+        white-space: nowrap;
+      }
+
+      .popover-resource-chip--compact {
+        padding-right: 4px;
+      }
+
+      .popover-resource-chip--tool {
+        border-color: rgba(255, 183, 77, 0.35);
+        background: rgba(255, 183, 77, 0.08);
+      }
+
+      .popover-resource-icon {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+        border-radius: 3px;
+        background: rgba(255, 255, 255, 0.08);
+        overflow: hidden;
+        color: #9ab791;
+        font-size: 10px;
+        font-weight: bold;
+      }
+
+      .popover-resource-icon img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+      }
+
+      .popover-resource-icon--slot {
+        width: 100%;
+        height: 100%;
+        background: transparent;
+      }
+
+      .popover-resource-icon--storage-slot {
+        display: flex;
+      }
+
+      .popover-resource-icon--storage-slot .popover-resource-icon-fallback {
+        display: none;
+      }
+
+      .popover-resource-icon--storage-slot img {
+        position: static;
+        width: 86%;
+        height: 86%;
+      }
+
+      .popover-resource-icon-fallback {
+        opacity: 0.8;
+      }
+
+      .popover-resource-name {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .popover-resource-amount {
+        color: #ffff99;
+        margin-right: 2px;
+      }
+
+      .popover-any-input {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        min-width: 100%;
+      }
+
+      .popover-any-input-label {
+        color: #ffcc80;
+        font-size: 10px;
+        white-space: nowrap;
+      }
+
+      .popover-any-input-options {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+
+      .popover-cycle-note,
+      .popover-empty-note {
+        color: #888;
+        font-size: 10px;
+      }
+
+      .popover-cycle-note {
+        margin-top: 8px;
+      }
+
+      .popover-staff-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 6px;
+        align-items: center;
+      }
+
+      .popover-worker-name {
+        color: #eee;
+        min-width: 0;
+      }
+
+      .popover-staff-tool {
+        grid-column: 1 / -1;
+      }
+
+      .popover-staff-status {
+        justify-self: end;
+        font-size: 10px;
+      }
+
+      .popover-status-good {
+        color: #7cb342;
+      }
+
+      .popover-status-warn {
+        color: #ffb74d;
+      }
+
+      .popover-status-bad {
+        color: #f44336;
+      }
+
+      .popover-storage-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 6px;
+        color: #aaa;
+        font-size: 10px;
+      }
+
+      .popover-storage-grid {
+        display: grid;
+        grid-template-columns: repeat(var(--storage-slots, 10), minmax(0, 1fr));
+        gap: 3px;
+        width: 100%;
+      }
+
+      .popover-storage-cell {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        aspect-ratio: 1;
+        min-width: 0;
+        border: 1px solid rgba(154, 183, 145, 0.28);
+        border-radius: 3px;
+        background: rgba(0, 0, 0, 0.22);
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
+        overflow: hidden;
+      }
+
+      .popover-storage-cell--filled {
+        background: rgba(122, 151, 113, 0.16);
+        border-color: rgba(154, 183, 145, 0.5);
+      }
+
+      .popover-storage-accepts {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px;
+        margin-top: 6px;
+        color: #888;
+        font-size: 10px;
+      }
+
+      .popover-current-output {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 8px;
+        color: #ccc;
+        font-size: 11px;
+      }
+
+      .popover-current-output-chips {
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+
+      .popover-progress {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 6px;
+      }
+
+      .popover-progress-track {
+        flex: 1;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+
+      .popover-progress-fill {
+        height: 100%;
+        width: 0%;
+        background: #7cb342;
+        border-radius: 3px;
+        transition: width 0.3s linear;
+      }
+
+      .popover-progress-label {
+        color: #888;
+        font-size: 10px;
+        min-width: 24px;
+        text-align: right;
+      }
+
+      .popover-delete-btn {
+        width: 100%;
+        margin-top: 10px;
+        padding: 6px;
+        background: #5a1a1a;
+        border: 1px solid #7a2a2a;
+        color: #ccc;
+        cursor: pointer;
+        border-radius: 4px;
+        font-size: 11px;
+        font-family: 'Courier New', monospace;
+      }
+
+      .popover-delete-btn:hover {
+        background: #7a2222;
+        border-color: #a33;
+        color: #fff;
+      }
+
+      /* Full-screen dimmer; click backdrop (outside sheet) to close */
+      .game-panel-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 70;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        background: rgba(0, 0, 0, 0.55);
+        pointer-events: auto;
+      }
+
+      .game-panel-overlay.is-open {
+        display: flex;
+      }
+
+      #inventory-panel {
+        position: relative;
+        pointer-events: auto;
+        width: min(720px, calc(100vw - 32px));
+        min-width: min(560px, calc(100vw - 32px));
+        max-width: 720px;
+        max-height: 94vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      #inventory-panel h3 {
+        margin: 0;
+        font-size: 16px;
+        color: #ffff00;
+      }
+
+      #inventory-panel h4 {
+        color: #ddd;
+        border-bottom: 1px solid #444;
+        padding-bottom: 5px;
+      }
+
+      #inventory-list {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+      }
+
+      .inventory-tabs {
+        display: flex;
+        gap: 8px;
+        margin: 10px 0 8px 0;
+        border-bottom: 1px solid #444;
+        padding-bottom: 8px;
+      }
+
+      .inventory-tab-btn {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid #555;
+        color: #ccc;
+        padding: 6px 10px;
+        font-size: 11px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+      }
+
+      .inventory-tab-btn.active {
+        background: #4a6741;
+        border-color: #6b8e5f;
+        color: #ffff00;
+      }
+
+      .inventory-section {
+        display: none;
+      }
+
+      .inventory-section.active {
+        display: block;
+      }
+
+      .basecamp-tab-note {
+        grid-column: 1 / -1;
+        padding: 7px 9px;
+        margin-bottom: 2px;
+        color: #aaa;
+        font-size: 10px;
+        line-height: 1.35;
+        background: rgba(0, 0, 0, 0.18);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 4px;
+      }
+
+      .inventory-item {
+        background: rgba(255, 255, 255, 0.05);
+        padding: 8px;
+        border-radius: 4px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .inventory-item-name {
+        color: #ccc;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .resource-icon {
+        width: 25px;
+        height: 25px;
+        image-rendering: pixelated;
+        vertical-align: middle;
+        flex-shrink: 0;
+      }
+
+      .inventory-item-count {
+        color: #ffff00;
+        font-weight: bold;
+      }
+
+      .inventory-item--zero {
+        opacity: 0.55;
+      }
+
+      .inventory-item--zero .inventory-item-count {
+        color: #888;
+        font-weight: normal;
+      }
+
+      #workers-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        align-items: start;
+      }
+
+      .worker-summary-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 8px 10px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(154, 183, 145, 0.16);
+        border-radius: 4px;
+      }
+
+      .worker-summary-item--idle {
+        border-color: rgba(255, 183, 77, 0.35);
+        background: rgba(255, 183, 77, 0.07);
+      }
+
+      .worker-summary-name {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: #ddd;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .worker-summary-icon {
+        width: 18px;
+        height: 18px;
+      }
+
+      .worker-summary-count {
+        color: #7cb342;
+        font-weight: bold;
+        flex-shrink: 0;
+      }
+
+      .worker-summary-item--idle .worker-summary-count {
+        color: #ffb74d;
+      }
+
+      .building-summary-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .building-summary-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 8px 10px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(154, 183, 145, 0.16);
+        border-radius: 4px;
+      }
+
+      .building-summary-item--warning {
+        border-color: rgba(255, 183, 77, 0.35);
+        background: rgba(255, 183, 77, 0.07);
+      }
+
+      .building-summary-name {
+        color: #ddd;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .building-summary-name--zero {
+        color: #888;
+      }
+
+      .building-summary-count {
+        color: #7cb342;
+        font-weight: bold;
+        flex-shrink: 0;
+      }
+
+      .building-summary-item--warning .building-summary-count {
+        color: #ffb74d;
+      }
+
+      .production-priority-building {
+        margin-bottom: 12px;
+        padding: 10px;
+        background: rgba(255, 255, 255, 0.045);
+        border: 1px solid rgba(154, 183, 145, 0.18);
+        border-radius: 6px;
+      }
+
+      .production-priority-building-title {
+        color: #ffff00;
+        font-size: 13px;
+        font-weight: bold;
+        margin-bottom: 4px;
+      }
+
+      .production-priority-hint {
+        color: #888;
+        font-size: 10px;
+        line-height: 1.35;
+        margin-bottom: 8px;
+      }
+
+      .production-priority-row {
+        display: grid;
+        grid-template-columns:
+          minmax(130px, 1fr) 44px 24px minmax(100px, 150px)
+          24px;
+        column-gap: 8px;
+        row-gap: 6px;
+        align-items: center;
+        padding: 5px 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+      }
+
+      .production-priority-row:first-of-type {
+        border-top: 0;
+      }
+
+      .production-priority-name {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: #ddd;
+        min-width: 0;
+      }
+
+      .production-priority-icon {
+        width: 20px;
+        height: 20px;
+      }
+
+      .production-priority-quantity {
+        color: #ffff00;
+        font-size: 10px;
+        font-weight: bold;
+        text-align: right;
+        white-space: nowrap;
+        margin-right: 4px;
+      }
+
+      .production-priority-step {
+        width: 24px;
+        height: 24px;
+        padding: 0;
+        margin: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        font-size: 13px;
+        line-height: 1;
+      }
+
+      .production-priority-step:disabled {
+        opacity: 0.35;
+        cursor: default;
+      }
+
+      .production-priority-meter {
+        position: relative;
+        height: 18px;
+        background: rgba(0, 0, 0, 0.28);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+
+      .production-priority-meter-fill {
+        display: block;
+        height: 100%;
+        background: #7cb342;
+        border-radius: 999px;
+      }
+
+      .production-priority-meter-label {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #f7ffd8;
+        font-size: 10px;
+        font-weight: bold;
+        white-space: nowrap;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+      }
+
+      #building-menu-panel {
+        position: relative;
+        pointer-events: auto;
+        width: min(700px, 100%);
+        max-height: 85vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      #building-menu-panel h3 {
+        margin: 0;
+        font-size: 18px;
+        color: #ffff00;
+      }
+
+      .building-tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 15px;
+        border-bottom: 2px solid #444;
+        padding-bottom: 10px;
+      }
+
+      .tab-button {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid #555;
+        padding: 8px 16px;
+        font-size: 12px;
+        cursor: pointer;
+        border-radius: 4px 4px 0 0;
+        transition: all 0.2s;
+      }
+
+      .tab-button:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .tab-button.active {
+        background: #4a6741;
+        border-color: #6b8e5f;
+        color: #ffff00;
+      }
+
+      .production-subtabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: -4px 10px 8px;
+        padding: 8px;
+        background: rgba(0, 0, 0, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 6px;
+      }
+
+      .production-subtab {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 6px 9px;
+        border: 1px solid rgba(154, 183, 145, 0.28);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.045);
+        color: #cfc7a7;
+        font-size: 10px;
+        cursor: pointer;
+        transition: all 0.18s;
+      }
+
+      .production-subtab:hover {
+        background: rgba(255, 255, 255, 0.09);
+        border-color: rgba(154, 183, 145, 0.5);
+      }
+
+      .production-subtab.active {
+        background: rgba(74, 103, 65, 0.88);
+        border-color: #8fbf78;
+        color: #ffffaa;
+      }
+
+      .building-cards-container {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 15px;
+        max-height: 500px;
+        overflow-y: auto;
+        padding: 10px;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+      }
+
+      .building-cards-container::-webkit-scrollbar {
+        display: none;
+      }
+
+      #building-menu-panel .building-cards-container {
+        flex: 1;
+        min-height: 0;
+      }
+
+      .building-card {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(0, 0, 0, 0.18));
+        border: 2px solid #4a6741;
+        border-radius: 8px;
+        padding: 12px;
+        transition: all 0.3s;
+        cursor: pointer;
+        min-height: 252px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .building-card:hover,
+      .building-card:focus-visible {
+        background: rgba(255, 255, 255, 0.08);
+        border-color: #6b8e5f;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        outline: none;
+      }
+
+      .building-card.unaffordable {
+        opacity: 0.6;
+        border-color: #666;
+      }
+
+      .building-card.unaffordable:hover {
+        border-color: #888;
+      }
+
+      .building-preview {
+        margin: 0 auto;
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        width: 150px;
+        height: 104px;
+        border-radius: 6px;
+        background-size: contain;
+        background-position: center bottom;
+        background-repeat: no-repeat;
+        background-color: rgba(0, 0, 0, 0.24);
+        box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.28);
+      }
+
+      .building-name {
+        font-size: 14px;
+        font-weight: bold;
+        color: #ffff00;
+        margin-bottom: 0;
+        text-align: center;
+      }
+
+      .building-description {
+        font-size: 10px;
+        color: #aaa;
+        margin-bottom: 0;
+        text-align: center;
+        line-height: 1.4;
+        min-height: 28px;
+      }
+
+      .building-meta-row,
+      .building-role-row {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        font-size: 11px;
+        color: #ccc;
+      }
+
+      .building-meta-row {
+        padding: 7px 8px;
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 4px;
+      }
+
+      .building-meta-item,
+      .building-pop-badge,
+      .building-cadence {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        white-space: nowrap;
+      }
+
+      .building-meta-item i,
+      .building-role-label,
+      .building-pop-badge i,
+      .building-cadence i {
+        color: #d7b46a;
+      }
+
+      .building-meta-separator {
+        color: #6f6246;
+      }
+
+      .building-resource-chips {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .building-resource-chip {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 999px;
+        background: rgba(84, 63, 35, 0.8);
+        border: 1px solid rgba(222, 190, 111, 0.36);
+        box-shadow:
+          inset 0 1px 2px rgba(255, 255, 255, 0.12),
+          0 1px 2px rgba(0, 0, 0, 0.45);
+      }
+
+      .building-resource-chip.is-missing {
+        border-color: rgba(239, 83, 80, 0.75);
+        background: rgba(82, 25, 24, 0.78);
+        filter: saturate(0.8);
+      }
+
+      .building-resource-icon {
+        width: 19px;
+        height: 19px;
+        object-fit: contain;
+        image-rendering: auto;
+      }
+
+      .building-resource-fallback {
+        color: #f4dca0;
+        font-size: 9px;
+        line-height: 1;
+        font-weight: bold;
+        letter-spacing: -0.04em;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+      }
+
+      .building-resource-amount {
+        position: absolute;
+        right: -5px;
+        bottom: -5px;
+        min-width: 14px;
+        height: 14px;
+        padding: 0 2px;
+        border-radius: 999px;
+        background: #1e160f;
+        border: 1px solid rgba(255, 226, 135, 0.52);
+        color: #fff3c4;
+        font-size: 8px;
+        line-height: 13px;
+        text-align: center;
+        font-weight: bold;
+      }
+
+      .building-role-row {
+        flex-direction: column;
+        min-height: 30px;
+        padding-top: 2px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        font-size: 10px;
+        color: #9acd32;
+      }
+
+      .building-role-line {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        width: 100%;
+      }
+
+      .building-role-label {
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        font-weight: bold;
+        color: #7cb342;
+      }
+
+      .building-role-line.is-requirement .building-role-label,
+      .building-role-line.is-requirement .building-resource-chip {
+        color: #9acd32;
+        border-color: rgba(124, 179, 66, 0.58);
+      }
+
+      .building-role-text {
+        color: #ddd;
+      }
+
+      .building-any-resource-group {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+      }
+
+      .building-any-separator {
+        color: #88795a;
+        font-size: 11px;
+      }
+
+      .building-output-chips {
+        gap: 8px;
+      }
+
+      .building-cadence {
+        color: #b9aa83;
+        margin-left: 2px;
+      }
+
+      /*
      * Wooden frame (9-slice, navigator-frame.png) — minimap, dialogs, sheets, popover.
      * border + border-image-width match minimap navigator styling.
      */
-            .dialog-panel,
-            #inventory-panel,
-            #building-menu-panel,
-            #options-panel,
-            #minimap,
-            .game-popover {
-                box-sizing: border-box;
-                border: 12px solid transparent;
-                border-radius: 0;
-                border-image-source: url(/assets/ui/navigator-frame.png);
-                border-image-slice: 91 96 91 96 fill;
-                border-image-width: 22px;
-                border-image-outset: 0;
-                border-image-repeat: stretch;
-            }
-
-            /* No fill behind the wood — avoids dark bleeding past the frame */
-            .dialog-panel,
-            #inventory-panel,
-            #building-menu-panel,
-            #options-panel,
-            .game-popover {
-                background: transparent;
-                padding: 0;
-            }
-
-            /* Dark inset for text/content only; tune padding here */
-            .dialog-panel-body {
-                box-sizing: border-box;
-                width: 100%;
-                /* Dark brown, ~10% transparent (similar to first brown pass) */
-                background: rgba(42, 28, 18, 0.9);
-                padding: 16px 20px;
-                border-radius: 4px;
-            }
-
-            .game-popover .dialog-panel-body {
-                padding: 10px 12px;
-            }
-
-            #inventory-panel .dialog-panel-body,
-            #options-panel .dialog-panel-body {
-                flex: 1;
-                min-height: 0;
-                max-height: 100%;
-                overflow: auto;
-            }
-
-            #building-menu-panel .dialog-panel-body {
-                flex: 1;
-                min-height: 0;
-                overflow: hidden;
-                display: flex;
-                flex-direction: column;
-            }
-
-            /* Wooden frame via 9-slice; inner map stays 200×200 */
-            #minimap {
-                position: absolute;
-                bottom: 10px;
-                right: 10px;
-                width: 244px;
-                height: 244px;
-                padding: 0;
-                background: transparent;
-                pointer-events: auto;
-                cursor: pointer;
-            }
-
-            #minimap-canvas {
-                width: 100%;
-                height: 100%;
-                display: block;
-            }
-
-            /* Options Panel (sheet inside .game-panel-overlay) */
-            #options-panel {
-                position: relative;
-                pointer-events: auto;
-                min-width: 340px;
-                max-width: 400px;
-                max-height: 90vh;
-                display: flex;
-                flex-direction: column;
-            }
-
-            .options-row {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                gap: 14px;
-                padding: 10px 0;
-                border-bottom: 1px solid #333;
-            }
-
-            .options-row:last-child {
-                border-bottom: none;
-            }
-
-            .options-label {
-                color: #ccc;
-                font-size: 14px;
-                white-space: nowrap;
-            }
-
-            .options-toggle {
-                position: relative;
-                width: 40px;
-                height: 22px;
-                cursor: pointer;
-            }
-
-            .options-toggle input {
-                opacity: 0;
-                width: 0;
-                height: 0;
-            }
-
-            .options-toggle .slider {
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background: #444;
-                border-radius: 11px;
-                border: 1px solid #666;
-                transition: background 0.2s;
-            }
-
-            .options-toggle .slider::before {
-                content: "";
-                position: absolute;
-                width: 16px;
-                height: 16px;
-                left: 2px;
-                bottom: 2px;
-                background: #ccc;
-                border-radius: 50%;
-                transition: transform 0.2s;
-            }
-
-            .options-toggle input:checked + .slider {
-                background: #4a6741;
-                border-color: #6b8e5f;
-            }
-
-            .options-toggle input:checked + .slider::before {
-                transform: translateX(18px);
-                background: #fff;
-            }
-
-            .options-segmented {
-                display: inline-flex;
-                padding: 2px;
-                background: rgba(28, 20, 14, 0.95);
-                border: 1px solid #6b5a3a;
-                border-radius: 999px;
-                gap: 2px;
-            }
-
-            .options-segmented-btn {
-                min-width: 64px;
-                padding: 4px 8px;
-                margin: 0;
-                background: transparent;
-                border: 0;
-                border-radius: 999px;
-                color: #bfb39b;
-                font-family: "Courier New", monospace;
-                font-size: 12px;
-                cursor: pointer;
-            }
-
-            .options-segmented-btn.is-active {
-                background: #4a6741;
-                color: #fff;
-                box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
-            }
-
-            .options-segmented-btn:focus-visible {
-                outline: 2px solid #9ab791;
-                outline-offset: 2px;
-            }
-
-            /* Welcome Screen */
-            #welcome-screen {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: #1a1a1a;
-                display: none;
-                align-items: center;
-                justify-content: center;
-                flex-direction: column;
-                z-index: 100;
-            }
-
-            #loading-screen {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: #1a1a1a;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                z-index: 100;
-                color: #888;
-                font-size: 16px;
-            }
-
-            #welcome-screen h1 {
-                font-size: 48px;
-                color: #ffff00;
-                margin-bottom: 4px;
-                letter-spacing: 2px;
-            }
-
-            .welcome-subtitle {
-                font-size: 13px;
-                color: #666;
-                margin-bottom: 48px;
-            }
-
-            .welcome-buttons {
-                display: flex;
-                flex-direction: row;
-                align-items: center;
-                justify-content: center;
-                gap: 16px;
-            }
-
-            .welcome-buttons button.icon-palette-btn:disabled {
-                background: #2a2a2a;
-                border-color: #444;
-                opacity: 0.55;
-                cursor: not-allowed;
-            }
-
-            .welcome-buttons button.icon-palette-btn:disabled img {
-                opacity: 0.45;
-                filter: grayscale(0.6);
-            }
-
-            /* Dialog Overlay */
-            .dialog-overlay {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: rgba(0, 0, 0, 0.7);
-                display: none;
-                align-items: center;
-                justify-content: center;
-                z-index: 200;
-            }
-
-            .dialog-panel {
-                min-width: 500px;
-                max-width: 600px;
-            }
-
-            .dialog-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 15px;
-            }
-
-            .dialog-header h3 {
-                margin: 0;
-                font-size: 18px;
-                color: #ffff00;
-            }
-
-            /* Save/Load Slots */
-            .save-slot {
-                display: flex;
-                align-items: center;
-                padding: 10px 12px;
-                border: 1px solid #333;
-                border-radius: 4px;
-                margin-bottom: 4px;
-                cursor: pointer;
-                transition: all 0.15s;
-            }
-
-            .save-slot:hover {
-                background: rgba(74, 103, 65, 0.15);
-                border-color: #4a6741;
-            }
-
-            .save-slot.editing {
-                border-color: #6b8e5f;
-                background: rgba(74, 103, 65, 0.1);
-            }
-
-            .save-slot.disabled {
-                opacity: 0.35;
-                cursor: default;
-            }
-
-            .save-slot.disabled:hover {
-                background: none;
-                border-color: #333;
-            }
-
-            .slot-number {
-                width: 30px;
-                color: #888;
-                font-size: 14px;
-                flex-shrink: 0;
-            }
-
-            .slot-name {
-                flex: 1;
-                color: #fff;
-                font-size: 14px;
-            }
-
-            .slot-name.empty-label {
-                color: #555;
-                font-style: italic;
-            }
-
-            .slot-date {
-                color: #888;
-                font-size: 11px;
-                flex-shrink: 0;
-            }
-
-            .slot-actions {
-                display: flex;
-                align-items: center;
-                gap: 4px;
-                flex-shrink: 0;
-                margin-left: 8px;
-            }
-
-            .slot-icon-btn {
-                appearance: none;
-                border: 0;
-                background: transparent;
-                color: #666;
-                font-size: 14px;
-                line-height: 1;
-                padding: 4px 6px;
-                cursor: pointer;
-                border-radius: 3px;
-            }
-
-            .slot-icon-btn:hover {
-                color: #ffff00;
-                background: rgba(255, 255, 255, 0.1);
-            }
-
-            .slot-clear-btn:hover {
-                color: #ff6b6b;
-            }
-
-            .slot-name-input {
-                flex: 1;
-                background: #222;
-                border: 1px solid #4a6741;
-                color: #fff;
-                font-family: "Courier New", monospace;
-                font-size: 14px;
-                padding: 4px 8px;
-                border-radius: 4px;
-                outline: none;
-            }
-
-            .slot-name-input:focus {
-                border-color: #6b8e5f;
-            }
-
-            /* Exit Dialog */
-            .dialog-small {
-                text-align: center;
-                min-width: 380px;
-            }
-
-            .dialog-small h3 {
-                margin: 0 0 10px 0;
-                font-size: 18px;
-                color: #ffff00;
-            }
-
-            .dialog-small p {
-                color: #ccc;
-                margin: 0 0 20px 0;
-                font-size: 14px;
-            }
-
-            .exit-buttons {
-                display: flex;
-                flex-direction: column;
-                gap: 8px;
-            }
-
-            .exit-buttons button {
-                width: 100%;
-            }
-
-            button.btn-danger {
-                background: #8b1a1a;
-                border-color: #c44;
-            }
-
-            button.btn-danger:hover {
-                background: #a52a2a;
-            }
-
-            button.btn-secondary {
-                background: #444;
-                border-color: #666;
-            }
-
-            button.btn-secondary:hover {
-                background: #555;
-            }
-
-            .shortcut-hint {
-                color: #9ab791;
-                font-size: 11px;
-                opacity: 0.7;
-            }
-
-            /* Toast notifications */
-            #toast-container {
-                position: absolute;
-                top: 16px;
-                left: 50%;
-                transform: translateX(-50%);
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                gap: 8px;
-                pointer-events: none;
-                z-index: 50;
-            }
-
-            .toast {
-                background: rgba(10, 10, 10, 0.92);
-                border: 2px solid #4a6741;
-                color: #ffff00;
-                font-family: "Courier New", monospace;
-                font-size: 13px;
-                font-weight: bold;
-                padding: 10px 20px;
-                opacity: 0;
-                transform: translateY(-8px);
-                transition:
-                    opacity 0.4s,
-                    transform 0.4s;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                pointer-events: auto;
-            }
-
-            .toast.visible {
-                opacity: 1;
-                transform: translateY(0);
-            }
-
-            .toast-message-btn,
-            .toast-action-btn {
-                font-family: "Courier New", monospace;
-                font-weight: bold;
-                line-height: 1;
-                border-radius: 4px;
-            }
-
-            .toast-message-btn {
-                color: #ffff00;
-                background: rgba(74, 103, 65, 0.28);
-                border: 1px solid #6b8e5f;
-                padding: 6px 10px;
-                cursor: default;
-            }
-
-            .toast-action-btn {
-                color: #fff6a6;
-                background: rgba(255, 255, 255, 0.08);
-                border: 1px solid rgba(255, 255, 255, 0.2);
-                padding: 5px 8px;
-                cursor: pointer;
-            }
-
-            .toast-action-btn:hover {
-                color: #ffff00;
-                background: rgba(255, 255, 255, 0.16);
-            }
-
-            /* Canvas delayed hover (buildings, rock tiles, …) */
-            .canvas-hover-tooltip {
-                position: fixed;
-                z-index: 60;
-                max-width: 320px;
-                padding: 8px 10px;
-                background: rgba(12, 12, 12, 0.94);
-                border: 1px solid #4a6741;
-                border-radius: 4px;
-                font-family: "Courier New", monospace;
-                font-size: 12px;
-                line-height: 1.45;
-                color: #e8e8e8;
-                pointer-events: none;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
-            }
-
-            .canvas-hover-tooltip-title {
-                font-weight: bold;
-                color: #c8e6c9;
-                margin-bottom: 4px;
-                font-size: 13px;
-            }
-
-            .canvas-hover-tooltip-line + .canvas-hover-tooltip-line {
-                margin-top: 2px;
-            }
-        </style>
-    </head>
-    <body>
-        <!-- Loading Screen (visible by default, hidden by JS) -->
-        <div id="loading-screen">Loading...</div>
-
-        <!-- Welcome Screen -->
-        <div id="welcome-screen">
-            <h1>The Settler</h1>
-            <p class="welcome-subtitle">by Paolo Moretti</p>
-            <div class="welcome-buttons">
-                <button
-                    id="btn-start-game"
-                    type="button"
-                    class="icon-palette-btn"
+      .dialog-panel,
+      #inventory-panel,
+      #building-menu-panel,
+      #options-panel,
+      #minimap,
+      .game-popover {
+        box-sizing: border-box;
+        border: 12px solid transparent;
+        border-radius: 0;
+        border-image-source: url(/assets/ui/navigator-frame.png);
+        border-image-slice: 91 96 91 96 fill;
+        border-image-width: 22px;
+        border-image-outset: 0;
+        border-image-repeat: stretch;
+      }
+
+      /* No fill behind the wood — avoids dark bleeding past the frame */
+      .dialog-panel,
+      #inventory-panel,
+      #building-menu-panel,
+      #options-panel,
+      .game-popover {
+        background: transparent;
+        padding: 0;
+      }
+
+      /* Dark inset for text/content only; tune padding here */
+      .dialog-panel-body {
+        box-sizing: border-box;
+        width: 100%;
+        /* Dark brown, ~10% transparent (similar to first brown pass) */
+        background: rgba(42, 28, 18, 0.9);
+        padding: 16px 20px;
+        border-radius: 4px;
+      }
+
+      .game-popover .dialog-panel-body {
+        padding: 10px 12px;
+      }
+
+      #inventory-panel .dialog-panel-body,
+      #options-panel .dialog-panel-body {
+        flex: 1;
+        min-height: 0;
+        max-height: 100%;
+        overflow: auto;
+      }
+
+      #building-menu-panel .dialog-panel-body {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* Wooden frame via 9-slice; inner map stays 200×200 */
+      #minimap {
+        position: absolute;
+        bottom: 10px;
+        right: 10px;
+        width: 244px;
+        height: 244px;
+        padding: 0;
+        background: transparent;
+        pointer-events: auto;
+        cursor: pointer;
+      }
+
+      #minimap-canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+
+      /* Options Panel (sheet inside .game-panel-overlay) */
+      #options-panel {
+        position: relative;
+        pointer-events: auto;
+        min-width: 340px;
+        max-width: 400px;
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .options-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 14px;
+        padding: 10px 0;
+        border-bottom: 1px solid #333;
+      }
+
+      .options-row:last-child {
+        border-bottom: none;
+      }
+
+      .options-label {
+        color: #ccc;
+        font-size: 14px;
+        white-space: nowrap;
+      }
+
+      .options-toggle {
+        position: relative;
+        width: 40px;
+        height: 22px;
+        cursor: pointer;
+      }
+
+      .options-toggle input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+
+      .options-toggle .slider {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: #444;
+        border-radius: 11px;
+        border: 1px solid #666;
+        transition: background 0.2s;
+      }
+
+      .options-toggle .slider::before {
+        content: '';
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        left: 2px;
+        bottom: 2px;
+        background: #ccc;
+        border-radius: 50%;
+        transition: transform 0.2s;
+      }
+
+      .options-toggle input:checked + .slider {
+        background: #4a6741;
+        border-color: #6b8e5f;
+      }
+
+      .options-toggle input:checked + .slider::before {
+        transform: translateX(18px);
+        background: #fff;
+      }
+
+      .options-segmented {
+        display: inline-flex;
+        padding: 2px;
+        background: rgba(28, 20, 14, 0.95);
+        border: 1px solid #6b5a3a;
+        border-radius: 999px;
+        gap: 2px;
+      }
+
+      .options-segmented-btn {
+        min-width: 64px;
+        padding: 4px 8px;
+        margin: 0;
+        background: transparent;
+        border: 0;
+        border-radius: 999px;
+        color: #bfb39b;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .options-segmented-btn.is-active {
+        background: #4a6741;
+        color: #fff;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+      }
+
+      .options-segmented-btn:focus-visible {
+        outline: 2px solid #9ab791;
+        outline-offset: 2px;
+      }
+
+      /* Welcome Screen */
+      #welcome-screen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: #1a1a1a;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        z-index: 100;
+      }
+
+      #loading-screen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: #1a1a1a;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+        color: #888;
+        font-size: 16px;
+      }
+
+      #welcome-screen h1 {
+        font-size: 48px;
+        color: #ffff00;
+        margin-bottom: 4px;
+        letter-spacing: 2px;
+      }
+
+      .welcome-subtitle {
+        font-size: 13px;
+        color: #666;
+        margin-bottom: 48px;
+      }
+
+      .welcome-buttons {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+      }
+
+      .welcome-buttons button.icon-palette-btn:disabled {
+        background: #2a2a2a;
+        border-color: #444;
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      .welcome-buttons button.icon-palette-btn:disabled img {
+        opacity: 0.45;
+        filter: grayscale(0.6);
+      }
+
+      /* Dialog Overlay */
+      .dialog-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.7);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 200;
+      }
+
+      .dialog-panel {
+        min-width: 500px;
+        max-width: 600px;
+      }
+
+      .dialog-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+      }
+
+      .dialog-header h3 {
+        margin: 0;
+        font-size: 18px;
+        color: #ffff00;
+      }
+
+      /* Save/Load Slots */
+      .save-slot {
+        display: flex;
+        align-items: center;
+        padding: 10px 12px;
+        border: 1px solid #333;
+        border-radius: 4px;
+        margin-bottom: 4px;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+
+      .save-slot:hover {
+        background: rgba(74, 103, 65, 0.15);
+        border-color: #4a6741;
+      }
+
+      .save-slot.editing {
+        border-color: #6b8e5f;
+        background: rgba(74, 103, 65, 0.1);
+      }
+
+      .save-slot.disabled {
+        opacity: 0.35;
+        cursor: default;
+      }
+
+      .save-slot.disabled:hover {
+        background: none;
+        border-color: #333;
+      }
+
+      .slot-number {
+        width: 30px;
+        color: #888;
+        font-size: 14px;
+        flex-shrink: 0;
+      }
+
+      .slot-name {
+        flex: 1;
+        color: #fff;
+        font-size: 14px;
+      }
+
+      .slot-name.empty-label {
+        color: #555;
+        font-style: italic;
+      }
+
+      .slot-date {
+        color: #888;
+        font-size: 11px;
+        flex-shrink: 0;
+      }
+
+      .slot-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex-shrink: 0;
+        margin-left: 8px;
+      }
+
+      .slot-icon-btn {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: #666;
+        font-size: 14px;
+        line-height: 1;
+        padding: 4px 6px;
+        cursor: pointer;
+        border-radius: 3px;
+      }
+
+      .slot-icon-btn:hover {
+        color: #ffff00;
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .slot-clear-btn:hover {
+        color: #ff6b6b;
+      }
+
+      .slot-name-input {
+        flex: 1;
+        background: #222;
+        border: 1px solid #4a6741;
+        color: #fff;
+        font-family: 'Courier New', monospace;
+        font-size: 14px;
+        padding: 4px 8px;
+        border-radius: 4px;
+        outline: none;
+      }
+
+      .slot-name-input:focus {
+        border-color: #6b8e5f;
+      }
+
+      /* Exit Dialog */
+      .dialog-small {
+        text-align: center;
+        min-width: 380px;
+      }
+
+      .dialog-small h3 {
+        margin: 0 0 10px 0;
+        font-size: 18px;
+        color: #ffff00;
+      }
+
+      .dialog-small p {
+        color: #ccc;
+        margin: 0 0 20px 0;
+        font-size: 14px;
+      }
+
+      .exit-buttons {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .exit-buttons button {
+        width: 100%;
+      }
+
+      button.btn-danger {
+        background: #8b1a1a;
+        border-color: #c44;
+      }
+
+      button.btn-danger:hover {
+        background: #a52a2a;
+      }
+
+      button.btn-secondary {
+        background: #444;
+        border-color: #666;
+      }
+
+      button.btn-secondary:hover {
+        background: #555;
+      }
+
+      .shortcut-hint {
+        color: #9ab791;
+        font-size: 11px;
+        opacity: 0.7;
+      }
+
+      /* Toast notifications */
+      #toast-container {
+        position: absolute;
+        top: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        pointer-events: none;
+        z-index: 50;
+      }
+
+      .toast {
+        background: rgba(10, 10, 10, 0.92);
+        border: 2px solid #4a6741;
+        color: #ffff00;
+        font-family: 'Courier New', monospace;
+        font-size: 13px;
+        font-weight: bold;
+        padding: 10px 20px;
+        opacity: 0;
+        transform: translateY(-8px);
+        transition:
+          opacity 0.4s,
+          transform 0.4s;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        pointer-events: auto;
+      }
+
+      .toast.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .toast-message-btn,
+      .toast-action-btn {
+        font-family: 'Courier New', monospace;
+        font-weight: bold;
+        line-height: 1;
+        border-radius: 4px;
+      }
+
+      .toast-message-btn {
+        color: #ffff00;
+        background: rgba(74, 103, 65, 0.28);
+        border: 1px solid #6b8e5f;
+        padding: 6px 10px;
+        cursor: default;
+      }
+
+      .toast-action-btn {
+        color: #fff6a6;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        padding: 5px 8px;
+        cursor: pointer;
+      }
+
+      .toast-action-btn:hover {
+        color: #ffff00;
+        background: rgba(255, 255, 255, 0.16);
+      }
+
+      /* Canvas delayed hover (buildings, rock tiles, …) */
+      .canvas-hover-tooltip {
+        position: fixed;
+        z-index: 60;
+        max-width: 320px;
+        padding: 8px 10px;
+        background: rgba(12, 12, 12, 0.94);
+        border: 1px solid #4a6741;
+        border-radius: 4px;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        line-height: 1.45;
+        color: #e8e8e8;
+        pointer-events: none;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+      }
+
+      .canvas-hover-tooltip-title {
+        font-weight: bold;
+        color: #c8e6c9;
+        margin-bottom: 4px;
+        font-size: 13px;
+      }
+
+      .canvas-hover-tooltip-line + .canvas-hover-tooltip-line {
+        margin-top: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Loading Screen (visible by default, hidden by JS) -->
+    <div id="loading-screen">Loading...</div>
+
+    <!-- Welcome Screen -->
+    <div id="welcome-screen">
+      <h1>The Settler</h1>
+      <p class="welcome-subtitle">by Paolo Moretti</p>
+      <div class="welcome-buttons">
+        <button id="btn-start-game" type="button" class="icon-palette-btn">
+          <span class="icon-palette-img-wrap icon-palette-img-wrap--symbol" aria-hidden="true"
+            >▶</span
+          >
+          <span class="icon-palette-label">
+            <span class="icon-palette-title">Start Game</span>
+          </span>
+        </button>
+        <button id="btn-load-game-welcome" type="button" class="icon-palette-btn">
+          <span class="icon-palette-img-wrap">
+            <img src="/assets/ui/load.png" alt="" decoding="async" />
+          </span>
+          <span class="icon-palette-label">
+            <span class="icon-palette-title">Load Game</span>
+          </span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Save/Load Dialog -->
+    <div id="save-load-dialog" class="dialog-overlay">
+      <div class="dialog-panel">
+        <div class="dialog-panel-body">
+          <div class="dialog-header">
+            <h3 id="save-load-title">Save Game</h3>
+            <button id="btn-close-save-load" style="padding: 4px 12px; margin: 0">✕</button>
+          </div>
+          <div id="save-load-slots"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Exit Confirmation Dialog -->
+    <div id="exit-dialog" class="dialog-overlay">
+      <div class="dialog-panel dialog-small">
+        <div class="dialog-panel-body">
+          <h3>Exit Game</h3>
+          <p>Do you want to save your progress?</p>
+          <div class="exit-buttons">
+            <button id="btn-save-and-exit">Save & Exit</button>
+            <button id="btn-exit-no-save" class="btn-danger">Exit Without Saving</button>
+            <button id="btn-cancel-exit" class="btn-secondary">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="game-container" style="display: none">
+      <canvas id="game-canvas"></canvas>
+      <div id="ui-overlay">
+        <div id="debug-info">
+          <div>FPS: <span id="fps">0</span></div>
+          <div>Entities: <span id="entity-count">0</span></div>
+          <div>Mode: <span id="current-mode">View</span></div>
+        </div>
+        <div id="top-right-actions">
+          <button
+            type="button"
+            id="btn-fast-forward"
+            class="chromeless-icon-btn btn-top-fast-forward"
+            aria-label="Enable fast forward"
+            aria-pressed="false"
+          >
+            <img
+              class="btn-fast-forward-icon"
+              src="/assets/ui/fast_forward.png"
+              data-normal-src="/assets/ui/fast_forward.png"
+              data-active-src="/assets/ui/fast_forward_selected.png"
+              alt=""
+              decoding="async"
+            />
+          </button>
+          <button
+            type="button"
+            id="btn-options"
+            class="chromeless-icon-btn btn-top-options"
+            aria-label="Settings"
+          >
+            <img class="btn-options-icon" src="/assets/ui/options.png" alt="" decoding="async" />
+          </button>
+          <button
+            type="button"
+            id="btn-exit"
+            class="chromeless-icon-btn btn-top-exit"
+            aria-label="Exit to menu"
+          >
+            <img class="btn-exit-icon" src="/assets/ui/exit.png" alt="" decoding="async" />
+          </button>
+        </div>
+        <div id="controls">
+          <div class="controls-row">
+            <button id="btn-road" type="button" class="chromeless-icon-btn dock-toolbar-btn">
+              <span class="icon-palette-img-wrap">
+                <img src="/assets/ui/road.png" alt="" decoding="async" />
+              </span>
+              <span class="icon-palette-label">
+                <span class="dock-toolbar-caption"
+                  >Build Road <span class="shortcut-hint">[R]</span></span
                 >
-                    <span
-                        class="icon-palette-img-wrap icon-palette-img-wrap--symbol"
-                        aria-hidden="true"
-                        >▶</span
-                    >
-                    <span class="icon-palette-label">
-                        <span class="icon-palette-title">Start Game</span>
-                    </span>
+              </span>
+            </button>
+            <button id="btn-erase" type="button" class="chromeless-icon-btn dock-toolbar-btn">
+              <span class="icon-palette-img-wrap">
+                <img src="/assets/ui/erase.png" alt="" decoding="async" />
+              </span>
+              <span class="icon-palette-label">
+                <span class="dock-toolbar-caption"
+                  >Erase <span class="shortcut-hint">[E]</span></span
+                >
+              </span>
+            </button>
+            <button
+              id="btn-building-menu"
+              type="button"
+              class="chromeless-icon-btn dock-toolbar-btn"
+            >
+              <span class="icon-palette-img-wrap">
+                <img src="/assets/ui/building_menu.png" alt="" decoding="async" />
+              </span>
+              <span class="icon-palette-label">
+                <span class="dock-toolbar-caption"
+                  >Buildings <span class="shortcut-hint">[B]</span></span
+                >
+              </span>
+            </button>
+            <button id="btn-save" type="button" class="chromeless-icon-btn dock-toolbar-btn">
+              <span class="icon-palette-img-wrap">
+                <img src="/assets/ui/save.png" alt="" decoding="async" />
+              </span>
+              <span class="icon-palette-label">
+                <span class="dock-toolbar-caption"
+                  >Save Game <span class="shortcut-hint">[S]</span></span
+                >
+              </span>
+            </button>
+            <button id="btn-load" type="button" class="chromeless-icon-btn dock-toolbar-btn">
+              <span class="icon-palette-img-wrap">
+                <img src="/assets/ui/load.png" alt="" decoding="async" />
+              </span>
+              <span class="icon-palette-label">
+                <span class="dock-toolbar-caption">Load Game</span>
+              </span>
+            </button>
+          </div>
+        </div>
+        <div id="inventory-overlay" class="game-panel-overlay" aria-hidden="true">
+          <div id="inventory-panel" role="dialog" aria-labelledby="inventory-title">
+            <div class="dialog-panel-body">
+              <div
+                style="
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: center;
+                  margin-bottom: 10px;
+                "
+              >
+                <h3 id="inventory-title" style="margin: 0">🏕️ Base Camp</h3>
+                <button type="button" id="btn-close-inventory" style="padding: 4px 12px; margin: 0">
+                  ✕
                 </button>
-                <button
-                    id="btn-load-game-welcome"
-                    type="button"
-                    class="icon-palette-btn"
-                >
-                    <span class="icon-palette-img-wrap">
-                        <img
-                            src="/assets/ui/load.png"
-                            alt=""
-                            decoding="async"
-                        />
-                    </span>
-                    <span class="icon-palette-label">
-                        <span class="icon-palette-title">Load Game</span>
-                    </span>
+              </div>
+              <div style="font-size: 11px; margin-bottom: 10px; opacity: 0.8">
+                <div>
+                  Population:
+                  <span id="population-display">0/0</span>
+                </div>
+              </div>
+              <div class="inventory-tabs">
+                <button type="button" id="inventory-tab-resources" class="inventory-tab-btn active">
+                  Resources
                 </button>
-            </div>
-        </div>
-
-        <!-- Save/Load Dialog -->
-        <div id="save-load-dialog" class="dialog-overlay">
-            <div class="dialog-panel">
-                <div class="dialog-panel-body">
-                    <div class="dialog-header">
-                        <h3 id="save-load-title">Save Game</h3>
-                        <button
-                            id="btn-close-save-load"
-                            style="padding: 4px 12px; margin: 0"
-                        >
-                            ✕
-                        </button>
-                    </div>
-                    <div id="save-load-slots"></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Exit Confirmation Dialog -->
-        <div id="exit-dialog" class="dialog-overlay">
-            <div class="dialog-panel dialog-small">
-                <div class="dialog-panel-body">
-                    <h3>Exit Game</h3>
-                    <p>Do you want to save your progress?</p>
-                    <div class="exit-buttons">
-                        <button id="btn-save-and-exit">Save & Exit</button>
-                        <button id="btn-exit-no-save" class="btn-danger">
-                            Exit Without Saving
-                        </button>
-                        <button id="btn-cancel-exit" class="btn-secondary">
-                            Cancel
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div id="game-container" style="display: none">
-            <canvas id="game-canvas"></canvas>
-            <div id="ui-overlay">
-                <div id="debug-info">
-                    <div>FPS: <span id="fps">0</span></div>
-                    <div>Entities: <span id="entity-count">0</span></div>
-                    <div>Mode: <span id="current-mode">View</span></div>
-                </div>
-                <div id="top-right-actions">
-                    <button
-                        type="button"
-                        id="btn-fast-forward"
-                        class="chromeless-icon-btn btn-top-fast-forward"
-                        aria-label="Enable fast forward"
-                        aria-pressed="false"
-                    >
-                        <img
-                            class="btn-fast-forward-icon"
-                            src="/assets/ui/fast_forward.png"
-                            data-normal-src="/assets/ui/fast_forward.png"
-                            data-active-src="/assets/ui/fast_forward_selected.png"
-                            alt=""
-                            decoding="async"
-                        />
-                    </button>
-                    <button
-                        type="button"
-                        id="btn-options"
-                        class="chromeless-icon-btn btn-top-options"
-                        aria-label="Settings"
-                    >
-                        <img
-                            class="btn-options-icon"
-                            src="/assets/ui/options.png"
-                            alt=""
-                            decoding="async"
-                        />
-                    </button>
-                    <button
-                        type="button"
-                        id="btn-exit"
-                        class="chromeless-icon-btn btn-top-exit"
-                        aria-label="Exit to menu"
-                    >
-                        <img
-                            class="btn-exit-icon"
-                            src="/assets/ui/exit.png"
-                            alt=""
-                            decoding="async"
-                        />
-                    </button>
-                </div>
-                <div id="controls">
-                    <div class="controls-row">
-                        <button
-                            id="btn-road"
-                            type="button"
-                            class="chromeless-icon-btn dock-toolbar-btn"
-                        >
-                            <span class="icon-palette-img-wrap">
-                                <img
-                                    src="/assets/ui/road.png"
-                                    alt=""
-                                    decoding="async"
-                                />
-                            </span>
-                            <span class="icon-palette-label">
-                                <span class="dock-toolbar-caption"
-                                    >Build Road
-                                    <span class="shortcut-hint">[R]</span></span
-                                >
-                            </span>
-                        </button>
-                        <button
-                            id="btn-erase"
-                            type="button"
-                            class="chromeless-icon-btn dock-toolbar-btn"
-                        >
-                            <span class="icon-palette-img-wrap">
-                                <img
-                                    src="/assets/ui/erase.png"
-                                    alt=""
-                                    decoding="async"
-                                />
-                            </span>
-                            <span class="icon-palette-label">
-                                <span class="dock-toolbar-caption"
-                                    >Erase
-                                    <span class="shortcut-hint">[E]</span></span
-                                >
-                            </span>
-                        </button>
-                        <button
-                            id="btn-building-menu"
-                            type="button"
-                            class="chromeless-icon-btn dock-toolbar-btn"
-                        >
-                            <span class="icon-palette-img-wrap">
-                                <img
-                                    src="/assets/ui/building_menu.png"
-                                    alt=""
-                                    decoding="async"
-                                />
-                            </span>
-                            <span class="icon-palette-label">
-                                <span class="dock-toolbar-caption"
-                                    >Buildings
-                                    <span class="shortcut-hint">[B]</span></span
-                                >
-                            </span>
-                        </button>
-                        <button
-                            id="btn-save"
-                            type="button"
-                            class="chromeless-icon-btn dock-toolbar-btn"
-                        >
-                            <span class="icon-palette-img-wrap">
-                                <img
-                                    src="/assets/ui/save.png"
-                                    alt=""
-                                    decoding="async"
-                                />
-                            </span>
-                            <span class="icon-palette-label">
-                                <span class="dock-toolbar-caption"
-                                    >Save Game
-                                    <span class="shortcut-hint">[S]</span></span
-                                >
-                            </span>
-                        </button>
-                        <button
-                            id="btn-load"
-                            type="button"
-                            class="chromeless-icon-btn dock-toolbar-btn"
-                        >
-                            <span class="icon-palette-img-wrap">
-                                <img
-                                    src="/assets/ui/load.png"
-                                    alt=""
-                                    decoding="async"
-                                />
-                            </span>
-                            <span class="icon-palette-label">
-                                <span class="dock-toolbar-caption"
-                                    >Load Game</span
-                                >
-                            </span>
-                        </button>
-                    </div>
-                </div>
+                <button type="button" id="inventory-tab-workers" class="inventory-tab-btn">
+                  Specialized Workers
+                </button>
+                <button type="button" id="inventory-tab-production" class="inventory-tab-btn">
+                  Production
+                </button>
+                <button type="button" id="inventory-tab-buildings" class="inventory-tab-btn">
+                  Buildings
+                </button>
+              </div>
+              <div id="inventory-section-resources" class="inventory-section active">
                 <div
-                    id="inventory-overlay"
-                    class="game-panel-overlay"
-                    aria-hidden="true"
-                >
-                    <div
-                        id="inventory-panel"
-                        role="dialog"
-                        aria-labelledby="inventory-title"
-                    >
-                        <div class="dialog-panel-body">
-                            <div
-                                style="
-                                    display: flex;
-                                    justify-content: space-between;
-                                    align-items: center;
-                                    margin-bottom: 10px;
-                                "
-                            >
-                                <h3 id="inventory-title" style="margin: 0">
-                                    🏕️ Base Camp
-                                </h3>
-                                <button
-                                    type="button"
-                                    id="btn-close-inventory"
-                                    style="padding: 4px 12px; margin: 0"
-                                >
-                                    ✕
-                                </button>
-                            </div>
-                            <div
-                                style="
-                                    font-size: 11px;
-                                    margin-bottom: 10px;
-                                    opacity: 0.8;
-                                "
-                            >
-                                <div>
-                                    Population:
-                                    <span id="population-display">0/0</span>
-                                </div>
-                            </div>
-                            <div class="inventory-tabs">
-                                <button
-                                    type="button"
-                                    id="inventory-tab-resources"
-                                    class="inventory-tab-btn active"
-                                >
-                                    Resources
-                                </button>
-                                <button
-                                    type="button"
-                                    id="inventory-tab-workers"
-                                    class="inventory-tab-btn"
-                                >
-                                    Specialized Workers
-                                </button>
-                                <button
-                                    type="button"
-                                    id="inventory-tab-production"
-                                    class="inventory-tab-btn"
-                                >
-                                    Production
-                                </button>
-                                <button
-                                    type="button"
-                                    id="inventory-tab-buildings"
-                                    class="inventory-tab-btn"
-                                >
-                                    Buildings
-                                </button>
-                            </div>
-                            <div
-                                id="inventory-section-resources"
-                                class="inventory-section active"
-                            >
-                                <div
-                                    id="inventory-list"
-                                    style="
-                                        max-height: 560px;
-                                        overflow-y: auto;
-                                        font-size: 11px;
-                                    "
-                                ></div>
-                            </div>
-                            <div
-                                id="inventory-section-workers"
-                                class="inventory-section"
-                            >
-                                <div
-                                    id="workers-list"
-                                    style="
-                                        max-height: 560px;
-                                        overflow-y: auto;
-                                        font-size: 11px;
-                                    "
-                                ></div>
-                            </div>
-                            <div
-                                id="inventory-section-production"
-                                class="inventory-section"
-                            >
-                                <div
-                                    id="production-priority-list"
-                                    style="
-                                        max-height: 560px;
-                                        overflow-y: auto;
-                                        font-size: 11px;
-                                    "
-                                ></div>
-                            </div>
-                            <div
-                                id="inventory-section-buildings"
-                                class="inventory-section"
-                            >
-                                <div
-                                    id="building-summary-list"
-                                    class="building-summary-list"
-                                    style="
-                                        max-height: 560px;
-                                        overflow-y: auto;
-                                        font-size: 11px;
-                                    "
-                                ></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                  id="inventory-list"
+                  style="max-height: 560px; overflow-y: auto; font-size: 11px"
+                ></div>
+              </div>
+              <div id="inventory-section-workers" class="inventory-section">
                 <div
-                    id="building-menu-overlay"
-                    class="game-panel-overlay"
-                    aria-hidden="true"
-                >
-                    <div
-                        id="building-menu-panel"
-                        role="dialog"
-                        aria-labelledby="building-menu-title"
-                    >
-                        <div class="dialog-panel-body">
-                            <div
-                                style="
-                                    display: flex;
-                                    justify-content: space-between;
-                                    align-items: center;
-                                    margin-bottom: 15px;
-                                "
-                            >
-                                <h3 id="building-menu-title" style="margin: 0">
-                                    🏗️ Building Menu
-                                </h3>
-                                <button
-                                    type="button"
-                                    id="btn-close-building-menu"
-                                    style="padding: 4px 12px; margin: 0"
-                                >
-                                    ✕
-                                </button>
-                            </div>
-
-                            <div class="building-tabs">
-                                <button
-                                    type="button"
-                                    id="tab-residential"
-                                    class="tab-button"
-                                >
-                                    🏘️ Residential
-                                </button>
-                                <button
-                                    type="button"
-                                    id="tab-production"
-                                    class="tab-button active"
-                                >
-                                    🏭 Production
-                                </button>
-                                <button
-                                    type="button"
-                                    id="tab-military"
-                                    class="tab-button"
-                                >
-                                    🛡️ Military
-                                </button>
-                                <button
-                                    type="button"
-                                    id="tab-infrastructure"
-                                    class="tab-button"
-                                >
-                                    🏛️ Infrastructure
-                                </button>
-                            </div>
-
-                            <div
-                                id="building-cards-container"
-                                class="building-cards-container"
-                            >
-                                <!-- Building cards will be inserted here dynamically -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
+                  id="workers-list"
+                  style="max-height: 560px; overflow-y: auto; font-size: 11px"
+                ></div>
+              </div>
+              <div id="inventory-section-production" class="inventory-section">
                 <div
-                    id="options-overlay"
-                    class="game-panel-overlay"
-                    aria-hidden="true"
-                >
-                    <div
-                        id="options-panel"
-                        role="dialog"
-                        aria-labelledby="options-title"
-                    >
-                        <div class="dialog-panel-body">
-                            <div
-                                style="
-                                    display: flex;
-                                    justify-content: space-between;
-                                    align-items: center;
-                                    margin-bottom: 15px;
-                                "
-                            >
-                                <h3
-                                    id="options-title"
-                                    style="
-                                        margin: 0;
-                                        font-size: 18px;
-                                        color: #ffff00;
-                                    "
-                                >
-                                    Options
-                                </h3>
-                                <button
-                                    type="button"
-                                    id="btn-close-options"
-                                    style="padding: 4px 12px; margin: 0"
-                                >
-                                    &#10005;
-                                </button>
-                            </div>
-                            <div class="options-row">
-                                <span class="options-label">Auto-save</span>
-                                <label class="options-toggle">
-                                    <input type="checkbox" id="opt-autosave" />
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-                            <div class="options-row">
-                                <span class="options-label"
-                                    >Show debug info</span
-                                >
-                                <label class="options-toggle">
-                                    <input
-                                        type="checkbox"
-                                        id="opt-debug-info"
-                                        checked
-                                    />
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-                            <div class="options-row">
-                                <span class="options-label"
-                                    >Show building labels</span
-                                >
-                                <label class="options-toggle">
-                                    <input
-                                        type="checkbox"
-                                        id="opt-building-labels"
-                                        checked
-                                    />
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-                            <div class="options-row">
-                                <span class="options-label"
-                                    >Show navigator</span
-                                >
-                                <label class="options-toggle">
-                                    <input
-                                        type="checkbox"
-                                        id="opt-navigator"
-                                        checked
-                                    />
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-                            <div class="options-row">
-                                <span class="options-label">Sound effects</span>
-                                <label class="options-toggle">
-                                    <input
-                                        type="checkbox"
-                                        id="opt-sound-effects"
-                                        checked
-                                    />
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-                            <div class="options-row">
-                                <span class="options-label"
-                                    >Road rendering</span
-                                >
-                                <div
-                                    class="options-segmented"
-                                    role="group"
-                                    aria-label="Road rendering"
-                                >
-                                    <button
-                                        type="button"
-                                        id="opt-road-rendering-vector"
-                                        class="options-segmented-btn"
-                                        data-road-rendering="vector"
-                                    >
-                                        Smooth
-                                    </button>
-                                    <button
-                                        type="button"
-                                        id="opt-road-rendering-classic"
-                                        class="options-segmented-btn"
-                                        data-road-rendering="classic"
-                                    >
-                                        Classic
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="minimap">
-                    <canvas
-                        id="minimap-canvas"
-                        width="200"
-                        height="200"
-                    ></canvas>
-                </div>
+                  id="production-priority-list"
+                  style="max-height: 560px; overflow-y: auto; font-size: 11px"
+                ></div>
+              </div>
+              <div id="inventory-section-buildings" class="inventory-section">
+                <div
+                  id="building-summary-list"
+                  class="building-summary-list"
+                  style="max-height: 560px; overflow-y: auto; font-size: 11px"
+                ></div>
+              </div>
             </div>
+          </div>
         </div>
-        <script type="module" src="/src/main.ts"></script>
-    </body>
+        <div id="building-menu-overlay" class="game-panel-overlay" aria-hidden="true">
+          <div id="building-menu-panel" role="dialog" aria-labelledby="building-menu-title">
+            <div class="dialog-panel-body">
+              <div
+                style="
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: center;
+                  margin-bottom: 15px;
+                "
+              >
+                <h3 id="building-menu-title" style="margin: 0">🏗️ Building Menu</h3>
+                <button
+                  type="button"
+                  id="btn-close-building-menu"
+                  style="padding: 4px 12px; margin: 0"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div class="building-tabs">
+                <button type="button" id="tab-residential" class="tab-button">
+                  🏘️ Residential
+                </button>
+                <button type="button" id="tab-production" class="tab-button active">
+                  🏭 Production
+                </button>
+                <button type="button" id="tab-military" class="tab-button">🛡️ Military</button>
+                <button type="button" id="tab-infrastructure" class="tab-button">
+                  🏛️ Infrastructure
+                </button>
+              </div>
+
+              <div id="building-cards-container" class="building-cards-container">
+                <!-- Building cards will be inserted here dynamically -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="options-overlay" class="game-panel-overlay" aria-hidden="true">
+          <div id="options-panel" role="dialog" aria-labelledby="options-title">
+            <div class="dialog-panel-body">
+              <div
+                style="
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: center;
+                  margin-bottom: 15px;
+                "
+              >
+                <h3 id="options-title" style="margin: 0; font-size: 18px; color: #ffff00">
+                  Options
+                </h3>
+                <button type="button" id="btn-close-options" style="padding: 4px 12px; margin: 0">
+                  &#10005;
+                </button>
+              </div>
+              <div class="options-row">
+                <span class="options-label">Auto-save</span>
+                <label class="options-toggle">
+                  <input type="checkbox" id="opt-autosave" />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="options-row">
+                <span class="options-label">Show debug info</span>
+                <label class="options-toggle">
+                  <input type="checkbox" id="opt-debug-info" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="options-row">
+                <span class="options-label">Show building labels</span>
+                <label class="options-toggle">
+                  <input type="checkbox" id="opt-building-labels" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="options-row">
+                <span class="options-label">Show navigator</span>
+                <label class="options-toggle">
+                  <input type="checkbox" id="opt-navigator" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="options-row">
+                <span class="options-label">Sound effects</span>
+                <label class="options-toggle">
+                  <input type="checkbox" id="opt-sound-effects" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="options-row">
+                <span class="options-label">Road rendering</span>
+                <div class="options-segmented" role="group" aria-label="Road rendering">
+                  <button
+                    type="button"
+                    id="opt-road-rendering-vector"
+                    class="options-segmented-btn"
+                    data-road-rendering="vector"
+                  >
+                    Smooth
+                  </button>
+                  <button
+                    type="button"
+                    id="opt-road-rendering-classic"
+                    class="options-segmented-btn"
+                    data-road-rendering="classic"
+                  >
+                    Classic
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="minimap">
+          <canvas id="minimap-canvas" width="200" height="200"></canvas>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>

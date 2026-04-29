@@ -27,7 +27,16 @@ const PRODUCTION_GROUPS: Array<{
     id: 'food',
     label: 'Food',
     icon: 'fa-wheat-awn',
-    buildings: ['fisher', 'hunter', 'farm', 'pig_farm', 'mill', 'bakery', 'brewery', 'slaughterhouse'],
+    buildings: [
+      'fisher',
+      'hunter',
+      'farm',
+      'pig_farm',
+      'mill',
+      'bakery',
+      'brewery',
+      'slaughterhouse',
+    ],
   },
   {
     id: 'mines',
@@ -136,10 +145,13 @@ export class BuildingMenu {
     const buildings = dataManager.getBuildingsByCategory(this.currentCategory);
 
     // Filter out base camp
-    const buildableBuildings = this.filterBuildingsForCurrentView(buildings.filter(b => !b.isHeadquarters));
+    const buildableBuildings = this.filterBuildingsForCurrentView(
+      buildings.filter(b => !b.isHeadquarters)
+    );
 
     if (buildableBuildings.length === 0) {
-      container.innerHTML = '<div style="padding: 20px; text-align: center; opacity: 0.6;">No buildings in this category yet</div>';
+      container.innerHTML =
+        '<div style="padding: 20px; text-align: center; opacity: 0.6;">No buildings in this category yet</div>';
       return;
     }
 
@@ -151,7 +163,8 @@ export class BuildingMenu {
 
   private filterBuildingsForCurrentView(buildings: BuildingDefinition[]): BuildingDefinition[] {
     if (this.currentCategory !== 'production') return buildings;
-    const group = PRODUCTION_GROUPS.find(g => g.id === this.currentProductionGroup) ?? PRODUCTION_GROUPS[0]!;
+    const group =
+      PRODUCTION_GROUPS.find(g => g.id === this.currentProductionGroup) ?? PRODUCTION_GROUPS[0]!;
     const allowed = new Set<BuildingType>(group.buildings);
     return buildings.filter(building => allowed.has(building.id));
   }
@@ -172,7 +185,10 @@ export class BuildingMenu {
       button.type = 'button';
       button.className = `production-subtab${group.id === this.currentProductionGroup ? ' active' : ''}`;
       button.setAttribute('role', 'tab');
-      button.setAttribute('aria-selected', group.id === this.currentProductionGroup ? 'true' : 'false');
+      button.setAttribute(
+        'aria-selected',
+        group.id === this.currentProductionGroup ? 'true' : 'false'
+      );
       button.appendChild(this.createInlineIcon(group.icon, group.label));
       button.append(group.label);
       button.addEventListener('click', () => {
@@ -225,7 +241,9 @@ export class BuildingMenu {
 
     const metaRow = document.createElement('div');
     metaRow.className = 'building-meta-row';
-    metaRow.appendChild(this.createMetaItem('fa-border-all', `${building.size.width}×${building.size.height}`, 'Size'));
+    metaRow.appendChild(
+      this.createMetaItem('fa-border-all', `${building.size.width}×${building.size.height}`, 'Size')
+    );
     metaRow.appendChild(this.createMetaSeparator());
     metaRow.appendChild(this.createMetaItem('fa-clock', `${building.buildTime}s`, 'Build time'));
     metaRow.appendChild(this.createMetaSeparator());
@@ -249,8 +267,9 @@ export class BuildingMenu {
     const roleRow = document.createElement('div');
     roleRow.className = 'building-role-row';
     if (building.production) {
-      const outputs = Object.entries(building.production.outputs)
-        .filter(([id]) => !dataManager.getResource(id as any)?.virtualOutput);
+      const outputs = Object.entries(building.production.outputs).filter(
+        ([id]) => !dataManager.getResource(id as any)?.virtualOutput
+      );
       const inputs = building.production.inputs ? Object.entries(building.production.inputs) : [];
       const inputsAny = building.production.inputsAny ?? [];
       if (inputs.length > 0 || inputsAny.length > 0) {
@@ -268,7 +287,11 @@ export class BuildingMenu {
       line.appendChild(this.createRoleLabel('Stores'));
       const storesCoinsOnly =
         building.storage.accepts?.length === 1 && building.storage.accepts[0] === 'gold_coin';
-      line.appendChild(this.createPlainRoleText(`${building.storage.capacity} ${storesCoinsOnly ? 'coins' : 'items'}`));
+      line.appendChild(
+        this.createPlainRoleText(
+          `${building.storage.capacity} ${storesCoinsOnly ? 'coins' : 'items'}`
+        )
+      );
       roleRow.appendChild(line);
     } else if (building.military?.soldierCapacity) {
       const line = this.createRoleLine();
@@ -286,7 +309,9 @@ export class BuildingMenu {
     } else {
       const line = this.createRoleLine();
       line.appendChild(this.createRoleLabel('Role'));
-      line.appendChild(this.createPlainRoleText(building.requiredTool ? 'Staffed workshop' : 'Utility building'));
+      line.appendChild(
+        this.createPlainRoleText(building.requiredTool ? 'Staffed workshop' : 'Utility building')
+      );
       roleRow.appendChild(line);
     }
 
@@ -303,7 +328,7 @@ export class BuildingMenu {
     card.addEventListener('click', () => {
       this.startBuilding(building.id);
     });
-    card.addEventListener('keydown', (event) => {
+    card.addEventListener('keydown', event => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
       this.startBuilding(building.id);
@@ -364,7 +389,9 @@ export class BuildingMenu {
     fallback.className = 'building-resource-fallback';
     fallback.textContent = this.getResourceFallbackText(resource?.name ?? resourceId);
     fallback.hidden = true;
-    img.onload = () => { fallback.hidden = true; };
+    img.onload = () => {
+      fallback.hidden = true;
+    };
     img.onerror = () => {
       if (img.src !== new URL(fallbackSrc, window.location.origin).href) {
         img.src = fallbackSrc;
@@ -387,12 +414,14 @@ export class BuildingMenu {
   }
 
   private getResourceFallbackText(name: string): string {
-    return name
-      .split(/[\s_-]+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map(part => part[0]?.toUpperCase() ?? '')
-      .join('') || '?';
+    return (
+      name
+        .split(/[\s_-]+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map(part => part[0]?.toUpperCase() ?? '')
+        .join('') || '?'
+    );
   }
 
   private createRoleLabel(text: string): HTMLElement {
@@ -438,7 +467,10 @@ export class BuildingMenu {
     return group;
   }
 
-  private createOutputChipGroup(outputs: [string, number][], building: BuildingDefinition): HTMLElement {
+  private createOutputChipGroup(
+    outputs: [string, number][],
+    building: BuildingDefinition
+  ): HTMLElement {
     const group = document.createElement('span');
     group.className = 'building-resource-chips building-output-chips';
     outputs.forEach(([id, amount]) => group.appendChild(this.createResourceChip(id, amount)));

@@ -94,6 +94,50 @@ The starting stock also includes enough raw inputs to make additional weapons ev
 
 This means the game is not starved on iron or coal at start. The risk is that players may spend early bars on `metalworks` tool production, overbuild military posts, or fail to connect/deliver resources, and then perceive the economy as stuck.
 
+## Expansion scenarios
+
+### Scenario 1: early scouting and safe expansion
+
+The player can immediately build several cheap territory anchors. With 5 starting sword/shield pairs, the practical early pattern is:
+
+- Build up to 5 soldier-bearing posts with one soldier each, usually `barracks`.
+- Use `lookout_tower` for territory expansion when the player wants to preserve swords and shields.
+- Avoid filling `watchtower` or `fortress` garrisons early, because their high capacity does not increase territory radius.
+
+This scenario is healthy if the UI teaches the one-soldier territory rule. Without that explanation, players may build expensive-looking large posts, fail to fill them, and assume resources are too low.
+
+### Scenario 2: first military border push
+
+The first real push toward the passive nearby realm should be viable from starting resources:
+
+- Construction materials can easily cover several posts and the basic production chain.
+- Starting weapons activate 5 posts, enough to chain multiple radius-12 disks.
+- Initial raw ore/bar/coal stock can raise total available sword/shield pairs to about 11 before new mined ore is strictly required, assuming the armory output is delivered back to HQ.
+
+The main risk in this phase is logistics opacity. Weapons in an armory output buffer do not count for training until road workers deliver them to HQ.
+
+### Scenario 3: sustainable war economy
+
+Longer conquest requires a functioning loop of mines, smelter, armory, and food:
+
+- `iron_mine` produces `iron_ore` from one mine-food unit.
+- `coal_mine` produces `coal` from one mine-food unit.
+- `iron_smelter` turns `1 iron_ore + 1 coal` into `1 iron_bar`.
+- `armory` turns `1 iron_bar + 1 coal` into alternating `sword` and `shield`.
+- A full soldier pair therefore requires two armory cycles, or `2 iron_bar + 2 coal` at the armory.
+
+If all upstream inputs are mined from scratch, each extra soldier pair needs about 2 iron-mine food cycles and 4 coal-mine food cycles. This makes food production relevant for sustained conquest, but the starting `bread + fish + ham` stock is enough to avoid an immediate mining dead-end.
+
+### Scenario 4: late enemy conquest
+
+Farther enemy villages are much stronger than the starting realm. The generated enemy scale reaches dozens of defenders in later villages, with rank-2 and rank-3 soldiers:
+
+- Villages 0-2 are plausible early/mid targets.
+- Villages 3-5 require a larger promoted force.
+- Villages 6-9 are late-game objectives and should assume mature armory, mining, food, and gold-coin promotion loops.
+
+This is acceptable for a map-conquest game, but the current prototype needs a formal victory tracker and more late-game feedback before these numbers can be considered final.
+
 ## Food and mining
 
 Mines require one unit per cycle from an OR group: `bread`, `ham`, or `fish`.

@@ -115,6 +115,8 @@ export interface WorkerWorldAccess {
   onDonkeyReturnedToHq(): void;
   /** False for dormant computer villages; they should not spend per-frame work. */
   isEntitySimulationActive(entity: Entity): boolean;
+  /** Current simulation time in milliseconds (for timed worker behaviors). */
+  getSimulationNowMs(): number;
 }
 
 export class GameWorkerRegistry {
@@ -130,6 +132,8 @@ export class GameWorkerRegistry {
   private readonly surveyorWorkers = new Set<number>();
   private readonly pendingHqStreetEntries: PendingHqStreetEntry[] = [];
   private nextHqStreetDispatchAtMs = 0;
+  /** Workers entering HQ, concealed briefly before removal for visual feedback (workerId → removal timestamp). */
+  private readonly workersEnteringHq = new Map<number, number>();
 
   constructor(private readonly world: WorkerWorldAccess) {}
 
@@ -179,7 +183,8 @@ export class GameWorkerRegistry {
       this.countPlayerWorkerIds(this.toolWorkers.keys()) +
       this.countPlayerWorkerIds(this.militaryDispatchWorkers.keys()) +
       this.countPlayerWorkerIds(this.animationWorkers.keys()) +
-      this.countPlayerWorkerIds(this.surveyorWorkers)
+      this.countPlayerWorkerIds(this.surveyorWorkers) +
+      this.countPlayerWorkerIds(this.workersEnteringHq.keys())
     );
   }
 
@@ -380,6 +385,20 @@ export class GameWorkerRegistry {
 
   tickReturnLegs(): void {
     const entities = [...this.world.getEntities()];
+    const baseCampEntity = this.world.getBaseCampEntity();
+    const nowMs = this.world.getSimulationNowMs();
+
+    // Remove workers who have been concealed in HQ long enough
+    for (const [workerId, removeAtMs] of this.workersEnteringHq) {
+      if (nowMs >= removeAtMs) {
+        const entity = entities.find(e => e.id === workerId && e.active);
+        if (entity) {
+          this.world.removeEntity(entity);
+        }
+        this.workersEnteringHq.delete(workerId);
+      }
+    }
+
     if (this.returningWorkers.size > 0) {
       for (const workerId of this.returningWorkers) {
         const entity = entities.find(e => e.id === workerId && e.active);
@@ -390,6 +409,8 @@ export class GameWorkerRegistry {
         const movable = entity.getComponent(Movable);
         if (movable && !movable.isMoving) {
           const worker = entity.getComponent(Worker);
+
+          // Handle accounting for specialists
           if (worker?.returnToHqToolSpecialist) {
             this.world.returnToolSpecialistToHq(worker.returnToHqToolSpecialist);
             worker.returnToHqToolSpecialist = null;
@@ -398,7 +419,18 @@ export class GameWorkerRegistry {
           } else if (worker?.returnToHqAsSpecialist && worker.role === 'military') {
             this.world.onMilitarySpecialistReturnedToHq();
           }
-          this.world.removeEntity(entity);
+
+          // Conceal worker in HQ building before removing them
+          if (baseCampEntity && worker) {
+            worker.concealedInBuildingId = baseCampEntity.id;
+            worker.dropResource();
+            // Remove worker after 800ms delay for visual feedback
+            this.workersEnteringHq.set(workerId, nowMs + 800);
+          } else {
+            // Fallback: remove immediately if no HQ
+            this.world.removeEntity(entity);
+          }
+
           this.returningWorkers.delete(workerId);
         }
       }
@@ -413,7 +445,19 @@ export class GameWorkerRegistry {
         }
         const movable = entity.getComponent(Movable);
         if (movable && !movable.isMoving) {
-          this.world.removeEntity(entity);
+          const worker = entity.getComponent(Worker);
+
+          // Conceal builder in HQ building before removing them
+          if (baseCampEntity && worker) {
+            worker.concealedInBuildingId = baseCampEntity.id;
+            worker.dropResource();
+            // Remove builder after 800ms delay for visual feedback
+            this.workersEnteringHq.set(builderId, nowMs + 800);
+          } else {
+            // Fallback: remove immediately if no HQ
+            this.world.removeEntity(entity);
+          }
+
           this.returningBuilders.delete(builderId);
         }
       }

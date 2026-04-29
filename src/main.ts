@@ -1,18 +1,21 @@
-import { Game } from './core/Game';
-import { eventBus } from './core/EventBus';
-import { dataManager } from '@/data/DataManager';
-import { BuildingMenu } from '@/ui/BuildingMenu';
-import { BuildingPopover } from '@/ui/BuildingPopover';
-import { GamePopover } from '@/ui/GamePopover';
-import { CanvasHoverTooltip } from '@/ui/CanvasHoverTooltip';
-import { Position } from '@/components/Position';
-import { setupKeyboardShortcuts } from '@/input/KeyboardShortcuts';
-import { showToast, setupToastListener } from '@/ui/Toast';
-import { audioManager } from '@/audio/AudioManager';
-import { anySaveSlotsExist, GameSaveSession } from '@/save/GameSaveSession';
-import { setRoadRenderingMode, type RoadRenderingMode } from '@/debug/debugFlags';
-import tippy from 'tippy.js';
-import 'tippy.js/dist/tippy.css';
+import { Game } from "./core/Game";
+import { eventBus } from "./core/EventBus";
+import { dataManager } from "@/data/DataManager";
+import { BuildingMenu } from "@/ui/BuildingMenu";
+import { BuildingPopover } from "@/ui/BuildingPopover";
+import { GamePopover } from "@/ui/GamePopover";
+import { CanvasHoverTooltip } from "@/ui/CanvasHoverTooltip";
+import { Position } from "@/components/Position";
+import { setupKeyboardShortcuts } from "@/input/KeyboardShortcuts";
+import { showToast, setupToastListener } from "@/ui/Toast";
+import { audioManager } from "@/audio/AudioManager";
+import { anySaveSlotsExist, GameSaveSession } from "@/save/GameSaveSession";
+import {
+  setRoadRenderingMode,
+  type RoadRenderingMode,
+} from "@/debug/debugFlags";
+import tippy from "tippy.js";
+import "tippy.js/dist/tippy.css";
 
 let game: Game | null = null;
 let buildingMenu: BuildingMenu | null = null;
@@ -22,10 +25,12 @@ let canvasHoverTooltip: CanvasHoverTooltip | null = null;
 let roadWorkerPopover: GamePopover | null = null;
 let roadWorkerPopoverEntityId: number | null = null;
 let unregisterHoverFrameHook: (() => void) | null = null;
-let inventoryActiveTab: 'resources' | 'workers' | 'production' | 'buildings' = 'resources';
+let inventoryActiveTab: "resources" | "workers" | "production" | "buildings" =
+  "resources";
 
-const OPTIONS_KEY = 'settler_options';
-const NEW_GAME_LOADING_MESSAGE = 'Thinking about the land and placing rival villages...';
+const OPTIONS_KEY = "settler_options";
+const NEW_GAME_LOADING_MESSAGE =
+  "Thinking about the land and placing rival villages...";
 const MIN_NEW_GAME_LOADING_MS = 900;
 
 type GameOptions = {
@@ -38,7 +43,7 @@ type GameOptions = {
 };
 
 function normalizeRoadRenderingMode(value: unknown): RoadRenderingMode {
-  return value === 'classic' ? 'classic' : 'vector';
+  return value === "classic" ? "classic" : "vector";
 }
 
 function loadOptions(): GameOptions {
@@ -48,7 +53,7 @@ function loadOptions(): GameOptions {
     buildingLabels: true,
     navigator: true,
     soundEffects: true,
-    roadRenderingMode: 'vector',
+    roadRenderingMode: "vector",
   };
   try {
     const raw = localStorage.getItem(OPTIONS_KEY);
@@ -76,29 +81,31 @@ const saveSession = new GameSaveSession({
   onSlotsChanged: updateWelcomeLoadButton,
 });
 
-window.addEventListener('DOMContentLoaded', () => {
-  const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
+window.addEventListener("DOMContentLoaded", () => {
+  const canvas = document.getElementById("game-canvas") as HTMLCanvasElement;
   if (!canvas) {
-    console.error('Canvas element not found!');
+    console.error("Canvas element not found!");
     return;
   }
 
   setupDialogs();
 
-  document.getElementById('btn-start-game')?.addEventListener('click', () => {
+  document.getElementById("btn-start-game")?.addEventListener("click", () => {
     saveSession.clearResumeAndSlot();
     launchGame(canvas);
   });
 
-  document.getElementById('btn-load-game-welcome')?.addEventListener('click', () => {
-    saveSession.openLoadDialog((slotIndex) => {
-      const slotData = saveSession.getFullSlotData(slotIndex);
-      if (slotData) {
-        saveSession.bindResumeSlot(slotIndex);
-        launchGame(canvas, slotData.data);
-      }
+  document
+    .getElementById("btn-load-game-welcome")
+    ?.addEventListener("click", () => {
+      saveSession.openLoadDialog((slotIndex) => {
+        const slotData = saveSession.getFullSlotData(slotIndex);
+        if (slotData) {
+          saveSession.bindResumeSlot(slotIndex);
+          launchGame(canvas, slotData.data);
+        }
+      });
     });
-  });
 
   const resumeIndex = saveSession.parseResumeSlotIndex();
   if (resumeIndex !== null) {
@@ -111,60 +118,62 @@ window.addEventListener('DOMContentLoaded', () => {
     saveSession.clearStaleResumeKey();
   }
 
-  showScreen('welcome');
+  showScreen("welcome");
 });
 
-function showScreen(screen: 'welcome' | 'game'): void {
-  const welcomeScreen = document.getElementById('welcome-screen')!;
-  const gameContainer = document.getElementById('game-container')!;
-  const loadingScreen = document.getElementById('loading-screen')!;
+function showScreen(screen: "welcome" | "game"): void {
+  const welcomeScreen = document.getElementById("welcome-screen")!;
+  const gameContainer = document.getElementById("game-container")!;
+  const loadingScreen = document.getElementById("loading-screen")!;
 
-  loadingScreen.style.display = 'none';
+  loadingScreen.style.display = "none";
 
-  if (screen === 'welcome') {
-    welcomeScreen.style.display = 'flex';
-    gameContainer.style.display = 'none';
+  if (screen === "welcome") {
+    welcomeScreen.style.display = "flex";
+    gameContainer.style.display = "none";
     updateWelcomeLoadButton();
   } else {
-    welcomeScreen.style.display = 'none';
-    gameContainer.style.display = '';
+    welcomeScreen.style.display = "none";
+    gameContainer.style.display = "";
   }
 }
 
 function showLoadingScreen(message: string): void {
-  const welcomeScreen = document.getElementById('welcome-screen')!;
-  const gameContainer = document.getElementById('game-container')!;
-  const loadingScreen = document.getElementById('loading-screen')!;
+  const welcomeScreen = document.getElementById("welcome-screen")!;
+  const gameContainer = document.getElementById("game-container")!;
+  const loadingScreen = document.getElementById("loading-screen")!;
   loadingScreen.textContent = message;
-  loadingScreen.style.display = 'flex';
-  welcomeScreen.style.display = 'none';
-  gameContainer.style.display = 'none';
+  loadingScreen.style.display = "flex";
+  welcomeScreen.style.display = "none";
+  gameContainer.style.display = "none";
 }
 
 function nextFrame(): Promise<void> {
-  return new Promise(resolve => requestAnimationFrame(() => resolve()));
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
 function wait(ms: number): Promise<void> {
-  return new Promise(resolve => window.setTimeout(resolve, ms));
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function updateWelcomeLoadButton(): void {
-  const btn = document.getElementById('btn-load-game-welcome') as HTMLButtonElement;
+  const btn = document.getElementById(
+    "btn-load-game-welcome",
+  ) as HTMLButtonElement;
   if (btn) btn.disabled = !anySaveSlotsExist();
 }
 
 function openSaveSlotDialog(): void {
-  saveSession.openSaveDialog(undefined, 'Save As — pick a slot');
+  saveSession.openSaveDialog(undefined, "Save As — pick a slot");
 }
 
 function showSaveToast(): void {
-  showToast('Game saved', {
+  showToast("Game saved", {
     duration: 5000,
     messageAsButton: true,
     action: {
-      label: '✎',
-      title: 'Pick save slot',
+      label: "✎",
+      title: "Pick save slot",
       onClick: openSaveSlotDialog,
     },
   });
@@ -179,10 +188,13 @@ function manualSaveOrPickSlot(): void {
       return;
     }
   }
-  saveSession.openSaveDialog(undefined, 'Save Game — pick a slot');
+  saveSession.openSaveDialog(undefined, "Save Game — pick a slot");
 }
 
-async function launchGame(canvas: HTMLCanvasElement, saveData?: unknown): Promise<void> {
+async function launchGame(
+  canvas: HTMLCanvasElement,
+  saveData?: unknown,
+): Promise<void> {
   const isNewGame = !saveData;
   const loadingStartedAt = performance.now();
 
@@ -190,7 +202,7 @@ async function launchGame(canvas: HTMLCanvasElement, saveData?: unknown): Promis
     showLoadingScreen(NEW_GAME_LOADING_MESSAGE);
     await nextFrame();
   } else {
-    showScreen('game');
+    showScreen("game");
   }
 
   if (!saveData) {
@@ -215,9 +227,10 @@ async function launchGame(canvas: HTMLCanvasElement, saveData?: unknown): Promis
   }
 
   if (isNewGame) {
-    const remaining = MIN_NEW_GAME_LOADING_MS - (performance.now() - loadingStartedAt);
+    const remaining =
+      MIN_NEW_GAME_LOADING_MS - (performance.now() - loadingStartedAt);
     if (remaining > 0) await wait(remaining);
-    showScreen('game');
+    showScreen("game");
   }
 
   game.start();
@@ -227,155 +240,179 @@ async function launchGame(canvas: HTMLCanvasElement, saveData?: unknown): Promis
 }
 
 function exitToWelcome(): void {
+  saveSession.stopAutoSave();
   saveSession.clearResumeAndSlot();
   if (game) {
     game.stop();
+    game = null;
   }
-  showScreen('welcome');
+  showScreen("welcome");
 }
 
 function setupDialogs(): void {
-  const saveLoadDialog = document.getElementById('save-load-dialog')!;
-  const exitDialog = document.getElementById('exit-dialog')!;
+  const saveLoadDialog = document.getElementById("save-load-dialog")!;
+  const exitDialog = document.getElementById("exit-dialog")!;
 
-  document.getElementById('btn-close-save-load')?.addEventListener('click', () => {
-    saveLoadDialog.style.display = 'none';
-  });
-  saveLoadDialog.addEventListener('click', (e) => {
-    if (e.target === saveLoadDialog) saveLoadDialog.style.display = 'none';
-  });
-
-  document.getElementById('btn-save-and-exit')?.addEventListener('click', () => {
-    exitDialog.style.display = 'none';
-    saveSession.openSaveDialog(() => {
-      exitToWelcome();
-    }, 'Save before exiting');
+  document
+    .getElementById("btn-close-save-load")
+    ?.addEventListener("click", () => {
+      saveLoadDialog.style.display = "none";
+    });
+  saveLoadDialog.addEventListener("click", (e) => {
+    if (e.target === saveLoadDialog) saveLoadDialog.style.display = "none";
   });
 
-  document.getElementById('btn-exit-no-save')?.addEventListener('click', () => {
-    exitDialog.style.display = 'none';
+  document
+    .getElementById("btn-save-and-exit")
+    ?.addEventListener("click", () => {
+      exitDialog.style.display = "none";
+      saveSession.openSaveDialog(() => {
+        exitToWelcome();
+      }, "Save before exiting");
+    });
+
+  document.getElementById("btn-exit-no-save")?.addEventListener("click", () => {
+    exitDialog.style.display = "none";
     exitToWelcome();
   });
 
-  document.getElementById('btn-cancel-exit')?.addEventListener('click', () => {
-    exitDialog.style.display = 'none';
+  document.getElementById("btn-cancel-exit")?.addEventListener("click", () => {
+    exitDialog.style.display = "none";
   });
 
-  exitDialog.addEventListener('click', (e) => {
-    if (e.target === exitDialog) exitDialog.style.display = 'none';
+  exitDialog.addEventListener("click", (e) => {
+    if (e.target === exitDialog) exitDialog.style.display = "none";
   });
 }
 
 function setupGameUI(game: Game): void {
-  const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
+  const canvas = document.getElementById("game-canvas") as HTMLCanvasElement;
 
   setupKeyboardShortcuts(game);
   setupToastListener();
   buildingMenu = new BuildingMenu(game);
 
-  eventBus.on('input:mode_changed', (mode) => {
+  eventBus.on("input:mode_changed", (mode) => {
     const toolbarBtn =
-      mode === 'build_road' ? 'btn-road' :
-      mode === 'erase' ? 'btn-erase' : null;
+      mode === "build_road"
+        ? "btn-road"
+        : mode === "erase"
+          ? "btn-erase"
+          : null;
     updateButtonStates(toolbarBtn);
 
-    if (mode === 'view') {
+    if (mode === "view") {
       buildingMenu!.close();
-    } else if (document.getElementById('building-menu-overlay')?.classList.contains('is-open')) {
+    } else if (
+      document
+        .getElementById("building-menu-overlay")
+        ?.classList.contains("is-open")
+    ) {
       buildingMenu!.refresh();
     }
   });
 
-  document.getElementById('btn-road')?.addEventListener('click', () => {
-    game.inputSystem.setMode('build_road');
+  document.getElementById("btn-road")?.addEventListener("click", () => {
+    game.inputSystem.setMode("build_road");
   });
 
-  document.getElementById('btn-erase')?.addEventListener('click', () => {
-    game.inputSystem.setMode('erase');
+  document.getElementById("btn-erase")?.addEventListener("click", () => {
+    game.inputSystem.setMode("erase");
   });
 
-  document.getElementById('btn-building-menu')?.addEventListener('click', () => {
+  document
+    .getElementById("btn-building-menu")
+    ?.addEventListener("click", () => {
+      buildingMenu!.toggle();
+    });
+
+  eventBus.on("toggle:building_menu", () => {
     buildingMenu!.toggle();
   });
 
-  eventBus.on('toggle:building_menu', () => {
-    buildingMenu!.toggle();
-  });
-
-  document.getElementById('btn-save')?.addEventListener('click', () => {
+  document.getElementById("btn-save")?.addEventListener("click", () => {
     manualSaveOrPickSlot();
   });
 
-  eventBus.on('open:save_dialog', () => {
-    saveSession.openSaveDialog(undefined, 'Save Game — pick a slot');
+  eventBus.on("open:save_dialog", () => {
+    saveSession.openSaveDialog(undefined, "Save Game — pick a slot");
   });
 
-  eventBus.on('quick:save', () => {
+  eventBus.on("quick:save", () => {
     manualSaveOrPickSlot();
   });
 
-  document.getElementById('btn-load')?.addEventListener('click', () => {
+  document.getElementById("btn-load")?.addEventListener("click", () => {
     saveSession.openLoadDialog((slotIndex) => {
       const slotData = saveSession.getFullSlotData(slotIndex);
       if (slotData && game) {
         game.loadSaveData(slotData.data);
         saveSession.bindResumeSlot(slotIndex);
-        showToast('Game loaded!');
+        showToast("Game loaded!");
       }
     });
   });
 
-  document.getElementById('btn-exit')?.addEventListener('click', () => {
-    document.getElementById('exit-dialog')!.style.display = 'flex';
+  document.getElementById("btn-exit")?.addEventListener("click", () => {
+    document.getElementById("exit-dialog")!.style.display = "flex";
   });
 
   const iconBarTippy = {
-    placement: 'bottom' as const,
-    animation: 'fade' as const,
+    placement: "bottom" as const,
+    animation: "fade" as const,
     duration: [180, 120] as [number, number],
     arrow: true,
-    touch: ['hold', 400] as ['hold', number],
+    touch: ["hold", 400] as ["hold", number],
   };
 
-  const exitButton = document.getElementById('btn-exit');
+  const exitButton = document.getElementById("btn-exit");
   if (exitButton) {
     tippy(exitButton, {
       ...iconBarTippy,
-      content: 'Exit to menu',
+      content: "Exit to menu",
     });
   }
 
-  const fastForwardButton = document.getElementById('btn-fast-forward') as HTMLButtonElement | null;
-  const fastForwardIcon = fastForwardButton?.querySelector<HTMLImageElement>('.btn-fast-forward-icon') ?? null;
+  const fastForwardButton = document.getElementById(
+    "btn-fast-forward",
+  ) as HTMLButtonElement | null;
+  const fastForwardIcon =
+    fastForwardButton?.querySelector<HTMLImageElement>(
+      ".btn-fast-forward-icon",
+    ) ?? null;
   const syncFastForwardButton = (): void => {
     if (!fastForwardButton) return;
     const enabled = game.isFastForwardEnabled();
-    fastForwardButton.classList.toggle('is-active', enabled);
-    fastForwardButton.setAttribute('aria-pressed', enabled ? 'true' : 'false');
-    fastForwardButton.setAttribute('aria-label', enabled ? 'Disable fast forward' : 'Enable fast forward');
+    fastForwardButton.classList.toggle("is-active", enabled);
+    fastForwardButton.setAttribute("aria-pressed", enabled ? "true" : "false");
+    fastForwardButton.setAttribute(
+      "aria-label",
+      enabled ? "Disable fast forward" : "Enable fast forward",
+    );
     if (fastForwardIcon) {
       fastForwardIcon.src = enabled
-        ? fastForwardIcon.dataset.activeSrc ?? '/assets/ui/fast_forward_selected.png'
-        : fastForwardIcon.dataset.normalSrc ?? '/assets/ui/fast_forward.png';
+        ? (fastForwardIcon.dataset.activeSrc ??
+          "/assets/ui/fast_forward_selected.png")
+        : (fastForwardIcon.dataset.normalSrc ?? "/assets/ui/fast_forward.png");
     }
   };
   if (fastForwardButton) {
     tippy(fastForwardButton, {
       ...iconBarTippy,
-      content: 'Fast forward (3x)',
+      content: "Fast forward (3x)",
     });
-    fastForwardButton.addEventListener('click', () => {
+    fastForwardButton.addEventListener("click", () => {
       game.setFastForwardEnabled(!game.isFastForwardEnabled());
       syncFastForwardButton();
     });
     syncFastForwardButton();
   }
 
-  const optionsButton = document.getElementById('btn-options');
+  const optionsButton = document.getElementById("btn-options");
   if (optionsButton) {
     tippy(optionsButton, {
       ...iconBarTippy,
-      content: 'Settings',
+      content: "Settings",
     });
   }
 
@@ -383,66 +420,69 @@ function setupGameUI(game: Game): void {
 
   buildingPopover = new BuildingPopover(game);
 
-  cellSurveyPopover = new GamePopover(document.getElementById('ui-overlay')!);
+  cellSurveyPopover = new GamePopover(document.getElementById("ui-overlay")!);
   cellSurveyPopover.onClose = () => {
     if (game) game.cellSurveyMenuOpen = false;
     game?.setSurveyMenuHighlight(null);
     game?.clearSurveyPending();
   };
 
-  eventBus.on('survey:cell_menu_close', () => {
+  eventBus.on("survey:cell_menu_close", () => {
     if (game) game.cellSurveyMenuOpen = false;
     game?.clearSurveyPending();
     cellSurveyPopover?.hide();
   });
 
-  eventBus.on('cell:empty_menu', (payload: { gridX: number; gridY: number; canSend: boolean }) => {
-    if (!game) return;
-    const gx = payload.gridX;
-    const gy = payload.gridY;
+  eventBus.on(
+    "cell:empty_menu",
+    (payload: { gridX: number; gridY: number; canSend: boolean }) => {
+      if (!game) return;
+      const gx = payload.gridX;
+      const gy = payload.gridY;
 
-    game.clearSurveyPending();
-    game.setSurveyMenuHighlight({ x: gx, y: gy });
-
-    const content = document.createElement('div');
-    content.style.display = 'flex';
-    content.style.flexDirection = 'column';
-    content.style.gap = '10px';
-    content.style.minWidth = '240px';
-
-    const hint = document.createElement('p');
-    hint.style.margin = '0';
-    hint.style.fontSize = '13px';
-    hint.style.lineHeight = '1.4';
-    hint.style.color = 'rgba(255,255,255,0.88)';
-    hint.textContent = payload.canSend
-      ? 'Sends a surveyor from your headquarters to read the soil for buried minerals. They plant small field signs that show the richest find on each spot for a while.'
-      : 'Another survey was done here recently, or no worker is free, or the camp needs a road link. Try again once the signs are gone and the land is free.';
-
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'dialog-btn-primary';
-    btn.textContent = 'Send Surveyor';
-    btn.disabled = !payload.canSend;
-    btn.addEventListener('click', () => {
-      cellSurveyPopover?.hide();
-      game.setSurveyMenuHighlight(null);
       game.clearSurveyPending();
-      if (game.surveys.tryDispatchSurveyor(gx, gy)) {
-        showToast('Surveyor dispatched');
-      }
-    });
+      game.setSurveyMenuHighlight({ x: gx, y: gy });
 
-    content.appendChild(hint);
-    content.appendChild(btn);
+      const content = document.createElement("div");
+      content.style.display = "flex";
+      content.style.flexDirection = "column";
+      content.style.gap = "10px";
+      content.style.minWidth = "240px";
 
-    cellSurveyPopover!.show('Surveyor', content, () => {
-      // Integer grid = diamond center in this iso map (+0.5,+0.5 is the bottom vertex, not the center).
-      const screen = game.renderSystem.gridToScreen(gx, gy);
-      return { x: screen.x, y: screen.y };
-    });
-    game.cellSurveyMenuOpen = true;
-  });
+      const hint = document.createElement("p");
+      hint.style.margin = "0";
+      hint.style.fontSize = "13px";
+      hint.style.lineHeight = "1.4";
+      hint.style.color = "rgba(255,255,255,0.88)";
+      hint.textContent = payload.canSend
+        ? "Sends a surveyor from your headquarters to read the soil for buried minerals. They plant small field signs that show the richest find on each spot for a while."
+        : "Another survey was done here recently, or no worker is free, or the camp needs a road link. Try again once the signs are gone and the land is free.";
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "dialog-btn-primary";
+      btn.textContent = "Send Surveyor";
+      btn.disabled = !payload.canSend;
+      btn.addEventListener("click", () => {
+        cellSurveyPopover?.hide();
+        game.setSurveyMenuHighlight(null);
+        game.clearSurveyPending();
+        if (game.surveys.tryDispatchSurveyor(gx, gy)) {
+          showToast("Surveyor dispatched");
+        }
+      });
+
+      content.appendChild(hint);
+      content.appendChild(btn);
+
+      cellSurveyPopover!.show("Surveyor", content, () => {
+        // Integer grid = diamond center in this iso map (+0.5,+0.5 is the bottom vertex, not the center).
+        const screen = game.renderSystem.gridToScreen(gx, gy);
+        return { x: screen.x, y: screen.y };
+      });
+      game.cellSurveyMenuOpen = true;
+    },
+  );
 
   if (unregisterHoverFrameHook) {
     unregisterHoverFrameHook();
@@ -458,61 +498,71 @@ function setupGameUI(game: Game): void {
     canvasHoverTooltip?.tick();
   });
 
-  eventBus.on('building:selected', (data) => {
+  eventBus.on("building:selected", (data) => {
     hideRoadWorkerPopover();
     buildingPopover!.show(data.entity);
   });
 
-  eventBus.on('building:deselected', () => {
+  eventBus.on("building:deselected", () => {
     buildingPopover!.hide();
   });
 
-  eventBus.on('road_worker:selected', (data) => {
+  eventBus.on("road_worker:selected", (data) => {
     buildingPopover!.hide();
     showRoadWorkerPopover(data);
   });
 
-  eventBus.on('road_worker:deselected', () => {
+  eventBus.on("road_worker:deselected", () => {
     hideRoadWorkerPopover();
   });
 
-  eventBus.on('delete:selected', () => {
-    showToast('Building deleted');
+  eventBus.on("delete:selected", () => {
+    showToast("Building deleted");
   });
 
-  eventBus.on('open:inventory', () => {
+  eventBus.on("open:inventory", () => {
     showInventoryPanel(game);
   });
 
-  document.getElementById('btn-close-inventory')?.addEventListener('click', () => {
-    hideInventoryPanel();
-  });
-  document.getElementById('inventory-tab-resources')?.addEventListener('click', () => {
-    setInventoryTab('resources');
-  });
-  document.getElementById('inventory-tab-workers')?.addEventListener('click', () => {
-    setInventoryTab('workers');
-  });
-  document.getElementById('inventory-tab-production')?.addEventListener('click', () => {
-    setInventoryTab('production');
-  });
-  document.getElementById('inventory-tab-buildings')?.addEventListener('click', () => {
-    setInventoryTab('buildings');
-  });
+  document
+    .getElementById("btn-close-inventory")
+    ?.addEventListener("click", () => {
+      hideInventoryPanel();
+    });
+  document
+    .getElementById("inventory-tab-resources")
+    ?.addEventListener("click", () => {
+      setInventoryTab("resources");
+    });
+  document
+    .getElementById("inventory-tab-workers")
+    ?.addEventListener("click", () => {
+      setInventoryTab("workers");
+    });
+  document
+    .getElementById("inventory-tab-production")
+    ?.addEventListener("click", () => {
+      setInventoryTab("production");
+    });
+  document
+    .getElementById("inventory-tab-buildings")
+    ?.addEventListener("click", () => {
+      setInventoryTab("buildings");
+    });
 
-  const inventoryOverlay = document.getElementById('inventory-overlay');
-  inventoryOverlay?.addEventListener('click', (e) => {
+  const inventoryOverlay = document.getElementById("inventory-overlay");
+  inventoryOverlay?.addEventListener("click", (e) => {
     if (e.target === inventoryOverlay) hideInventoryPanel();
   });
 
-  const buildingMenuOverlay = document.getElementById('building-menu-overlay');
-  buildingMenuOverlay?.addEventListener('click', (e) => {
+  const buildingMenuOverlay = document.getElementById("building-menu-overlay");
+  buildingMenuOverlay?.addEventListener("click", (e) => {
     if (e.target === buildingMenuOverlay) buildingMenu!.close();
   });
 
-  eventBus.on('close:inventory', () => hideInventoryPanel());
-  eventBus.on('close:building_menu', () => buildingMenu?.close());
-  eventBus.on('close:options', () => closeOptionsOverlay());
+  eventBus.on("close:inventory", () => hideInventoryPanel());
+  eventBus.on("close:building_menu", () => buildingMenu?.close());
+  eventBus.on("close:options", () => closeOptionsOverlay());
 }
 
 function hideRoadWorkerPopover(): void {
@@ -527,7 +577,7 @@ function showRoadWorkerPopover(data: any): void {
   if (!entity || !worker) return;
 
   if (!roadWorkerPopover) {
-    const container = document.getElementById('ui-overlay')!;
+    const container = document.getElementById("ui-overlay")!;
     roadWorkerPopover = new GamePopover(container);
     roadWorkerPopover.onClose = () => {
       if (game?.selectedEntity?.id === roadWorkerPopoverEntityId) {
@@ -538,61 +588,77 @@ function showRoadWorkerPopover(data: any): void {
   }
 
   roadWorkerPopoverEntityId = entity.id;
-  const isDonkey = worker.carrierType === 'donkey';
+  const isDonkey = worker.carrierType === "donkey";
   const capacity = worker.transportCarryCapacity ?? 1;
-  const content = document.createElement('div');
-  content.className = 'road-worker-popover-body';
-  content.style.minWidth = '220px';
+  const content = document.createElement("div");
+  content.className = "road-worker-popover-body";
+  content.style.minWidth = "220px";
 
-  const stats = document.createElement('div');
-  stats.style.display = 'grid';
-  stats.style.gap = '7px';
-  stats.style.marginBottom = '10px';
-  stats.appendChild(createRoadWorkerStat('HQ donkeys', `${data.donkeysAtHq ?? 0}`));
-  stats.appendChild(createRoadWorkerStat('Carry capacity', `${capacity}`));
+  const stats = document.createElement("div");
+  stats.style.display = "grid";
+  stats.style.gap = "7px";
+  stats.style.marginBottom = "10px";
+  stats.appendChild(
+    createRoadWorkerStat("HQ donkeys", `${data.donkeysAtHq ?? 0}`),
+  );
+  stats.appendChild(createRoadWorkerStat("Carry capacity", `${capacity}`));
 
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.textContent = isDonkey ? 'Swap with normal worker' : 'Replace with donkey';
-  btn.disabled = isDonkey ? !data.canReturnDonkeyToHq : !data.canReplaceWithDonkey;
-  btn.style.width = '100%';
-  btn.style.padding = '8px 10px';
-  btn.style.border = '1px solid rgba(246, 210, 106, 0.75)';
-  btn.style.borderRadius = '6px';
-  btn.style.background = btn.disabled ? 'rgba(80, 70, 60, 0.8)' : '#8b5f2b';
-  btn.style.color = '#fff8dc';
-  btn.style.fontWeight = '700';
-  btn.style.cursor = btn.disabled ? 'not-allowed' : 'pointer';
-  btn.addEventListener('click', () => {
-    eventBus.emit(isDonkey ? 'road_worker:return_donkey' : 'road_worker:replace_with_donkey', {
-      entityId: entity.id,
-    });
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.textContent = isDonkey
+    ? "Swap with normal worker"
+    : "Replace with donkey";
+  btn.disabled = isDonkey
+    ? !data.canReturnDonkeyToHq
+    : !data.canReplaceWithDonkey;
+  btn.style.width = "100%";
+  btn.style.padding = "8px 10px";
+  btn.style.border = "1px solid rgba(246, 210, 106, 0.75)";
+  btn.style.borderRadius = "6px";
+  btn.style.background = btn.disabled ? "rgba(80, 70, 60, 0.8)" : "#8b5f2b";
+  btn.style.color = "#fff8dc";
+  btn.style.fontWeight = "700";
+  btn.style.cursor = btn.disabled ? "not-allowed" : "pointer";
+  btn.addEventListener("click", () => {
+    eventBus.emit(
+      isDonkey
+        ? "road_worker:return_donkey"
+        : "road_worker:replace_with_donkey",
+      {
+        entityId: entity.id,
+      },
+    );
   });
 
   content.appendChild(stats);
   content.appendChild(btn);
 
-  roadWorkerPopover.show(isDonkey ? 'Donkey Carrier' : 'Road Worker', content, () => {
-    const pos = entity.getComponent(Position);
-    if (!game || !pos) return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-    return game.renderSystem.gridToScreen(pos.x, pos.y);
-  });
+  roadWorkerPopover.show(
+    isDonkey ? "Donkey Carrier" : "Road Worker",
+    content,
+    () => {
+      const pos = entity.getComponent(Position);
+      if (!game || !pos)
+        return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+      return game.renderSystem.gridToScreen(pos.x, pos.y);
+    },
+  );
 }
 
 function createRoadWorkerStat(label: string, value: string): HTMLElement {
-  const row = document.createElement('div');
-  row.style.display = 'grid';
-  row.style.gridTemplateColumns = '1fr auto';
-  row.style.alignItems = 'center';
-  row.style.gap = '7px';
+  const row = document.createElement("div");
+  row.style.display = "grid";
+  row.style.gridTemplateColumns = "1fr auto";
+  row.style.alignItems = "center";
+  row.style.gap = "7px";
 
-  const labelEl = document.createElement('span');
+  const labelEl = document.createElement("span");
   labelEl.textContent = label;
-  labelEl.style.opacity = '0.82';
+  labelEl.style.opacity = "0.82";
 
-  const valueEl = document.createElement('strong');
+  const valueEl = document.createElement("strong");
   valueEl.textContent = value;
-  valueEl.style.color = '#fff2d0';
+  valueEl.style.color = "#fff2d0";
 
   row.appendChild(labelEl);
   row.appendChild(valueEl);
@@ -600,37 +666,47 @@ function createRoadWorkerStat(label: string, value: string): HTMLElement {
 }
 
 function closeOptionsOverlay(): void {
-  const overlay = document.getElementById('options-overlay');
+  const overlay = document.getElementById("options-overlay");
   if (!overlay) return;
-  overlay.classList.remove('is-open');
-  overlay.setAttribute('aria-hidden', 'true');
+  overlay.classList.remove("is-open");
+  overlay.setAttribute("aria-hidden", "true");
 }
 
 function toggleOptionsOverlay(): void {
-  const overlay = document.getElementById('options-overlay');
+  const overlay = document.getElementById("options-overlay");
   if (!overlay) return;
-  const open = !overlay.classList.contains('is-open');
-  overlay.classList.toggle('is-open', open);
-  overlay.setAttribute('aria-hidden', open ? 'false' : 'true');
+  const open = !overlay.classList.contains("is-open");
+  overlay.classList.toggle("is-open", open);
+  overlay.setAttribute("aria-hidden", open ? "false" : "true");
 }
 
 function setupOptionsPanel(game: Game): void {
-  const overlay = document.getElementById('options-overlay')!;
-  const autosaveToggle = document.getElementById('opt-autosave') as HTMLInputElement;
-  const debugToggle = document.getElementById('opt-debug-info') as HTMLInputElement;
-  const buildingLabelsToggle = document.getElementById('opt-building-labels') as HTMLInputElement;
-  const navigatorToggle = document.getElementById('opt-navigator') as HTMLInputElement;
-  const soundEffectsToggle = document.getElementById('opt-sound-effects') as HTMLInputElement;
+  const overlay = document.getElementById("options-overlay")!;
+  const autosaveToggle = document.getElementById(
+    "opt-autosave",
+  ) as HTMLInputElement;
+  const debugToggle = document.getElementById(
+    "opt-debug-info",
+  ) as HTMLInputElement;
+  const buildingLabelsToggle = document.getElementById(
+    "opt-building-labels",
+  ) as HTMLInputElement;
+  const navigatorToggle = document.getElementById(
+    "opt-navigator",
+  ) as HTMLInputElement;
+  const soundEffectsToggle = document.getElementById(
+    "opt-sound-effects",
+  ) as HTMLInputElement;
   const roadRenderingButtons = Array.from(
-    document.querySelectorAll<HTMLButtonElement>('[data-road-rendering]')
+    document.querySelectorAll<HTMLButtonElement>("[data-road-rendering]"),
   );
   const opts = loadOptions();
   let roadRenderingMode = opts.roadRenderingMode;
   const syncRoadRenderingButtons = (): void => {
     for (const btn of roadRenderingButtons) {
       const active = btn.dataset.roadRendering === roadRenderingMode;
-      btn.classList.toggle('is-active', active);
-      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+      btn.classList.toggle("is-active", active);
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
     }
   };
 
@@ -643,37 +719,42 @@ function setupOptionsPanel(game: Game): void {
   setRoadRenderingMode(roadRenderingMode);
   syncRoadRenderingButtons();
 
-  if (!opts.debugInfo) document.getElementById('debug-info')!.style.display = 'none';
+  if (!opts.debugInfo)
+    document.getElementById("debug-info")!.style.display = "none";
   if (!opts.buildingLabels) game.renderSystem.showBuildingLabels = false;
-  if (!opts.navigator) document.getElementById('minimap')!.style.display = 'none';
+  if (!opts.navigator)
+    document.getElementById("minimap")!.style.display = "none";
   if (!opts.soundEffects) audioManager.toggle();
 
-  const persistAll = () => saveOptions({
-    autosave: autosaveToggle.checked,
-    debugInfo: debugToggle.checked,
-    buildingLabels: buildingLabelsToggle.checked,
-    navigator: navigatorToggle.checked,
-    soundEffects: soundEffectsToggle.checked,
-    roadRenderingMode,
-  });
+  const persistAll = () =>
+    saveOptions({
+      autosave: autosaveToggle.checked,
+      debugInfo: debugToggle.checked,
+      buildingLabels: buildingLabelsToggle.checked,
+      navigator: navigatorToggle.checked,
+      soundEffects: soundEffectsToggle.checked,
+      roadRenderingMode,
+    });
 
-  overlay.addEventListener('click', (e) => {
+  overlay.addEventListener("click", (e) => {
     if (e.target === overlay) closeOptionsOverlay();
   });
 
-  document.getElementById('btn-options')?.addEventListener('click', () => {
+  document.getElementById("btn-options")?.addEventListener("click", () => {
     toggleOptionsOverlay();
   });
 
-  document.getElementById('btn-close-options')?.addEventListener('click', () => {
-    closeOptionsOverlay();
-  });
+  document
+    .getElementById("btn-close-options")
+    ?.addEventListener("click", () => {
+      closeOptionsOverlay();
+    });
 
-  eventBus.on('toggle:options', () => {
+  eventBus.on("toggle:options", () => {
     toggleOptionsOverlay();
   });
 
-  autosaveToggle.addEventListener('change', () => {
+  autosaveToggle.addEventListener("change", () => {
     if (autosaveToggle.checked) {
       saveSession.startAutoSave();
     } else {
@@ -682,30 +763,30 @@ function setupOptionsPanel(game: Game): void {
     persistAll();
   });
 
-  debugToggle.addEventListener('change', () => {
-    const debugInfo = document.getElementById('debug-info');
-    if (debugInfo) debugInfo.style.display = debugToggle.checked ? '' : 'none';
+  debugToggle.addEventListener("change", () => {
+    const debugInfo = document.getElementById("debug-info");
+    if (debugInfo) debugInfo.style.display = debugToggle.checked ? "" : "none";
     persistAll();
   });
 
-  buildingLabelsToggle.addEventListener('change', () => {
+  buildingLabelsToggle.addEventListener("change", () => {
     game.renderSystem.showBuildingLabels = buildingLabelsToggle.checked;
     persistAll();
   });
 
-  navigatorToggle.addEventListener('change', () => {
-    const minimap = document.getElementById('minimap');
-    if (minimap) minimap.style.display = navigatorToggle.checked ? '' : 'none';
+  navigatorToggle.addEventListener("change", () => {
+    const minimap = document.getElementById("minimap");
+    if (minimap) minimap.style.display = navigatorToggle.checked ? "" : "none";
     persistAll();
   });
 
-  soundEffectsToggle.addEventListener('change', () => {
+  soundEffectsToggle.addEventListener("change", () => {
     audioManager.toggle();
     persistAll();
   });
 
   for (const btn of roadRenderingButtons) {
-    btn.addEventListener('click', () => {
+    btn.addEventListener("click", () => {
       roadRenderingMode = normalizeRoadRenderingMode(btn.dataset.roadRendering);
       setRoadRenderingMode(roadRenderingMode);
       syncRoadRenderingButtons();
@@ -714,53 +795,61 @@ function setupOptionsPanel(game: Game): void {
   }
 }
 
-function makeResourceIconHtml(resourceId: string, className = 'resource-icon'): string {
+function makeResourceIconHtml(
+  resourceId: string,
+  className = "resource-icon",
+): string {
   const resource = dataManager.getResource(resourceId as any);
   const src = resource?.icon || `/assets/resources/${resourceId}.png`;
   const fallback = `/assets/resources/${resourceId}.png`;
-  const fallbackAttr = src === fallback ? '' : ` data-fallback="${fallback}"`;
+  const fallbackAttr = src === fallback ? "" : ` data-fallback="${fallback}"`;
   return `<img src="${src}" class="${className}"${fallbackAttr} onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;delete this.dataset.fallback;}else{this.style.display='none'}">`;
 }
 
 function updateProductionPriorityList(game: Game): void {
-  const list = document.getElementById('production-priority-list');
+  const list = document.getElementById("production-priority-list");
   if (!list) return;
-  list.innerHTML = '';
+  list.innerHTML = "";
 
   const configurable = dataManager
     .getAllBuildings()
-    .filter(building => building.production?.outputMode === 'weighted_random');
+    .filter(
+      (building) => building.production?.outputMode === "weighted_random",
+    );
   const requiredTools = new Set(
     dataManager
       .getAllBuildings()
-      .map(building => building.requiredTool)
-      .filter((tool): tool is NonNullable<typeof tool> => Boolean(tool))
+      .map((building) => building.requiredTool)
+      .filter((tool): tool is NonNullable<typeof tool> => Boolean(tool)),
   );
 
   if (configurable.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'inventory-item inventory-item--zero';
-    empty.textContent = 'No production priorities available yet.';
+    const empty = document.createElement("div");
+    empty.className = "inventory-item inventory-item--zero";
+    empty.textContent = "No production priorities available yet.";
     list.appendChild(empty);
     return;
   }
 
   for (const building of configurable) {
-    const section = document.createElement('div');
-    section.className = 'production-priority-building';
+    const section = document.createElement("div");
+    section.className = "production-priority-building";
 
-    const title = document.createElement('div');
-    title.className = 'production-priority-building-title';
-    title.textContent = building.id === 'metalworks' ? 'Tools' : building.name;
+    const title = document.createElement("div");
+    title.className = "production-priority-building-title";
+    title.textContent = building.id === "metalworks" ? "Tools" : building.name;
     section.appendChild(title);
 
-    const hint = document.createElement('div');
-    hint.className = 'production-priority-hint';
-    hint.textContent = 'Each completed cycle picks one item at random using these weights.';
+    const hint = document.createElement("div");
+    hint.className = "production-priority-hint";
+    hint.textContent =
+      "Each completed cycle picks one item at random using these weights.";
     section.appendChild(hint);
 
-    const outputs = Object.entries(building.production!.outputs)
-      .filter(([resourceId, amount]) => (amount ?? 0) > 0 && requiredTools.has(resourceId as any));
+    const outputs = Object.entries(building.production!.outputs).filter(
+      ([resourceId, amount]) =>
+        (amount ?? 0) > 0 && requiredTools.has(resourceId as any),
+    );
     const priorityRows: Array<{
       resourceId: string;
       quantityEl: HTMLSpanElement;
@@ -773,14 +862,19 @@ function updateProductionPriorityList(game: Game): void {
 
     const refreshPriorities = () => {
       const totalPriority = outputs.reduce(
-        (sum, [resourceId]) => sum + game.getProductionPriority(building.id, resourceId),
-        0
+        (sum, [resourceId]) =>
+          sum + game.getProductionPriority(building.id, resourceId),
+        0,
       );
       for (const row of priorityRows) {
-        const priority = game.getProductionPriority(building.id, row.resourceId);
-        const percent = totalPriority > 0 ? Math.round((priority / totalPriority) * 100) : 0;
+        const priority = game.getProductionPriority(
+          building.id,
+          row.resourceId,
+        );
+        const percent =
+          totalPriority > 0 ? Math.round((priority / totalPriority) * 100) : 0;
         row.quantityEl.textContent = `${priority}/10`;
-        row.meterEl.setAttribute('aria-label', `${percent}% chance`);
+        row.meterEl.setAttribute("aria-label", `${percent}% chance`);
         row.meterFillEl.style.width = `${priority * 10}%`;
         row.meterLabelEl.textContent = `${percent}%`;
         row.minusBtn.disabled = priority <= 1;
@@ -791,44 +885,44 @@ function updateProductionPriorityList(game: Game): void {
     for (const [resourceId] of outputs) {
       const resource = dataManager.getResource(resourceId as any);
 
-      const row = document.createElement('div');
-      row.className = 'production-priority-row';
+      const row = document.createElement("div");
+      row.className = "production-priority-row";
 
-      const minus = document.createElement('button');
-      minus.type = 'button';
-      minus.className = 'production-priority-step';
-      minus.textContent = '-';
-      minus.addEventListener('click', () => {
+      const minus = document.createElement("button");
+      minus.type = "button";
+      minus.className = "production-priority-step";
+      minus.textContent = "-";
+      minus.addEventListener("click", () => {
         const priority = game.getProductionPriority(building.id, resourceId);
         game.setProductionPriority(building.id, resourceId, priority - 1);
         refreshPriorities();
       });
 
-      const plus = document.createElement('button');
-      plus.type = 'button';
-      plus.className = 'production-priority-step';
-      plus.textContent = '+';
-      plus.addEventListener('click', () => {
+      const plus = document.createElement("button");
+      plus.type = "button";
+      plus.className = "production-priority-step";
+      plus.textContent = "+";
+      plus.addEventListener("click", () => {
         const priority = game.getProductionPriority(building.id, resourceId);
         game.setProductionPriority(building.id, resourceId, priority + 1);
         refreshPriorities();
       });
 
-      const quantity = document.createElement('span');
-      quantity.className = 'production-priority-quantity';
+      const quantity = document.createElement("span");
+      quantity.className = "production-priority-quantity";
 
-      const meter = document.createElement('div');
-      meter.className = 'production-priority-meter';
-      const meterFill = document.createElement('span');
-      meterFill.className = 'production-priority-meter-fill';
-      const meterLabel = document.createElement('span');
-      meterLabel.className = 'production-priority-meter-label';
+      const meter = document.createElement("div");
+      meter.className = "production-priority-meter";
+      const meterFill = document.createElement("span");
+      meterFill.className = "production-priority-meter-fill";
+      const meterLabel = document.createElement("span");
+      meterLabel.className = "production-priority-meter-label";
       meter.appendChild(meterFill);
       meter.appendChild(meterLabel);
 
       row.innerHTML =
         `<div class="production-priority-name">` +
-        `${makeResourceIconHtml(resourceId, 'resource-icon production-priority-icon')}` +
+        `${makeResourceIconHtml(resourceId, "resource-icon production-priority-icon")}` +
         `<span>${resource?.name || resourceId}</span>` +
         `</div>`;
       row.appendChild(quantity);
@@ -851,17 +945,18 @@ function updateProductionPriorityList(game: Game): void {
     list.appendChild(section);
   }
 
-  const buildingSection = document.createElement('div');
-  buildingSection.className = 'production-priority-building';
+  const buildingSection = document.createElement("div");
+  buildingSection.className = "production-priority-building";
 
-  const buildingTitle = document.createElement('div');
-  buildingTitle.className = 'production-priority-building-title';
-  buildingTitle.textContent = 'Buildings';
+  const buildingTitle = document.createElement("div");
+  buildingTitle.className = "production-priority-building-title";
+  buildingTitle.textContent = "Buildings";
   buildingSection.appendChild(buildingTitle);
 
-  const buildingHint = document.createElement('div');
-  buildingHint.className = 'production-priority-hint';
-  buildingHint.textContent = 'Higher priority buildings receive construction materials and production inputs first when resources are scarce.';
+  const buildingHint = document.createElement("div");
+  buildingHint.className = "production-priority-hint";
+  buildingHint.textContent =
+    "Higher priority buildings receive construction materials and production inputs first when resources are scarce.";
   buildingSection.appendChild(buildingHint);
 
   const buildingPriorityRows: Array<{
@@ -878,7 +973,7 @@ function updateProductionPriorityList(game: Game): void {
     for (const row of buildingPriorityRows) {
       const priority = game.getBuildingPriority(row.buildingType);
       row.quantityEl.textContent = `${priority}%`;
-      row.meterEl.setAttribute('aria-label', `Building priority ${priority}%`);
+      row.meterEl.setAttribute("aria-label", `Building priority ${priority}%`);
       row.meterFillEl.style.width = `${priority}%`;
       row.meterLabelEl.textContent = `${priority}%`;
       row.minusBtn.disabled = priority <= 1;
@@ -888,40 +983,46 @@ function updateProductionPriorityList(game: Game): void {
 
   const buildingRows = dataManager
     .getAllBuildings()
-    .filter(building => building.id !== 'road' && building.id !== 'base_camp')
+    .filter((building) => building.id !== "road" && building.id !== "base_camp")
     .sort((a, b) => a.name.localeCompare(b.name));
 
   for (const building of buildingRows) {
-    const row = document.createElement('div');
-    row.className = 'production-priority-row';
+    const row = document.createElement("div");
+    row.className = "production-priority-row";
 
-    const minus = document.createElement('button');
-    minus.type = 'button';
-    minus.className = 'production-priority-step';
-    minus.textContent = '-';
-    minus.addEventListener('click', () => {
-      game.setBuildingPriority(building.id, game.getBuildingPriority(building.id) - 5);
+    const minus = document.createElement("button");
+    minus.type = "button";
+    minus.className = "production-priority-step";
+    minus.textContent = "-";
+    minus.addEventListener("click", () => {
+      game.setBuildingPriority(
+        building.id,
+        game.getBuildingPriority(building.id) - 5,
+      );
       refreshBuildingPriorities();
     });
 
-    const plus = document.createElement('button');
-    plus.type = 'button';
-    plus.className = 'production-priority-step';
-    plus.textContent = '+';
-    plus.addEventListener('click', () => {
-      game.setBuildingPriority(building.id, game.getBuildingPriority(building.id) + 5);
+    const plus = document.createElement("button");
+    plus.type = "button";
+    plus.className = "production-priority-step";
+    plus.textContent = "+";
+    plus.addEventListener("click", () => {
+      game.setBuildingPriority(
+        building.id,
+        game.getBuildingPriority(building.id) + 5,
+      );
       refreshBuildingPriorities();
     });
 
-    const quantity = document.createElement('span');
-    quantity.className = 'production-priority-quantity';
+    const quantity = document.createElement("span");
+    quantity.className = "production-priority-quantity";
 
-    const meter = document.createElement('div');
-    meter.className = 'production-priority-meter';
-    const meterFill = document.createElement('span');
-    meterFill.className = 'production-priority-meter-fill';
-    const meterLabel = document.createElement('span');
-    meterLabel.className = 'production-priority-meter-label';
+    const meter = document.createElement("div");
+    meter.className = "production-priority-meter";
+    const meterFill = document.createElement("span");
+    meterFill.className = "production-priority-meter-fill";
+    const meterLabel = document.createElement("span");
+    meterLabel.className = "production-priority-meter-label";
     meter.appendChild(meterFill);
     meter.appendChild(meterLabel);
 
@@ -950,52 +1051,56 @@ function updateProductionPriorityList(game: Game): void {
 }
 
 function updateBuildingSummaryList(game: Game): void {
-  const list = document.getElementById('building-summary-list');
+  const list = document.getElementById("building-summary-list");
   if (!list) return;
-  list.innerHTML = '';
+  list.innerHTML = "";
 
-  const note = document.createElement('div');
-  note.className = 'basecamp-tab-note';
-  note.textContent = 'Shown as active / built. A building is active when it is complete, connected if needed, staffed if needed, and not stopped.';
+  const note = document.createElement("div");
+  note.className = "basecamp-tab-note";
+  note.textContent =
+    "Shown as active / built. A building is active when it is complete, connected if needed, staffed if needed, and not stopped.";
   list.appendChild(note);
 
   const rows = game.getBuildingOperationalSummary();
   for (const row of rows) {
-    const item = document.createElement('div');
+    const item = document.createElement("div");
     const allActive = row.active === row.total;
     const hasAny = row.total > 0;
-    item.className = 'building-summary-item' + (allActive ? '' : ' building-summary-item--warning');
+    item.className =
+      "building-summary-item" +
+      (allActive ? "" : " building-summary-item--warning");
     item.innerHTML =
-      `<span class="building-summary-name${hasAny ? '' : ' building-summary-name--zero'}">${row.name}</span>` +
+      `<span class="building-summary-name${hasAny ? "" : " building-summary-name--zero"}">${row.name}</span>` +
       `<span class="building-summary-count">${row.active}/${row.total}</span>`;
     list.appendChild(item);
   }
 }
 
 function showInventoryPanel(game: Game): void {
-  const overlay = document.getElementById('inventory-overlay');
+  const overlay = document.getElementById("inventory-overlay");
   if (!overlay) return;
 
-  const popDisplay = document.getElementById('population-display');
+  const popDisplay = document.getElementById("population-display");
   if (popDisplay) {
     const available = game.getAvailablePopulation();
     popDisplay.textContent = `${available} available / ${game.population.max} max`;
   }
 
-  const inventoryList = document.getElementById('inventory-list');
+  const inventoryList = document.getElementById("inventory-list");
   if (!inventoryList) return;
 
-  inventoryList.innerHTML = '';
+  inventoryList.innerHTML = "";
 
-  const categories = ['raw', 'refined', 'food', 'tool', 'weapon'] as const;
-  categories.forEach(category => {
+  const categories = ["raw", "refined", "food", "tool", "weapon"] as const;
+  categories.forEach((category) => {
     const resources = dataManager
       .getResourcesByCategory(category)
-      .filter(r => !r.virtualOutput);
-    resources.forEach(resource => {
+      .filter((r) => !r.virtualOutput);
+    resources.forEach((resource) => {
       const count = game.inventory[resource.id] || 0;
-      const item = document.createElement('div');
-      item.className = 'inventory-item' + (count === 0 ? ' inventory-item--zero' : '');
+      const item = document.createElement("div");
+      item.className =
+        "inventory-item" + (count === 0 ? " inventory-item--zero" : "");
       item.innerHTML = `
           <span class="inventory-item-name"><img src="/assets/resources/${resource.id}.png" class="resource-icon" onerror="this.style.display='none'">${resource.name}</span>
           <span class="inventory-item-count">${count}</span>
@@ -1004,22 +1109,28 @@ function showInventoryPanel(game: Game): void {
     });
   });
 
-  const workersList = document.getElementById('workers-list');
+  const workersList = document.getElementById("workers-list");
   if (workersList) {
-    workersList.innerHTML = '';
-    const note = document.createElement('div');
-    note.className = 'basecamp-tab-note';
-    note.textContent = 'Shown as employed / total. HQ-ready specialists count in total, but not employed.';
+    workersList.innerHTML = "";
+    const note = document.createElement("div");
+    note.className = "basecamp-tab-note";
+    note.textContent =
+      "Shown as employed / total. HQ-ready specialists count in total, but not employed.";
     workersList.appendChild(note);
 
     const specialistRows = game.getSpecializedWorkersSummary();
-    specialistRows.forEach(row => {
-      const item = document.createElement('div');
+    specialistRows.forEach((row) => {
+      const item = document.createElement("div");
       const allEmployed = row.employed === row.total;
-      item.className = 'worker-summary-item' + (allEmployed ? '' : ' worker-summary-item--idle');
+      item.className =
+        "worker-summary-item" +
+        (allEmployed ? "" : " worker-summary-item--idle");
       const icon = row.iconResourceId
-        ? makeResourceIconHtml(row.iconResourceId, 'resource-icon worker-summary-icon')
-        : '';
+        ? makeResourceIconHtml(
+            row.iconResourceId,
+            "resource-icon worker-summary-icon",
+          )
+        : "";
       item.innerHTML =
         `<span class="worker-summary-name">${icon}${row.label}</span>` +
         `<span class="worker-summary-count">${row.employed}/${row.total}</span>`;
@@ -1032,40 +1143,48 @@ function showInventoryPanel(game: Game): void {
 
   setInventoryTab(inventoryActiveTab);
 
-  overlay.classList.add('is-open');
-  overlay.setAttribute('aria-hidden', 'false');
+  overlay.classList.add("is-open");
+  overlay.setAttribute("aria-hidden", "false");
 }
 
 function hideInventoryPanel(): void {
-  const overlay = document.getElementById('inventory-overlay');
+  const overlay = document.getElementById("inventory-overlay");
   if (!overlay) return;
-  overlay.classList.remove('is-open');
-  overlay.setAttribute('aria-hidden', 'true');
+  overlay.classList.remove("is-open");
+  overlay.setAttribute("aria-hidden", "true");
 }
 
-function setInventoryTab(tab: 'resources' | 'workers' | 'production' | 'buildings'): void {
+function setInventoryTab(
+  tab: "resources" | "workers" | "production" | "buildings",
+): void {
   inventoryActiveTab = tab;
-  const resBtn = document.getElementById('inventory-tab-resources');
-  const workersBtn = document.getElementById('inventory-tab-workers');
-  const productionBtn = document.getElementById('inventory-tab-production');
-  const buildingsBtn = document.getElementById('inventory-tab-buildings');
-  const resSection = document.getElementById('inventory-section-resources');
-  const workersSection = document.getElementById('inventory-section-workers');
-  const productionSection = document.getElementById('inventory-section-production');
-  const buildingsSection = document.getElementById('inventory-section-buildings');
-  resBtn?.classList.toggle('active', tab === 'resources');
-  workersBtn?.classList.toggle('active', tab === 'workers');
-  productionBtn?.classList.toggle('active', tab === 'production');
-  buildingsBtn?.classList.toggle('active', tab === 'buildings');
-  resSection?.classList.toggle('active', tab === 'resources');
-  workersSection?.classList.toggle('active', tab === 'workers');
-  productionSection?.classList.toggle('active', tab === 'production');
-  buildingsSection?.classList.toggle('active', tab === 'buildings');
+  const resBtn = document.getElementById("inventory-tab-resources");
+  const workersBtn = document.getElementById("inventory-tab-workers");
+  const productionBtn = document.getElementById("inventory-tab-production");
+  const buildingsBtn = document.getElementById("inventory-tab-buildings");
+  const resSection = document.getElementById("inventory-section-resources");
+  const workersSection = document.getElementById("inventory-section-workers");
+  const productionSection = document.getElementById(
+    "inventory-section-production",
+  );
+  const buildingsSection = document.getElementById(
+    "inventory-section-buildings",
+  );
+  resBtn?.classList.toggle("active", tab === "resources");
+  workersBtn?.classList.toggle("active", tab === "workers");
+  productionBtn?.classList.toggle("active", tab === "production");
+  buildingsBtn?.classList.toggle("active", tab === "buildings");
+  resSection?.classList.toggle("active", tab === "resources");
+  workersSection?.classList.toggle("active", tab === "workers");
+  productionSection?.classList.toggle("active", tab === "production");
+  buildingsSection?.classList.toggle("active", tab === "buildings");
 }
 
 function updateButtonStates(activeButtonId: string | null): void {
-  const btnRoad = document.getElementById('btn-road');
-  if (btnRoad) btnRoad.classList.toggle('selected', activeButtonId === 'btn-road');
-  const btnErase = document.getElementById('btn-erase');
-  if (btnErase) btnErase.classList.toggle('selected', activeButtonId === 'btn-erase');
+  const btnRoad = document.getElementById("btn-road");
+  if (btnRoad)
+    btnRoad.classList.toggle("selected", activeButtonId === "btn-road");
+  const btnErase = document.getElementById("btn-erase");
+  if (btnErase)
+    btnErase.classList.toggle("selected", activeButtonId === "btn-erase");
 }

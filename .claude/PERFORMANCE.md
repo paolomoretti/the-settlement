@@ -19,6 +19,11 @@ This is a large-world game (1000x1000 tiles). Every rendering decision must assu
 4. **Use `ctx.drawImage(atlas, sx, sy, sw, sh, dx, dy, dw, dh)` for tile rendering.** The 9-argument form with source rect is the fastest way to draw from a sprite sheet
 5. Diamond masking must be baked into the atlas (transparent pixels outside the diamond), not applied at render time
 
+### Shoreline contour overlay
+- Water cells remain tile-based for gameplay and atlas rendering.
+- `RenderSystem.renderShorelineContour()` traces explored water/land boundaries with marching squares, simplifies the resulting polylines in screen space, fills closed lake contours, fills darker closed depth-band contours, and strokes a narrow shoreline band over the tile art.
+- Keep this as a viewport-bounded vector overlay. Do not reintroduce per-tile clipping rectangles or overlapping ellipse blobs for lake smoothing.
+
 ### Adding new terrain types
 1. Add a generator function following the existing pattern (world-space coordinates, writes to r/g/b buffers)
 2. Register it in the `GENERATORS` map

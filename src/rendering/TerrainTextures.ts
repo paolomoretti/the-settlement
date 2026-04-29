@@ -7,6 +7,7 @@ const ATLAS_GRID = 16;
 const ATLAS_W = ATLAS_GRID * TILE_W;
 const ATLAS_H = ATLAS_GRID * TILE_H;
 const P = ATLAS_GRID;
+const WATER_FILL_PATTERN_SCALE = 0.45;
 
 interface RGB { r: number; g: number; b: number }
 
@@ -525,6 +526,33 @@ function buildAtlas(gen: GenFn, noise: NoiseGenerator): HTMLCanvasElement {
   return canvas;
 }
 
+function buildTextureFill(gen: GenFn, noise: NoiseGenerator): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = ATLAS_W;
+  canvas.height = ATLAS_H;
+  const ctx = canvas.getContext('2d')!;
+  const imageData = ctx.createImageData(ATLAS_W, ATLAS_H);
+  const data = imageData.data;
+  const rBuf = new Float64Array(1);
+  const gBuf = new Float64Array(1);
+  const bBuf = new Float64Array(1);
+
+  for (let py = 0; py < ATLAS_H; py++) {
+    for (let px = 0; px < ATLAS_W; px++) {
+      const { gfx, gfy } = toGridCoords(0, 0, px, py);
+      gen(gfx, gfy, noise, rBuf, gBuf, bBuf, 0);
+      const idx = (py * ATLAS_W + px) * 4;
+      data[idx] = clamp(Math.round(rBuf[0]));
+      data[idx + 1] = clamp(Math.round(gBuf[0]));
+      data[idx + 2] = clamp(Math.round(bBuf[0]));
+      data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
+}
+
 const GRASS_TEXTURE_SRC = '/assets/terrain/grass-texture.png';
 
 /**
@@ -671,6 +699,8 @@ export class TerrainTextures {
   private atlases = new Map<string, HTMLCanvasElement>();
   private roadAtlas: HTMLCanvasElement;
   private waterAtlas: HTMLCanvasElement;
+  private waterFillTexture: HTMLCanvasElement;
+  private waterFillPattern: CanvasPattern | null = null;
 
   constructor(seed: number = 42) {
     const noise = new NoiseGenerator(seed);
@@ -679,6 +709,7 @@ export class TerrainTextures {
     }
     this.roadAtlas = buildRoadAtlas(noise);
     this.waterAtlas = buildWaterAtlas(noise);
+    this.waterFillTexture = buildTextureFill(genWater, noise);
     this.loadGrassPhotoAtlas();
   }
 
@@ -724,6 +755,16 @@ export class TerrainTextures {
       TILE_W,
       TILE_H
     );
+  }
+
+  useWaterTextureFill(ctx: CanvasRenderingContext2D): boolean {
+    if (!this.waterFillPattern) {
+      this.waterFillPattern = ctx.createPattern(this.waterFillTexture, 'repeat');
+      this.waterFillPattern?.setTransform(new DOMMatrix().scale(WATER_FILL_PATTERN_SCALE));
+    }
+    if (!this.waterFillPattern) return false;
+    ctx.fillStyle = this.waterFillPattern;
+    return true;
   }
 
   private roadHash(tileX: number, tileY: number, salt: number): number {

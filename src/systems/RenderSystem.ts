@@ -42,9 +42,9 @@ type FlatShoreCut =
   | { axis: 'vertical'; worldX: number; grassHalf: 'left' | 'right' };
 
 type GridPoint = { x: number; y: number };
+type ShorelineSegment = { a: GridPoint; b: GridPoint };
 
 const FLAT_SHORE_CLIP_EXTENT = 1_000_000;
-
 /** Uniform draw scale for `/assets/resources/*.png` on the main canvas (workers, junctions, map bubbles). */
 const RESOURCE_ICON_DRAW_SCALE = 1.25;
 
@@ -1695,6 +1695,7 @@ export class RenderSystem extends System {
         for (let x = viewportBounds.minX; x <= viewportBounds.maxX; x++) {
           const tile = this.tileMap.getTile(x, y);
           if (!tile || !tile.isExplored()) continue;
+          if (tile.terrain === 'water') continue;
           const corners = this.iso.getTileCorners(x, y);
           this.ctx.beginPath();
           this.ctx.moveTo(corners[0].x, corners[0].y);
@@ -1706,6 +1707,366 @@ export class RenderSystem extends System {
         }
       }
     }
+
+    this.renderShorelineContour(viewportBounds);
+  }
+
+  private renderShorelineContour(viewportBounds: { minX: number; maxX: number; minY: number; maxY: number }): void {
+    const segments = this.collectShorelineContourSegments(viewportBounds);
+    if (segments.length === 0) return;
+
+    const polylines = this.buildContourPolylines(segments);
+    if (polylines.length === 0) return;
+    const screenContours = polylines
+      .map(line => this.jitterClosedShoreline(this.simplifyShorelinePolyline(line, 12)))
+      .filter(line => line.length >= 2);
+
+    this.ctx.save();
+    this.ctx.lineCap = 'round';
+    this.ctx.lineJoin = 'round';
+
+    const drawContourPath = (source: GridPoint[][] = screenContours): void => {
+      this.ctx.beginPath();
+      for (const simplified of source) {
+        if (simplified.length < 2) continue;
+        this.traceSmoothedScreenContour(simplified);
+      }
+    };
+
+    const closedContours = screenContours.filter(line => this.isClosedScreenContour(line));
+    if (closedContours.length > 0) {
+      drawContourPath(closedContours);
+      this.ctx.strokeStyle = 'rgba(66, 112, 42, 0.58)';
+      this.ctx.lineWidth = 6;
+      this.ctx.stroke();
+
+      drawContourPath(closedContours);
+      if (!this.terrainTextures.useWaterTextureFill(this.ctx)) {
+        this.ctx.fillStyle = '#3484d6';
+      }
+      this.ctx.fill('evenodd');
+
+      this.renderWaterDepthContourFills(viewportBounds);
+    }
+
+    this.ctx.restore();
+  }
+
+  private renderWaterDepthContourFills(viewportBounds: { minX: number; maxX: number; minY: number; maxY: number }): void {
+    const depthBands = [
+      { minDepth: 2, color: 'rgba(27, 101, 190, 0.17)' },
+      { minDepth: 3, color: 'rgba(21, 86, 172, 0.145)' },
+      { minDepth: 4, color: 'rgba(16, 72, 154, 0.12)' },
+      { minDepth: 5, color: 'rgba(11, 60, 136, 0.095)' },
+      { minDepth: 6, color: 'rgba(8, 50, 118, 0.075)' },
+      { minDepth: 7, color: 'rgba(6, 42, 101, 0.06)' },
+      { minDepth: 8, color: 'rgba(4, 34, 84, 0.05)' },
+    ];
+
+    for (const band of depthBands) {
+      const segments = this.collectContourSegments(viewportBounds, (x, y) => {
+        const tile = this.tileMap.getTile(x, y);
+        return !!tile?.isExplored() && tile.terrain === 'water' && tile.waterDepth >= band.minDepth;
+      });
+      if (segments.length === 0) continue;
+
+      const contours = this.buildContourPolylines(segments)
+        .map(line => this.simplifyShorelinePolyline(line, 16))
+        .filter(line => line.length >= 2 && this.isClosedScreenContour(line));
+      if (contours.length === 0) continue;
+
+      this.ctx.beginPath();
+      for (const contour of contours) {
+        this.traceSmoothedScreenContour(contour);
+      }
+      this.ctx.fillStyle = band.color;
+      this.ctx.fill('evenodd');
+    }
+  }
+
+  private isClosedScreenContour(points: GridPoint[]): boolean {
+    if (points.length < 4) return false;
+    const first = points[0]!;
+    const last = points[points.length - 1]!;
+    return Math.abs(first.x - last.x) < 0.001 && Math.abs(first.y - last.y) < 0.001;
+  }
+
+  private traceSmoothedScreenContour(points: GridPoint[]): void {
+    const closed = this.isClosedScreenContour(points);
+    const ring = closed ? points.slice(0, -1) : points;
+    if (ring.length < 3) {
+      const first = points[0]!;
+      this.ctx.moveTo(first.x, first.y);
+      for (let i = 1; i < points.length; i++) {
+        const p = points[i]!;
+        this.ctx.lineTo(p.x, p.y);
+      }
+      return;
+    }
+
+    const corner = (index: number): { entry: GridPoint; control: GridPoint; exit: GridPoint } => {
+      const prev = ring[(index - 1 + ring.length) % ring.length]!;
+      const current = ring[index]!;
+      const next = ring[(index + 1) % ring.length]!;
+      const prevDx = prev.x - current.x;
+      const prevDy = prev.y - current.y;
+      const nextDx = next.x - current.x;
+      const nextDy = next.y - current.y;
+      const prevLen = Math.hypot(prevDx, prevDy) || 1;
+      const nextLen = Math.hypot(nextDx, nextDy) || 1;
+      const dot = Math.max(-1, Math.min(1, (prevDx * nextDx + prevDy * nextDy) / (prevLen * nextLen)));
+      const angle = Math.acos(dot);
+      const sharpness = 1 - angle / Math.PI;
+      const factor = 0.50 + sharpness * 1.10;
+      const rawDistance = Math.min(prevLen, nextLen, 34) * factor;
+      const distance = Math.min(rawDistance, prevLen * 0.48, nextLen * 0.48, 54);
+
+      return {
+        entry: {
+          x: current.x + (prevDx / prevLen) * distance,
+          y: current.y + (prevDy / prevLen) * distance,
+        },
+        control: current,
+        exit: {
+          x: current.x + (nextDx / nextLen) * distance,
+          y: current.y + (nextDy / nextLen) * distance,
+        },
+      };
+    };
+
+    if (closed) {
+      const firstCorner = corner(0);
+      this.ctx.moveTo(firstCorner.exit.x, firstCorner.exit.y);
+      for (let i = 1; i < ring.length; i++) {
+        const c = corner(i);
+        this.ctx.lineTo(c.entry.x, c.entry.y);
+        this.ctx.quadraticCurveTo(c.control.x, c.control.y, c.exit.x, c.exit.y);
+      }
+      this.ctx.lineTo(firstCorner.entry.x, firstCorner.entry.y);
+      this.ctx.quadraticCurveTo(firstCorner.control.x, firstCorner.control.y, firstCorner.exit.x, firstCorner.exit.y);
+      this.ctx.closePath();
+      return;
+    }
+
+    this.ctx.moveTo(ring[0]!.x, ring[0]!.y);
+    for (let i = 1; i < ring.length - 1; i++) {
+      const c = corner(i);
+      this.ctx.lineTo(c.entry.x, c.entry.y);
+      this.ctx.quadraticCurveTo(c.control.x, c.control.y, c.exit.x, c.exit.y);
+    }
+    const last = ring[ring.length - 1]!;
+    this.ctx.lineTo(last.x, last.y);
+  }
+
+  private jitterClosedShoreline(points: GridPoint[]): GridPoint[] {
+    if (!this.isClosedScreenContour(points) || points.length < 5) return points;
+    const ring = points.slice(0, -1);
+    const jittered = ring.map((point, index) => {
+      const prev = ring[(index - 1 + ring.length) % ring.length]!;
+      const next = ring[(index + 1) % ring.length]!;
+      const dx = next.x - prev.x;
+      const dy = next.y - prev.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const normal = { x: -dy / len, y: dx / len };
+      const n1 = this.shorelineNoise(point.x * 0.035, point.y * 0.035);
+      const n2 = this.shorelineNoise(point.x * 0.085 + 17.3, point.y * 0.085 - 41.7);
+      const amount = (n1 - 0.5) * 5.2 + (n2 - 0.5) * 1.8;
+      return {
+        x: point.x + normal.x * amount,
+        y: point.y + normal.y * amount,
+      };
+    });
+    jittered.push({ ...jittered[0]! });
+    return jittered;
+  }
+
+  private shorelineNoise(x: number, y: number): number {
+    const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
+    return n - Math.floor(n);
+  }
+
+  private collectShorelineContourSegments(
+    viewportBounds: { minX: number; maxX: number; minY: number; maxY: number }
+  ): ShorelineSegment[] {
+    return this.collectContourSegments(viewportBounds, (x, y) => {
+      const tile = this.tileMap.getTile(x, y);
+      return !!tile?.isExplored() && tile.terrain === 'water';
+    });
+  }
+
+  private collectContourSegments(
+    viewportBounds: { minX: number; maxX: number; minY: number; maxY: number },
+    isInside: (x: number, y: number) => boolean
+  ): ShorelineSegment[] {
+    const segments: ShorelineSegment[] = [];
+    const add = (a: GridPoint, b: GridPoint): void => {
+      segments.push({ a, b });
+    };
+
+    for (let y = viewportBounds.minY - 2; y <= viewportBounds.maxY + 2; y++) {
+      for (let x = viewportBounds.minX - 2; x <= viewportBounds.maxX + 2; x++) {
+        const index =
+          (isInside(x, y) ? 1 : 0) |
+          (isInside(x + 1, y) ? 2 : 0) |
+          (isInside(x + 1, y + 1) ? 4 : 0) |
+          (isInside(x, y + 1) ? 8 : 0);
+
+        const top = { x: x + 0.5, y };
+        const right = { x: x + 1, y: y + 0.5 };
+        const bottom = { x: x + 0.5, y: y + 1 };
+        const left = { x, y: y + 0.5 };
+
+        if (index === 1 || index === 14) add(left, top);
+        else if (index === 2 || index === 13) add(top, right);
+        else if (index === 3 || index === 12) add(left, right);
+        else if (index === 4 || index === 11) add(right, bottom);
+        else if (index === 6 || index === 9) add(top, bottom);
+        else if (index === 7 || index === 8) add(left, bottom);
+        else if (index === 5) {
+          add(left, bottom);
+          add(top, right);
+        } else if (index === 10) {
+          add(left, top);
+          add(right, bottom);
+        }
+      }
+    }
+    return segments;
+  }
+
+  private buildContourPolylines(segments: ShorelineSegment[]): GridPoint[][] {
+    const keyOf = (p: GridPoint): string => `${p.x},${p.y}`;
+    const pointByKey = new Map<string, GridPoint>();
+    const adjacency = new Map<string, number[]>();
+    const addEndpoint = (key: string, point: GridPoint, segmentIndex: number): void => {
+      pointByKey.set(key, point);
+      const list = adjacency.get(key);
+      if (list) list.push(segmentIndex);
+      else adjacency.set(key, [segmentIndex]);
+    };
+
+    segments.forEach((segment, index) => {
+      addEndpoint(keyOf(segment.a), segment.a, index);
+      addEndpoint(keyOf(segment.b), segment.b, index);
+    });
+
+    const unused = new Set(segments.map((_, index) => index));
+    const consume = (startKey: string): GridPoint[] => {
+      const line: GridPoint[] = [];
+      let currentKey = startKey;
+      let previousKey: string | null = null;
+      const startPoint = pointByKey.get(currentKey);
+      if (!startPoint) return line;
+      line.push(startPoint);
+
+      while (true) {
+        const nextSegmentIndex = adjacency.get(currentKey)?.find(index => {
+          if (!unused.has(index)) return false;
+          const segment = segments[index]!;
+          const aKey = keyOf(segment.a);
+          const bKey = keyOf(segment.b);
+          const otherKey = aKey === currentKey ? bKey : aKey;
+          return otherKey !== previousKey || adjacency.get(currentKey)!.every(other => !unused.has(other));
+        });
+        if (nextSegmentIndex == null) break;
+
+        unused.delete(nextSegmentIndex);
+        const segment = segments[nextSegmentIndex]!;
+        const aKey = keyOf(segment.a);
+        const bKey = keyOf(segment.b);
+        const nextKey = aKey === currentKey ? bKey : aKey;
+        const nextPoint = pointByKey.get(nextKey);
+        if (!nextPoint) break;
+        line.push(nextPoint);
+        previousKey = currentKey;
+        currentKey = nextKey;
+        if (currentKey === startKey) break;
+      }
+      return line;
+    };
+
+    const polylines: GridPoint[][] = [];
+    for (const [key, connected] of adjacency.entries()) {
+      if (connected.length === 1 && connected.some(index => unused.has(index))) {
+        const line = consume(key);
+        if (line.length >= 2) polylines.push(line);
+      }
+    }
+
+    while (unused.size > 0) {
+      const index = unused.values().next().value as number | undefined;
+      if (index == null) break;
+      const line = consume(keyOf(segments[index]!.a));
+      if (line.length >= 2) polylines.push(line);
+      else unused.delete(index);
+    }
+    return polylines;
+  }
+
+  private simplifyShorelinePolyline(points: GridPoint[], tolerance: number): GridPoint[] {
+    const screenPoints = points.map(point => this.iso.gridToScreen(point.x, point.y));
+    if (screenPoints.length <= 2) return screenPoints;
+
+    const closed =
+      screenPoints.length > 3 &&
+      Math.abs(screenPoints[0]!.x - screenPoints[screenPoints.length - 1]!.x) < 0.001 &&
+      Math.abs(screenPoints[0]!.y - screenPoints[screenPoints.length - 1]!.y) < 0.001;
+    if (!closed) return this.simplifyScreenPolyline(screenPoints, tolerance);
+
+    const ring = screenPoints.slice(0, -1);
+    let anchor = 0;
+    for (let i = 1; i < ring.length; i++) {
+      if (ring[i]!.x < ring[anchor]!.x) anchor = i;
+    }
+    let opposite = anchor;
+    let bestDistance = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const d = (ring[i]!.x - ring[anchor]!.x) ** 2 + (ring[i]!.y - ring[anchor]!.y) ** 2;
+      if (d > bestDistance) {
+        bestDistance = d;
+        opposite = i;
+      }
+    }
+
+    const firstArc = anchor <= opposite
+      ? ring.slice(anchor, opposite + 1)
+      : [...ring.slice(anchor), ...ring.slice(0, opposite + 1)];
+    const secondArc = opposite <= anchor
+      ? ring.slice(opposite, anchor + 1)
+      : [...ring.slice(opposite), ...ring.slice(0, anchor + 1)];
+    const a = this.simplifyScreenPolyline(firstArc, tolerance);
+    const b = this.simplifyScreenPolyline(secondArc, tolerance);
+    return [...a, ...b.slice(1), a[0]!];
+  }
+
+  private simplifyScreenPolyline(points: GridPoint[], tolerance: number): GridPoint[] {
+    if (points.length <= 2) return points;
+    const sqTolerance = tolerance * tolerance;
+    const sqSegmentDistance = (p: GridPoint, a: GridPoint, b: GridPoint): number => {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      if (dx === 0 && dy === 0) return (p.x - a.x) ** 2 + (p.y - a.y) ** 2;
+      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)));
+      const x = a.x + dx * t;
+      const y = a.y + dy * t;
+      return (p.x - x) ** 2 + (p.y - y) ** 2;
+    };
+
+    let maxDistance = 0;
+    let index = 0;
+    const last = points.length - 1;
+    for (let i = 1; i < last; i++) {
+      const distance = sqSegmentDistance(points[i]!, points[0]!, points[last]!);
+      if (distance > maxDistance) {
+        index = i;
+        maxDistance = distance;
+      }
+    }
+    if (maxDistance <= sqTolerance) return [points[0]!, points[last]!];
+
+    const left = this.simplifyScreenPolyline(points.slice(0, index + 1), tolerance);
+    const right = this.simplifyScreenPolyline(points.slice(index), tolerance);
+    return [...left.slice(0, -1), ...right];
   }
 
   private renderRoads(viewportBounds: { minX: number; maxX: number; minY: number; maxY: number }): void {
@@ -3055,23 +3416,6 @@ export class RenderSystem extends System {
   }
 
   /**
-   * Two or more water tiles in a row along grid x or y share the same shore neighbor mask:
-   * use linearized shore SDF so the edge reads as one continuous line instead of a stair-step.
-   *
-   * Only applies when exactly one diamond neighbor is land (three are water): flat shores.
-   * Skips tiles with two+ land sides (bays/corners need corner rounding) and tiles with four
-   * water neighbors (diagonal land / inner curves use the normal SDF).
-   */
-  private getWaterShoreLinearized(x: number, y: number): boolean {
-    const cfg = this.getWaterConfig(x, y);
-    if (cfg === 255) return false;
-    const card = cfg & 0xF;
-    if (this.popcountNibble(card) !== 3) return false;
-    const axisSteps = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
-    return this.waterMaskRunLength(x, y, card, axisSteps) >= 2;
-  }
-
-  /**
    * Straight world-space boundary between this water tile and its single land neighbor,
    * when water forms a diagonal run in grid ((1,-1) steps) or ((1,1)) matching constant
    * screen Y or X — removes W-shaped zigzag along those shores.
@@ -3152,24 +3496,6 @@ export class RenderSystem extends System {
     this.ctx.clip();
   }
 
-  /** Water overlay / deep tint: half-plane opposite the grass side. */
-  private applyFlatShoreWaterOverlayClip(cut: FlatShoreCut): void {
-    const M = FLAT_SHORE_CLIP_EXTENT;
-    this.ctx.beginPath();
-    if (cut.axis === 'horizontal') {
-      if (cut.grassHalf === 'upper') {
-        this.ctx.rect(-M, cut.worldY, 2 * M, 2 * M);
-      } else {
-        this.ctx.rect(-M, -M, 2 * M, cut.worldY + M);
-      }
-    } else if (cut.grassHalf === 'left') {
-      this.ctx.rect(cut.worldX, -M, 2 * M, 2 * M);
-    } else {
-      this.ctx.rect(-M, -M, cut.worldX + M, 2 * M);
-    }
-    this.ctx.clip();
-  }
-
   private renderTile(tile: Tile): void {
     const center = this.iso.gridToScreen(tile.x, tile.y);
     if (!tile.isExplored()) {
@@ -3178,44 +3504,7 @@ export class RenderSystem extends System {
     }
 
     if (tile.terrain === 'water') {
-      const flatCut = this.tryWaterFlatShoreCut(tile.x, tile.y);
-      const waterConfig = this.getWaterConfig(tile.x, tile.y);
-      const linearShore = !flatCut && this.getWaterShoreLinearized(tile.x, tile.y);
-
-      if (flatCut) {
-        this.ctx.save();
-        this.applyFlatShoreGrassClip(flatCut);
-        this.terrainTextures.drawTile(this.ctx, 'grass', tile.x, tile.y, center.x, center.y);
-        this.ctx.restore();
-
-        this.ctx.save();
-        this.applyFlatShoreWaterOverlayClip(flatCut);
-        this.terrainTextures.drawWater(this.ctx, waterConfig, tile.x, tile.y, center.x, center.y, linearShore);
-        this.ctx.restore();
-      } else {
-        this.terrainTextures.drawTile(this.ctx, 'grass', tile.x, tile.y, center.x, center.y);
-        this.terrainTextures.drawWater(this.ctx, waterConfig, tile.x, tile.y, center.x, center.y, linearShore);
-      }
-
-      if (tile.waterDepth > 1) {
-        const darken = Math.min((tile.waterDepth - 1) * 0.04, 0.3);
-        this.ctx.fillStyle = `rgba(0, 8, 25, ${darken})`;
-        const c = this.iso.getTileCorners(tile.x, tile.y);
-        this.ctx.beginPath();
-        this.ctx.moveTo(c[0].x, c[0].y);
-        this.ctx.lineTo(c[1].x, c[1].y);
-        this.ctx.lineTo(c[2].x, c[2].y);
-        this.ctx.lineTo(c[3].x, c[3].y);
-        this.ctx.closePath();
-        if (flatCut) {
-          this.ctx.save();
-          this.applyFlatShoreWaterOverlayClip(flatCut);
-          this.ctx.fill();
-          this.ctx.restore();
-        } else {
-          this.ctx.fill();
-        }
-      }
+      this.terrainTextures.drawTile(this.ctx, 'grass', tile.x, tile.y, center.x, center.y);
     } else {
       const flatGrass =
         (tile.terrain === 'grass' || tile.terrain === 'forest' || tile.terrain === 'tree')

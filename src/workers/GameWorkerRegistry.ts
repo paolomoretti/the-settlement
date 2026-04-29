@@ -111,6 +111,8 @@ export interface WorkerWorldAccess {
   returnToolSpecialistToHq(tool: string): void;
   /** A returning military specialist reached HQ and should be added to the persistent pool. */
   onMilitarySpecialistReturnedToHq(): void;
+  /** A bred donkey reached HQ and should be added to the persistent transport pool. */
+  onDonkeyReturnedToHq(): void;
   /** False for dormant computer villages; they should not spend per-frame work. */
   isEntitySimulationActive(entity: Entity): boolean;
 }
@@ -295,6 +297,22 @@ export class GameWorkerRegistry {
     return this.returningWorkers.has(workerEntityId);
   }
 
+  restoreRoadSegmentWorker(workerEntityId: number): void {
+    this.roadSegmentWorkers.add(workerEntityId);
+  }
+
+  moveRoadSegmentWorkerToSegment(workerEntityId: number, segment: RoadSegment): void {
+    this.roadSegmentWorkers.add(workerEntityId);
+    this.moveSegmentWorker(workerEntityId, segment);
+  }
+
+  returnRoadSegmentWorkerToHq(workerEntity: Entity): boolean {
+    this.roadSegmentWorkers.delete(workerEntity.id);
+    const hq = this.world.getBaseCampEntity();
+    if (!hq) return false;
+    return this.sendWorkerBackToBaseCamp(workerEntity, hq);
+  }
+
   getRoadSegmentCallbacks() {
     return {
       spawnWorker: (seg: RoadSegment) => this.spawnSegmentWorker(seg),
@@ -375,6 +393,8 @@ export class GameWorkerRegistry {
           if (worker?.returnToHqToolSpecialist) {
             this.world.returnToolSpecialistToHq(worker.returnToHqToolSpecialist);
             worker.returnToHqToolSpecialist = null;
+          } else if (worker?.returnToHqAsDonkey) {
+            this.world.onDonkeyReturnedToHq();
           } else if (worker?.returnToHqAsSpecialist && worker.role === 'military') {
             this.world.onMilitarySpecialistReturnedToHq();
           }
@@ -1556,6 +1576,10 @@ export class GameWorkerRegistry {
     return true;
   }
 
+  sendLooseWorkerBackToBaseCamp(workerEntity: Entity, sourceBuildingEntity: Entity, speed: number = 1.8): boolean {
+    return this.sendWorkerBackToBaseCamp(workerEntity, sourceBuildingEntity, speed);
+  }
+
   returnAssignedToolSpecialistToHq(buildingEntity: Entity, tool: string): boolean {
     const roadTile = this.findBuildingAdjacentRoadTile(buildingEntity);
     const pos = buildingEntity.getComponent(Position);
@@ -1799,12 +1823,28 @@ export class GameWorkerRegistry {
       if (workerComp.carryingResource) {
         const p = entity.getComponent(Position);
         if (p) {
-          const dest = task.destEntityId ?? null;
-          transportManager.addJunctionItem(Math.floor(p.x), Math.floor(p.y), workerComp.carryingResource, dest);
+          const items = workerComp.carryingItems.length > 0
+            ? workerComp.carryingItems
+            : Array.from({ length: Math.max(1, workerComp.carryingAmount || task.amount || 1) }, () => ({
+              resourceType: workerComp.carryingResource!,
+              destinationEntityId: task.destEntityId ?? null,
+            }));
+          for (const item of items) {
+            transportManager.addJunctionItem(Math.floor(p.x), Math.floor(p.y), item.resourceType, item.destinationEntityId);
+          }
         }
-        workerComp.carryingResource = undefined;
+        workerComp.dropResource();
       } else if (task.phase === 'to_pickup' && task.sourceEntityId === null) {
-        transportManager.addJunctionItem(task.pickupPos.x, task.pickupPos.y, task.resourceType, task.destEntityId);
+        const items = task.items && task.items.length > 0
+          ? task.items
+          : Array.from({ length: Math.max(1, task.amount || 1) }, () => ({
+            resourceType: task.resourceType,
+            destinationEntityId: task.destEntityId,
+          }));
+        transportManager.removePendingPickupItems(task.pickupPos.x, task.pickupPos.y, items);
+        for (const item of items) {
+          transportManager.addJunctionItem(task.pickupPos.x, task.pickupPos.y, item.resourceType, item.destinationEntityId);
+        }
       }
       workerComp.transportTask = null;
     }

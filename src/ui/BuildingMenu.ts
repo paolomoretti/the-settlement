@@ -9,7 +9,7 @@ import '@fortawesome/fontawesome-free/css/fontawesome.min.css';
 import '@fortawesome/fontawesome-free/css/solid.min.css';
 
 type BuildingCategory = 'residential' | 'production' | 'military' | 'infrastructure';
-type ProductionGroupId = 'basic' | 'food' | 'mines' | 'processing' | 'tools';
+type ProductionGroupId = 'basic' | 'food' | 'mines' | 'processing' | 'tools' | 'transport';
 
 const PRODUCTION_GROUPS: Array<{
   id: ProductionGroupId;
@@ -46,6 +46,12 @@ const PRODUCTION_GROUPS: Array<{
     label: 'Tools',
     icon: 'fa-hammer',
     buildings: ['metalworks', 'armory'],
+  },
+  {
+    id: 'transport',
+    label: 'Transport',
+    icon: 'fa-road',
+    buildings: ['donkey_breeder'],
   },
 ];
 
@@ -438,7 +444,11 @@ export class BuildingMenu {
     outputs.forEach(([id, amount]) => group.appendChild(this.createResourceChip(id, amount)));
     if (outputs.length === 0) {
       const outputIds = Object.keys(building.production?.outputs ?? {});
-      const text = outputIds.includes('planted_tree') ? 'Plant trees' : 'Map effect';
+      const text = outputIds.includes('planted_tree')
+        ? 'Plant trees'
+        : outputIds.includes('donkey')
+          ? 'Donkey'
+          : 'Map effect';
       group.appendChild(this.createPlainRoleText(text));
     }
     return group;

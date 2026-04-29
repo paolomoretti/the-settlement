@@ -94,8 +94,15 @@ export interface TransportTask {
   pickupPos: { x: number; y: number };
   dropoffPos: { x: number; y: number };
   resourceType: string;
+  amount?: number;
+  items?: TransportLoadItem[];
   sourceEntityId: number | null;
   destEntityId: number | null;
+}
+
+export interface TransportLoadItem {
+  resourceType: string;
+  destinationEntityId: number | null;
 }
 
 export type IdleAnim = 'none' | 'look_around' | 'scratch_head' | 'read' | 'stretch' | 'hands_on_hips';
@@ -103,8 +110,12 @@ export type IdleAnim = 'none' | 'look_around' | 'scratch_head' | 'read' | 'stret
 export class Worker extends Component {
   public state: WorkerState = 'idle';
   public carryingResource?: string;
+  public carryingAmount = 0;
+  public carryingItems: TransportLoadItem[] = [];
   public transportTask: TransportTask | null = null;
   public role: WorkerRole;
+  public carrierType: 'worker' | 'donkey' = 'worker';
+  public transportCarryCapacity = 1;
   public appearance: WorkerAppearance;
   /** Garrison rank 1–3 for {@link WorkerRole} `military` (promoted at fort). */
   public militaryRank: 1 | 2 | 3 = 1;
@@ -117,6 +128,8 @@ export class Worker extends Component {
   public concealedInBuildingId: number | null = null;
   /** On arrival at HQ return tile, convert this worker into a persistent specialist pool entry. */
   public returnToHqAsSpecialist = false;
+  /** On arrival at HQ return tile, add one donkey to the HQ transport pool. */
+  public returnToHqAsDonkey = false;
   /** On arrival at HQ return tile, convert this worker into a ready tool specialist. */
   public returnToHqToolSpecialist: string | null = null;
   /** Builder may hammer on site only after `beginConstruction()` runs. */
@@ -194,14 +207,29 @@ export class Worker extends Component {
     this.state = state;
   }
 
-  pickUpResource(resource: string, heldOverride?: WorkerHeldItemStyle): void {
+  pickUpResource(resource: string, heldOverride?: WorkerHeldItemStyle, amount: number = 1): void {
     this.carryingResource = resource;
+    this.carryingAmount = Math.max(1, Math.floor(amount));
+    this.carryingItems = Array.from({ length: this.carryingAmount }, () => ({
+      resourceType: resource,
+      destinationEntityId: null,
+    }));
     this.state = 'carrying';
     this.heldItemStyle = heldOverride ?? inferHeldItemStyle(resource);
   }
 
+  pickUpTransportItems(items: TransportLoadItem[], heldOverride?: WorkerHeldItemStyle): void {
+    this.carryingItems = items.map(item => ({ ...item }));
+    this.carryingAmount = this.carryingItems.length;
+    this.carryingResource = this.carryingItems[0]?.resourceType;
+    this.state = this.carryingAmount > 0 ? 'carrying' : 'idle';
+    this.heldItemStyle = heldOverride ?? (this.carryingResource ? inferHeldItemStyle(this.carryingResource) : 'overhead');
+  }
+
   dropResource(): void {
     this.carryingResource = undefined;
+    this.carryingAmount = 0;
+    this.carryingItems = [];
     this.state = 'idle';
     this.heldItemStyle = 'overhead';
   }

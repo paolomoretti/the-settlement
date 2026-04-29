@@ -3415,6 +3415,18 @@ export class RenderSystem extends System {
     return best;
   }
 
+  private isLinearizedWaterHalfShore(x: number, y: number, card: number): boolean {
+    const axisSteps = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
+    if (this.waterMaskRunLength(x, y, card, axisSteps) >= 2) return true;
+
+    // Same topology as the smooth-road corner pairs: alternating stair cells read as one straight shore.
+    if (card === 9) return this.getWaterCardinalsMask(x - 1, y) === 6 || this.getWaterCardinalsMask(x, y + 1) === 6;
+    if (card === 6) return this.getWaterCardinalsMask(x, y - 1) === 9 || this.getWaterCardinalsMask(x + 1, y) === 9;
+    if (card === 3) return this.getWaterCardinalsMask(x - 1, y) === 12 || this.getWaterCardinalsMask(x, y - 1) === 12;
+    if (card === 12) return this.getWaterCardinalsMask(x + 1, y) === 3 || this.getWaterCardinalsMask(x, y + 1) === 3;
+    return false;
+  }
+
   /**
    * Straight world-space boundary between this water tile and its single land neighbor,
    * when water forms a diagonal run in grid ((1,-1) steps) or ((1,1)) matching constant
@@ -3424,7 +3436,18 @@ export class RenderSystem extends System {
     const cfg = this.getWaterConfig(wx, wy);
     if (cfg === 255) return null;
     const card = cfg & 0xF;
-    if (this.popcountNibble(card) !== 3) return null;
+    const waterNeighborCount = this.popcountNibble(card);
+    if (waterNeighborCount !== 2 && waterNeighborCount !== 3) return null;
+
+    if (waterNeighborCount === 2 && this.isLinearizedWaterHalfShore(wx, wy, card)) {
+      const w = this.iso.gridToScreen(wx, wy);
+      if (card === 3) return { axis: 'horizontal', worldY: w.y, grassHalf: 'lower' };
+      if (card === 12) return { axis: 'horizontal', worldY: w.y, grassHalf: 'upper' };
+      if (card === 9) return { axis: 'vertical', worldX: w.x, grassHalf: 'right' };
+      if (card === 6) return { axis: 'vertical', worldX: w.x, grassHalf: 'left' };
+    }
+
+    if (waterNeighborCount !== 3) return null;
     const landMask = (~card) & 0xF;
     const diagHR = [[1, -1], [-1, 1]] as const;
     const diagVR = [[1, 1], [-1, -1]] as const;
@@ -3705,6 +3728,7 @@ export class RenderSystem extends System {
 
     // Check if this entity is selected
     const isSelected = this.selectedEntityId === entity.id;
+    const isHoveredWorker = this.hoveredEntityId === entity.id && entity.hasComponent(Worker) && !building;
 
     // Use drag preview position if dragging this entity
     const renderX = (isSelected && this.dragPreviewPosition) ? this.dragPreviewPosition.x : pos.x;
@@ -3725,6 +3749,10 @@ export class RenderSystem extends System {
     // Apply fade effect for selected buildings
     if (isSelected && building) {
       this.ctx.globalAlpha = 0.7;
+    }
+
+    if (isHoveredWorker || (isSelected && entity.hasComponent(Worker) && !building)) {
+      this.ctx.filter = 'brightness(1.25) drop-shadow(0 0 4px rgba(255, 235, 160, 0.85))';
     }
 
     // Apply opacity fade for under-construction buildings without construction sprites
@@ -3831,7 +3859,7 @@ export class RenderSystem extends System {
     }
 
     // Reset filter before drawing status indicators
-    if (isInactive) {
+    if (isInactive || isHoveredWorker || (isSelected && entity.hasComponent(Worker) && !building)) {
       this.ctx.filter = 'none';
     }
 
@@ -4646,6 +4674,10 @@ export class RenderSystem extends System {
     const frame = isMoving || isCombatDuel ? Math.floor(now / (isCombatDuel ? 120 : 200)) % 4 : 0;
     // Keep military close to civilian size; body proportions are normalized in painter.
     const s = worker.role === 'military' ? 2.05 : 2;
+    if (worker.carrierType === 'donkey') {
+      this.renderDonkeySprite(s, facing, isMoving, frame, worker.carryingItems);
+      return;
+    }
     const anim = worker.idleAnim;
     const animT = anim !== 'none' ? (now - worker.idleAnimStart) / worker.idleAnimDuration : 0;
 
@@ -4756,6 +4788,106 @@ export class RenderSystem extends System {
       drawRoundFootShadow: true,
       napPillowArms: false,
     });
+  }
+
+  private renderDonkeySprite(
+    s: number,
+    facing: number,
+    isMoving: boolean,
+    frame: number,
+    carriedItems: Array<{ resourceType: string }>
+  ): void {
+    const mirror = facing === 1 || facing === 2;
+    const showBack = facing === 2 || facing === 3;
+    const legSwing = isMoving ? (frame === 1 ? 1.6 : frame === 3 ? -1.6 : 0) : 0;
+
+    this.ctx.save();
+    if (mirror) this.ctx.scale(-1, 1);
+
+    this.ctx.globalAlpha = 0.22;
+    this.ctx.fillStyle = '#000';
+    this.ctx.beginPath();
+    this.ctx.ellipse(0, 1 * s, 9 * s, 3 * s, 0, 0, Math.PI * 2);
+    this.ctx.fill();
+    this.ctx.globalAlpha = 1;
+
+    const px = (x: number, y: number, w: number, h: number, color: string) => {
+      this.ctx.fillStyle = color;
+      this.ctx.fillRect(x * s, y * s, w * s, h * s);
+    };
+
+    const body = showBack ? '#74604b' : '#80684f';
+    const bodyDark = '#4d392b';
+    const muzzle = '#b9956d';
+    const bag = '#9b6b34';
+    const bagDark = '#5a371c';
+
+    px(-7, -9, 14, 7, body);
+    px(-6, -10, 12, 2, '#92765a');
+    px(-8, -7, 2, 4, bodyDark);
+
+    px(5, -12, 3, 5, body);
+    px(7, -15, 5, 5, body);
+    px(10, -13, 3, 2, muzzle);
+
+    px(7, -18, 1, 4, bodyDark);
+    px(10, -18, 1, 4, bodyDark);
+    if (!showBack) {
+      px(10, -13, 1, 1, '#15110c');
+    }
+
+    px(-5, -4, 2, 6 + legSwing, bodyDark);
+    px(-1, -4, 2, 6 - legSwing, bodyDark);
+    px(3, -4, 2, 6 - legSwing, bodyDark);
+    px(6, -4, 2, 6 + legSwing, bodyDark);
+    px(-5, 2 + legSwing, 3, 1, '#251a12');
+    px(-1, 2 - legSwing, 3, 1, '#251a12');
+    px(3, 2 - legSwing, 3, 1, '#251a12');
+    px(6, 2 + legSwing, 3, 1, '#251a12');
+
+    px(-5, -13, 5, 6, bag);
+    px(1, -13, 5, 6, bag);
+    px(-5, -8, 5, 1, bagDark);
+    px(1, -8, 5, 1, bagDark);
+    px(-1, -13, 2, 5, '#4a2f1a');
+
+    if (carriedItems.length > 0) {
+      this.renderDonkeyLoadIcons(carriedItems.slice(0, 5), s);
+    }
+
+    this.ctx.restore();
+  }
+
+  private renderDonkeyLoadIcons(items: Array<{ resourceType: string }>, s: number): void {
+    const iconSize = 4.6 * s * RESOURCE_ICON_DRAW_SCALE;
+    const half = iconSize / 2;
+    const positions = [
+      { x: -3.4, y: -12.1 },
+      { x: 3.2, y: -12.1 },
+      { x: -0.1, y: -14.5 },
+      { x: -5.4, y: -9.9 },
+      { x: 5.2, y: -9.9 },
+    ];
+
+    for (let i = 0; i < items.length; i++) {
+      const icon = this.loadSprite(`/assets/resources/${items[i]!.resourceType}.png`);
+      const p = positions[i]!;
+      const cx = p.x * s;
+      const cy = p.y * s;
+      this.ctx.save();
+      this.ctx.translate(cx, cy);
+      this.ctx.rotate((i % 2 === 0 ? -0.08 : 0.08));
+      if (icon) {
+        this.ctx.drawImage(icon, -half, -half, iconSize, iconSize);
+      } else {
+        this.ctx.fillStyle = '#d2a654';
+        this.ctx.fillRect(-half, -half, iconSize, iconSize);
+        this.ctx.strokeStyle = '#5a371c';
+        this.ctx.lineWidth = 0.8;
+        this.ctx.strokeRect(-half, -half, iconSize, iconSize);
+      }
+      this.ctx.restore();
+    }
   }
 
   private renderCircle(renderable: Renderable): void {

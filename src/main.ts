@@ -5,6 +5,7 @@ import { BuildingMenu } from '@/ui/BuildingMenu';
 import { BuildingPopover } from '@/ui/BuildingPopover';
 import { GamePopover } from '@/ui/GamePopover';
 import { CanvasHoverTooltip } from '@/ui/CanvasHoverTooltip';
+import { Position } from '@/components/Position';
 import { setupKeyboardShortcuts } from '@/input/KeyboardShortcuts';
 import { showToast, setupToastListener } from '@/ui/Toast';
 import { audioManager } from '@/audio/AudioManager';
@@ -18,6 +19,8 @@ let buildingMenu: BuildingMenu | null = null;
 let buildingPopover: BuildingPopover | null = null;
 let cellSurveyPopover: GamePopover | null = null;
 let canvasHoverTooltip: CanvasHoverTooltip | null = null;
+let roadWorkerPopover: GamePopover | null = null;
+let roadWorkerPopoverEntityId: number | null = null;
 let unregisterHoverFrameHook: (() => void) | null = null;
 let inventoryActiveTab: 'resources' | 'workers' | 'production' | 'buildings' = 'resources';
 
@@ -456,11 +459,21 @@ function setupGameUI(game: Game): void {
   });
 
   eventBus.on('building:selected', (data) => {
+    hideRoadWorkerPopover();
     buildingPopover!.show(data.entity);
   });
 
   eventBus.on('building:deselected', () => {
     buildingPopover!.hide();
+  });
+
+  eventBus.on('road_worker:selected', (data) => {
+    buildingPopover!.hide();
+    showRoadWorkerPopover(data);
+  });
+
+  eventBus.on('road_worker:deselected', () => {
+    hideRoadWorkerPopover();
   });
 
   eventBus.on('delete:selected', () => {
@@ -500,6 +513,90 @@ function setupGameUI(game: Game): void {
   eventBus.on('close:inventory', () => hideInventoryPanel());
   eventBus.on('close:building_menu', () => buildingMenu?.close());
   eventBus.on('close:options', () => closeOptionsOverlay());
+}
+
+function hideRoadWorkerPopover(): void {
+  roadWorkerPopover?.hide();
+  roadWorkerPopoverEntityId = null;
+}
+
+function showRoadWorkerPopover(data: any): void {
+  if (!game) return;
+  const entity = data.entity;
+  const worker = data.worker;
+  if (!entity || !worker) return;
+
+  if (!roadWorkerPopover) {
+    const container = document.getElementById('ui-overlay')!;
+    roadWorkerPopover = new GamePopover(container);
+    roadWorkerPopover.onClose = () => {
+      if (game?.selectedEntity?.id === roadWorkerPopoverEntityId) {
+        game.selectedEntity = null;
+      }
+      roadWorkerPopoverEntityId = null;
+    };
+  }
+
+  roadWorkerPopoverEntityId = entity.id;
+  const isDonkey = worker.carrierType === 'donkey';
+  const capacity = worker.transportCarryCapacity ?? 1;
+  const content = document.createElement('div');
+  content.className = 'road-worker-popover-body';
+  content.style.minWidth = '220px';
+
+  const stats = document.createElement('div');
+  stats.style.display = 'grid';
+  stats.style.gap = '7px';
+  stats.style.marginBottom = '10px';
+  stats.appendChild(createRoadWorkerStat('HQ donkeys', `${data.donkeysAtHq ?? 0}`));
+  stats.appendChild(createRoadWorkerStat('Carry capacity', `${capacity}`));
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.textContent = isDonkey ? 'Swap with normal worker' : 'Replace with donkey';
+  btn.disabled = isDonkey ? !data.canReturnDonkeyToHq : !data.canReplaceWithDonkey;
+  btn.style.width = '100%';
+  btn.style.padding = '8px 10px';
+  btn.style.border = '1px solid rgba(246, 210, 106, 0.75)';
+  btn.style.borderRadius = '6px';
+  btn.style.background = btn.disabled ? 'rgba(80, 70, 60, 0.8)' : '#8b5f2b';
+  btn.style.color = '#fff8dc';
+  btn.style.fontWeight = '700';
+  btn.style.cursor = btn.disabled ? 'not-allowed' : 'pointer';
+  btn.addEventListener('click', () => {
+    eventBus.emit(isDonkey ? 'road_worker:return_donkey' : 'road_worker:replace_with_donkey', {
+      entityId: entity.id,
+    });
+  });
+
+  content.appendChild(stats);
+  content.appendChild(btn);
+
+  roadWorkerPopover.show(isDonkey ? 'Donkey Carrier' : 'Road Worker', content, () => {
+    const pos = entity.getComponent(Position);
+    if (!game || !pos) return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    return game.renderSystem.gridToScreen(pos.x, pos.y);
+  });
+}
+
+function createRoadWorkerStat(label: string, value: string): HTMLElement {
+  const row = document.createElement('div');
+  row.style.display = 'grid';
+  row.style.gridTemplateColumns = '1fr auto';
+  row.style.alignItems = 'center';
+  row.style.gap = '7px';
+
+  const labelEl = document.createElement('span');
+  labelEl.textContent = label;
+  labelEl.style.opacity = '0.82';
+
+  const valueEl = document.createElement('strong');
+  valueEl.textContent = value;
+  valueEl.style.color = '#fff2d0';
+
+  row.appendChild(labelEl);
+  row.appendChild(valueEl);
+  return row;
 }
 
 function closeOptionsOverlay(): void {

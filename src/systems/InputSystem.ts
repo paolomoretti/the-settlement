@@ -56,6 +56,12 @@ export class InputSystem {
     }
   }
 
+  setHoverPointerActive(active: boolean): void {
+    if (this.spacebarPressed || this.isRightButtonPan) return;
+    if (this.mode !== 'view') return;
+    this.canvas.style.cursor = active ? 'pointer' : 'default';
+  }
+
   private setupEventListeners(): void {
     // Mouse events
     this.canvas.addEventListener('mousedown', (e) =>

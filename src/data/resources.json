@@ -136,6 +136,15 @@
     "stackSize": 100,
     "icon": "/assets/ui/icons/beer.png"
   },
+  "donkey": {
+    "id": "donkey",
+    "name": "Donkey",
+    "category": "raw",
+    "virtualOutput": true,
+    "description": "Transport animal assigned from headquarters to road carriers.",
+    "stackSize": 1,
+    "icon": "/assets/resources/donkey.png"
+  },
   "hammer": {
     "id": "hammer",
     "name": "Hammer",

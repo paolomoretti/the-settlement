@@ -14,7 +14,7 @@ import { PathFinder } from '@/pathfinding/AStar';
 import { audioManager } from '@/audio/AudioManager';
 import { Position } from '@/components/Position';
 import { Movable } from '@/components/Movable';
-import { Worker } from '@/components/Worker';
+import { Worker, type TransportLoadItem } from '@/components/Worker';
 import { Building } from '@/components/Building';
 import { Production, type ProductionPriorityState } from '@/components/Production';
 import { Storage } from '@/components/Storage';
@@ -135,6 +135,8 @@ export class Game {
   private toolSpecialistsAtHq: Record<string, number> = {};
   /** Specialized military workers idle at HQ and ready for reassignment. */
   private militarySpecialistsAtHq = 0;
+  /** Donkeys idle at HQ and ready to upgrade one road carrier. New games start with one for testing. */
+  private donkeysAtHq = 1;
 
   /** Wild rabbits (spawn, wander, hunt targets); see `.claude/WILDLIFE_RABBITS.md`. */
   public wildlife = new WildlifeCoordinator();
@@ -244,6 +246,7 @@ export class Game {
       claimToolSpecialistForDispatch: (tool: string) => this.claimToolSpecialistForDispatch(tool),
       returnToolSpecialistToHq: (tool: string) => this.addToolSpecialistToHqPool(tool, 1),
       onMilitarySpecialistReturnedToHq: () => this.addMilitarySpecialistToHqPool(1),
+      onDonkeyReturnedToHq: () => this.onDonkeyReturnedToHq(),
       isEntitySimulationActive: entity => this.isEntitySimulationActive(entity),
     });
 
@@ -450,6 +453,20 @@ export class Game {
     eventBus.on('select:entity', (data: { x: number; y: number; clientX?: number; clientY?: number }) =>
       this.selectEntityAt(data.x, data.y, data.clientX, data.clientY));
     eventBus.on('delete:selected', () => this.deleteSelectedEntity());
+    eventBus.on('road_worker:replace_with_donkey', (data: { entityId: number }) => {
+      if (!this.replaceRoadWorkerWithDonkey(data.entityId)) {
+        eventBus.emit('build:failed', { reason: 'No donkey available at headquarters' });
+      } else if (this.selectedEntity?.id === data.entityId) {
+        this.updateSelectionUI();
+      }
+    });
+    eventBus.on('road_worker:return_donkey', (data: { entityId: number }) => {
+      if (!this.returnRoadDonkeyToHq(data.entityId)) {
+        eventBus.emit('build:failed', { reason: 'This carrier is not using a donkey' });
+      } else if (this.selectedEntity?.id === data.entityId) {
+        this.updateSelectionUI();
+      }
+    });
     eventBus.on('check:drag_selected', (data) => this.checkDragSelected(data.x, data.y));
     eventBus.on('drag:move', (data) => this.dragEntityTo(data.x, data.y));
     eventBus.on('drag:end', (data) => this.dropEntity(data.x, data.y));
@@ -613,8 +630,46 @@ export class Game {
     this.recomputeTransportRoutes();
   }
 
-  private onProductionComplete(_payload: { entityId: number; outputs: Record<string, number> }): void {
+  private onProductionComplete(payload: { entityId: number; outputs: Record<string, number> }): void {
+    if ((payload.outputs.donkey ?? 0) > 0) {
+      this.dispatchBredDonkeyToHq(payload.entityId, payload.outputs.donkey);
+    }
     this.kickTransportRoutesForNewOutput();
+  }
+
+  private dispatchBredDonkeyToHq(sourceEntityId: number, count: number): void {
+    const source = this.entities.find(e => e.id === sourceEntityId && e.active);
+    if (!source) {
+      this.donkeysAtHq += count;
+      return;
+    }
+    const roadTile = this.workers.getBuildingDispatchRoadTile(source);
+    const pos = source.getComponent(Position);
+    const building = source.getComponent(Building);
+    const startX = roadTile?.x ?? (pos && building ? pos.x + Math.floor(building.width / 2) : null);
+    const startY = roadTile?.y ?? (pos && building ? pos.y + Math.floor(building.height / 2) : null);
+    if (startX == null || startY == null) {
+      this.donkeysAtHq += count;
+      return;
+    }
+
+    for (let i = 0; i < count; i++) {
+      const donkey = createWorker(startX + 0.5, startY + 0.5);
+      const worker = donkey.getComponent(Worker);
+      if (worker) {
+        worker.carrierType = 'donkey';
+        worker.transportCarryCapacity = 5;
+        worker.returnToHqAsDonkey = true;
+        worker.name = 'Donkey';
+        worker.setState('walking');
+      }
+      this.addEntity(donkey);
+      if (!this.workers.sendLooseWorkerBackToBaseCamp(donkey, source, 1.8)) {
+        this.removeEntity(donkey);
+        this.donkeysAtHq++;
+      }
+    }
+    eventBus.emit('resource:updated');
   }
 
   private hasAnyUnroutedProductionOutput(): boolean {
@@ -786,12 +841,22 @@ export class Game {
       if (worker.carryingResource) {
         const p = entity.getComponent(Position);
         if (p) {
-          transportManager.addJunctionItem(Math.floor(p.x), Math.floor(p.y), worker.carryingResource, task.destEntityId);
+          const items = worker.carryingItems.length > 0
+            ? worker.carryingItems
+            : this.makeTransportLoadItems(worker.carryingResource, task.destEntityId, Math.max(1, worker.carryingAmount || task.amount || 1));
+          for (const item of items) {
+            transportManager.addJunctionItem(Math.floor(p.x), Math.floor(p.y), item.resourceType, item.destinationEntityId);
+          }
         }
-        worker.carryingResource = undefined;
+        worker.dropResource();
       } else if (task.phase === 'to_pickup' && task.sourceEntityId === null) {
-        transportManager.removePendingPickupVisual(task.pickupPos.x, task.pickupPos.y, task.resourceType);
-        transportManager.addJunctionItem(task.pickupPos.x, task.pickupPos.y, task.resourceType, task.destEntityId);
+        const items = task.items && task.items.length > 0
+          ? task.items
+          : this.makeTransportLoadItems(task.resourceType, task.destEntityId, Math.max(1, task.amount || 1));
+        transportManager.removePendingPickupItems(task.pickupPos.x, task.pickupPos.y, items);
+        for (const item of items) {
+          transportManager.addJunctionItem(task.pickupPos.x, task.pickupPos.y, item.resourceType, item.destinationEntityId);
+        }
       }
       worker.transportTask = null;
       worker.setState('idle');
@@ -1627,6 +1692,158 @@ export class Game {
     this.militarySpecialistsAtHq += count;
   }
 
+  private onDonkeyReturnedToHq(): void {
+    this.donkeysAtHq++;
+    eventBus.emit('resource:updated');
+  }
+
+  public getDonkeysAtHq(): number {
+    return this.donkeysAtHq;
+  }
+
+  private countAssignedDonkeys(): number {
+    let n = 0;
+    for (const seg of roadSegmentManager.getSegments()) {
+      if (seg.assignedWorkerId == null) continue;
+      const entity = this.entities.find(e => e.id === seg.assignedWorkerId && e.active);
+      const worker = entity?.getComponent(Worker);
+      if (worker?.carrierType === 'donkey') n++;
+    }
+    return n;
+  }
+
+  private getRoadSegmentForWorkerId(workerId: number): RoadSegment | null {
+    return roadSegmentManager.getSegments().find(seg => seg.assignedWorkerId === workerId) ?? null;
+  }
+
+  public canReplaceRoadWorkerWithDonkey(workerEntityId: number): boolean {
+    const entity = this.entities.find(e => e.id === workerEntityId && e.active);
+    const worker = entity?.getComponent(Worker);
+    if (!worker || !this.getRoadSegmentForWorkerId(workerEntityId)) return false;
+    if (worker.carrierType === 'donkey') return false;
+    return this.donkeysAtHq > 0 || this.countAssignedDonkeys() > 0;
+  }
+
+  public canReturnRoadDonkeyToHq(workerEntityId: number): boolean {
+    const entity = this.entities.find(e => e.id === workerEntityId && e.active);
+    const worker = entity?.getComponent(Worker);
+    return !!worker && !!this.getRoadSegmentForWorkerId(workerEntityId) && worker.carrierType === 'donkey';
+  }
+
+  public returnRoadDonkeyToHq(workerEntityId: number): boolean {
+    const entity = this.entities.find(e => e.id === workerEntityId && e.active);
+    const worker = entity?.getComponent(Worker);
+    const segment = this.getRoadSegmentForWorkerId(workerEntityId);
+    if (!entity || !worker || !segment || worker.carrierType !== 'donkey') {
+      return false;
+    }
+
+    this.cancelRoadWorkerTransportForReassignment(entity);
+    const replacement = this.dispatchRoadCarrierFromHq(segment, 'worker');
+    if (!replacement) return false;
+    segment.assignedWorkerId = replacement.id;
+    worker.returnToHqAsDonkey = true;
+    if (!this.workers.returnRoadSegmentWorkerToHq(entity)) {
+      this.removeEntity(entity);
+      this.onDonkeyReturnedToHq();
+    }
+    eventBus.emit('resource:updated');
+    return true;
+  }
+
+  public replaceRoadWorkerWithDonkey(workerEntityId: number): boolean {
+    const entity = this.entities.find(e => e.id === workerEntityId && e.active);
+    const worker = entity?.getComponent(Worker);
+    const targetSegment = this.getRoadSegmentForWorkerId(workerEntityId);
+    if (!entity || !worker || !targetSegment) return false;
+    if (worker.carrierType === 'donkey') return false;
+
+    if (this.donkeysAtHq > 0) {
+      this.donkeysAtHq--;
+      this.cancelRoadWorkerTransportForReassignment(entity);
+      const replacement = this.dispatchRoadCarrierFromHq(targetSegment, 'donkey');
+      if (!replacement) {
+        this.donkeysAtHq++;
+        return false;
+      }
+      targetSegment.assignedWorkerId = replacement.id;
+      if (!this.workers.returnRoadSegmentWorkerToHq(entity)) {
+        this.removeEntity(entity);
+      }
+      eventBus.emit('resource:updated');
+      return true;
+    } else {
+      const donorSegment = roadSegmentManager.getSegments().find(seg => {
+        if (seg.assignedWorkerId === workerEntityId || seg.assignedWorkerId == null) return false;
+        const donorEntity = this.entities.find(e => e.id === seg.assignedWorkerId && e.active);
+        return donorEntity?.getComponent(Worker)?.carrierType === 'donkey';
+      });
+      const donor = donorSegment?.assignedWorkerId != null
+        ? this.entities.find(e => e.id === donorSegment.assignedWorkerId && e.active)
+        : null;
+      const donorWorker = donor?.getComponent(Worker);
+      if (!donorSegment || !donor || !donorWorker) return false;
+
+      this.cancelRoadWorkerTransportForReassignment(donor);
+      this.cancelRoadWorkerTransportForReassignment(entity);
+
+      const donorReplacement = this.dispatchRoadCarrierFromHq(donorSegment, 'worker');
+      if (!donorReplacement) return false;
+      donorSegment.assignedWorkerId = donorReplacement.id;
+      targetSegment.assignedWorkerId = donor.id;
+      this.workers.moveRoadSegmentWorkerToSegment(donor.id, targetSegment);
+      if (!this.workers.returnRoadSegmentWorkerToHq(entity)) {
+        this.removeEntity(entity);
+      }
+      eventBus.emit('resource:updated');
+      return true;
+    }
+  }
+
+  private dispatchRoadCarrierFromHq(segment: RoadSegment, carrierType: 'worker' | 'donkey'): Entity | null {
+    const spawnTile = this.workers.getBaseCampSpawnTile();
+    if (!spawnTile) return null;
+    const entity = createWorker(spawnTile.x, spawnTile.y);
+    const worker = entity.getComponent(Worker);
+    if (worker && carrierType === 'donkey') {
+      worker.carrierType = 'donkey';
+      worker.transportCarryCapacity = 5;
+      worker.name = 'Donkey';
+    }
+    this.addEntity(entity);
+    this.workers.restoreRoadSegmentWorker(entity.id);
+    this.workers.moveRoadSegmentWorkerToSegment(entity.id, segment);
+    return entity;
+  }
+
+  private cancelRoadWorkerTransportForReassignment(entity: Entity): void {
+    const worker = entity.getComponent(Worker);
+    if (!worker?.transportTask) return;
+    const task = worker.transportTask;
+    if (worker.carryingResource) {
+      const pos = entity.getComponent(Position);
+      if (pos) {
+        const items = worker.carryingItems.length > 0
+          ? worker.carryingItems
+          : this.makeTransportLoadItems(worker.carryingResource, task.destEntityId, Math.max(1, worker.carryingAmount || task.amount || 1));
+        for (const item of items) {
+          transportManager.addJunctionItem(Math.floor(pos.x), Math.floor(pos.y), item.resourceType, item.destinationEntityId);
+        }
+      }
+      worker.dropResource();
+    } else if (task.phase === 'to_pickup' && task.sourceEntityId === null) {
+      const items = task.items && task.items.length > 0
+        ? task.items
+        : this.makeTransportLoadItems(task.resourceType, task.destEntityId, Math.max(1, task.amount || 1));
+      transportManager.removePendingPickupItems(task.pickupPos.x, task.pickupPos.y, items);
+      for (const item of items) {
+        transportManager.addJunctionItem(task.pickupPos.x, task.pickupPos.y, item.resourceType, item.destinationEntityId);
+      }
+    }
+    worker.transportTask = null;
+    worker.setState('idle');
+  }
+
   public getSpecializedWorkersSummary(): Array<{
     id: string;
     label: string;
@@ -1693,6 +1910,15 @@ export class Game {
       total: militaryTotal,
       hqReady: this.militarySpecialistsAtHq,
       iconResourceId: 'sword',
+    });
+
+    rows.push({
+      id: 'donkey',
+      label: 'Donkey',
+      employed: this.countAssignedDonkeys(),
+      total: this.donkeysAtHq + this.countAssignedDonkeys(),
+      hqReady: this.donkeysAtHq,
+      iconResourceId: 'donkey',
     });
 
     return rows.sort((a, b) => a.label.localeCompare(b.label));
@@ -1918,8 +2144,12 @@ export class Game {
           if (!workerEntity) continue;
           const worker = workerEntity.getComponent(Worker);
           if (!worker?.transportTask) continue;
-          if (worker.transportTask.destEntityId === entity.id && worker.transportTask.resourceType === res) {
-            inTransit++;
+          if (worker.carryingItems.length > 0) {
+            inTransit += worker.carryingItems.length > 0
+              ? worker.carryingItems.filter(item => item.destinationEntityId === entity.id && item.resourceType === res).length
+              : 0;
+          } else if (worker.transportTask.destEntityId === entity.id && worker.transportTask.resourceType === res) {
+            inTransit += Math.max(1, worker.carryingAmount || worker.transportTask.amount || 1);
           }
         }
 
@@ -1976,9 +2206,11 @@ export class Game {
       const task = worker?.transportTask;
       if (!task || task.destEntityId !== destEntityId) continue;
       if (task.phase === 'to_dropoff') {
-        inTransit++;
+        inTransit += worker?.carryingItems.length
+          ? worker.carryingItems.filter(item => item.destinationEntityId === destEntityId).length
+          : Math.max(1, worker?.carryingAmount || task.amount || 1);
       } else if (task.phase === 'to_pickup' && task.sourceEntityId != null) {
-        inTransit++;
+        inTransit += Math.max(1, task.amount || 1);
       }
     }
 
@@ -2017,9 +2249,13 @@ export class Game {
         task.resourceType === resourceType
       ) {
         if (task.phase === 'to_dropoff') {
-          n++;
+          n += worker?.carryingItems.length
+            ? worker.carryingItems.filter(item =>
+              item.destinationEntityId === destEntityId && item.resourceType === resourceType
+            ).length
+            : Math.max(1, worker?.carryingAmount || task.amount || 1);
         } else if (task.phase === 'to_pickup' && task.sourceEntityId != null) {
-          n++;
+          n += Math.max(1, task.amount || 1);
         }
       }
     }
@@ -2462,6 +2698,7 @@ export class Game {
             pickupPos: { x: ep.x, y: ep.y },
             dropoffPos: { x: dropoffEp.x, y: dropoffEp.y },
             resourceType: output.resourceType,
+            amount: Math.max(1, worker.transportCarryCapacity),
             sourceEntityId: ep.entityId,
             destEntityId,
           };
@@ -2480,12 +2717,23 @@ export class Game {
       // Check junction items at this endpoint
       const junctionItem = transportManager.takeJunctionItemForDirection(ep.x, ep.y, segment.id, pickupIdx);
       if (junctionItem) {
-        transportManager.addPendingPickupVisual(ep.x, ep.y, junctionItem.resourceType, junctionItem.destinationEntityId);
+        const items = [
+          junctionItem,
+          ...transportManager.takeJunctionItemsForDirection(
+          ep.x,
+          ep.y,
+          segment.id,
+          pickupIdx,
+          Math.max(0, worker.transportCarryCapacity - 1)
+        )];
+        transportManager.addPendingPickupItems(ep.x, ep.y, items);
         worker.transportTask = {
           phase: 'to_pickup',
           pickupPos: { x: ep.x, y: ep.y },
           dropoffPos: { x: dropoffEp.x, y: dropoffEp.y },
           resourceType: junctionItem.resourceType,
+          amount: items.length,
+          items,
           sourceEntityId: null,
           destEntityId: junctionItem.destinationEntityId,
         };
@@ -2529,6 +2777,7 @@ export class Game {
         pickupPos: { x: tile.x, y: tile.y },
         dropoffPos: { x: dropoffEp.x, y: dropoffEp.y },
         resourceType: item.resourceType,
+        amount: 1,
         sourceEntityId: null,
         destEntityId,
       };
@@ -2559,18 +2808,25 @@ export class Game {
     if (epIdx < 0) return false;
     const junctionItem = transportManager.takeJunctionItemForDirection(tileX, tileY, segment.id, epIdx);
     if (!junctionItem) return false;
-    transportManager.addPendingPickupVisual(
-      tileX,
-      tileY,
-      junctionItem.resourceType,
-      junctionItem.destinationEntityId
-    );
+    const items = [
+      junctionItem,
+      ...transportManager.takeJunctionItemsForDirection(
+        tileX,
+        tileY,
+        segment.id,
+        epIdx,
+        Math.max(0, worker.transportCarryCapacity - 1)
+      ),
+    ];
+    transportManager.addPendingPickupItems(tileX, tileY, items);
     const otherEp = segment.endpoints[1 - epIdx]!;
     worker.transportTask = {
       phase: 'to_pickup',
       pickupPos: { x: tileX, y: tileY },
       dropoffPos: { x: otherEp.x, y: otherEp.y },
       resourceType: junctionItem.resourceType,
+      amount: items.length,
+      items,
       sourceEntityId: null,
       destEntityId: junctionItem.destinationEntityId,
     };
@@ -2583,22 +2839,42 @@ export class Game {
     switch (task.phase) {
       case 'to_pickup': {
         let taken = false;
+        let takenAmount = 0;
+        const requestedAmount = Math.max(1, Math.min(worker.transportCarryCapacity, task.amount || 1));
         if (task.sourceEntityId != null) {
           const bldgEntity = this.entities.find(e => e.id === task.sourceEntityId && e.active);
           if (bldgEntity) {
             const production = bldgEntity.getComponent(Production);
             const bldgStorage = bldgEntity.getComponent(Storage);
-            if (production && production.removeFromBuffer(task.resourceType, 1) > 0) {
-              worker.pickUpResource(task.resourceType);
+            if (production && (takenAmount = production.removeFromBuffer(task.resourceType, requestedAmount)) > 0) {
+              worker.pickUpTransportItems(this.makeTransportLoadItems(task.resourceType, task.destEntityId, takenAmount));
               taken = true;
-            } else if (bldgStorage?.isProductionStorage && bldgStorage.removeItem(task.resourceType, 1) > 0) {
-              worker.pickUpResource(task.resourceType);
+            } else if (bldgStorage?.isProductionStorage && (takenAmount = bldgStorage.removeItem(task.resourceType, requestedAmount)) > 0) {
+              worker.pickUpTransportItems(this.makeTransportLoadItems(task.resourceType, task.destEntityId, takenAmount));
               taken = true;
             }
           }
         } else {
-          transportManager.removePendingPickupVisual(task.pickupPos.x, task.pickupPos.y, task.resourceType);
-          worker.pickUpResource(task.resourceType);
+          const reservedItems = task.items && task.items.length > 0
+            ? task.items
+            : this.makeTransportLoadItems(task.resourceType, task.destEntityId, Math.max(1, task.amount || 1));
+          transportManager.removePendingPickupItems(task.pickupPos.x, task.pickupPos.y, reservedItems);
+          let carriedItems = [...reservedItems];
+          const pickupEpIdx = segment.endpoints.findIndex(
+            ep => ep.x === task.pickupPos.x && ep.y === task.pickupPos.y
+          );
+          if (pickupEpIdx >= 0 && carriedItems.length < worker.transportCarryCapacity) {
+            const extraItems = transportManager.takeJunctionItemsForDirection(
+              task.pickupPos.x,
+              task.pickupPos.y,
+              segment.id,
+              pickupEpIdx,
+              worker.transportCarryCapacity - carriedItems.length
+            );
+            carriedItems = [...carriedItems, ...extraItems];
+          }
+          takenAmount = carriedItems.length;
+          worker.pickUpTransportItems(carriedItems);
           taken = true;
         }
         if (!taken) {
@@ -2607,6 +2883,7 @@ export class Game {
           this.walkWorkerToCenter(segment, movable, pos, worker);
           return;
         }
+        task.amount = takenAmount;
         task.phase = 'to_dropoff';
         const path = this.getSegmentPathToTile(segment, pos, task.dropoffPos.x, task.dropoffPos.y);
         if (path.length > 0) {
@@ -2616,8 +2893,18 @@ export class Game {
         break;
       }
       case 'to_dropoff': {
-        const res = worker.carryingResource;
-        if (!res) {
+        const carriedItems = worker.carryingItems.length > 0
+          ? worker.carryingItems
+          : (
+            worker.carryingResource
+              ? this.makeTransportLoadItems(
+                worker.carryingResource,
+                task.destEntityId,
+                Math.max(1, worker.carryingAmount || task.amount || 1)
+              )
+              : []
+          );
+        if (carriedItems.length === 0) {
           worker.transportTask = null;
           worker.setState('idle');
           this.walkWorkerToCenter(segment, movable, pos, worker);
@@ -2629,49 +2916,11 @@ export class Game {
         );
         const dropoffEp = segment.endpoints[dropoffEpIdx];
 
-        if (dropoffEp?.entityId === task.destEntityId && task.destEntityId != null) {
-          if (task.destEntityId === this.baseCampEntity?.id) {
-            const storage = this.baseCampEntity!.getComponent(Storage);
-            if (storage) storage.addItem(res, 1);
-          } else {
-            const destEntity = this.entities.find(e => e.id === task.destEntityId && e.active);
-            if (destEntity) {
-              // Check if this is a construction site delivery
-              const destBuilding = destEntity.getComponent(Building);
-              if (destBuilding && destBuilding.state === 'awaiting_materials') {
-                if (!destBuilding.deliverMaterial(res)) {
-                  transportManager.addJunctionItem(task.dropoffPos.x, task.dropoffPos.y, res, this.baseCampEntity?.id ?? null);
-                }
-              } else {
-                const destStorage = destEntity.getComponent(Storage);
-                const destProduction = destEntity.getComponent(Production);
-                if (
-                  destStorage &&
-                  destStorage.canAccept(res) &&
-                  this.canAddProductionInputToLocalStorage(
-                    destEntity,
-                    destStorage,
-                    destProduction ?? null,
-                    res,
-                    1,
-                    true
-                  )
-                ) {
-                  const added = destStorage.addItem(res, 1);
-                  if (added > 0 && res === 'gold_coin' && destBuilding) {
-                    this.tryConsumeMilitaryGoldAfterDelivery(destEntity, destBuilding);
-                  }
-                } else {
-                  transportManager.addJunctionItem(task.dropoffPos.x, task.dropoffPos.y, res, this.baseCampEntity?.id ?? null);
-                }
-              }
-            } else {
-              transportManager.addJunctionItem(task.dropoffPos.x, task.dropoffPos.y, res, this.baseCampEntity?.id ?? null);
-            }
-          }
-        } else {
-          transportManager.addJunctionItem(task.dropoffPos.x, task.dropoffPos.y, res, task.destEntityId);
-        }
+        // During batch unload, do not count this donkey's remaining carried stack as still in
+        // transit to the same storage. Otherwise production storage accepts the first unit and
+        // rejects the rest as "already reserved", causing one-by-one re-delivery loops.
+        worker.carryingItems = [];
+        this.deliverTransportLoadItems(carriedItems, dropoffEp, task.dropoffPos);
 
         worker.dropResource();
 
@@ -2691,6 +2940,101 @@ export class Game {
         break;
       }
     }
+  }
+
+  private makeTransportLoadItems(
+    resourceType: string,
+    destinationEntityId: number | null,
+    amount: number
+  ): TransportLoadItem[] {
+    return Array.from({ length: Math.max(0, Math.floor(amount)) }, () => ({
+      resourceType,
+      destinationEntityId,
+    }));
+  }
+
+  private deliverTransportLoadItems(
+    items: TransportLoadItem[],
+    dropoffEp: RoadSegment['endpoints'][number] | undefined,
+    dropoffPos: { x: number; y: number }
+  ): void {
+    const remaining: TransportLoadItem[] = [];
+    const groupedFinalDeliveries = new Map<number, TransportLoadItem[]>();
+
+    for (const item of items) {
+      if (dropoffEp?.entityId === item.destinationEntityId && item.destinationEntityId != null) {
+        const list = groupedFinalDeliveries.get(item.destinationEntityId) ?? [];
+        list.push(item);
+        groupedFinalDeliveries.set(item.destinationEntityId, list);
+      } else {
+        remaining.push(item);
+      }
+    }
+
+    for (const [destEntityId, destItems] of groupedFinalDeliveries) {
+      if (destEntityId === this.baseCampEntity?.id) {
+        const storage = this.baseCampEntity.getComponent(Storage);
+        if (storage) {
+          for (const [res, count] of this.groupTransportItemsByResource(destItems)) {
+            const added = storage.addItem(res, count);
+            for (let i = added; i < count; i++) {
+              transportManager.addJunctionItem(dropoffPos.x, dropoffPos.y, res, destEntityId);
+            }
+          }
+        }
+        continue;
+      }
+
+      const destEntity = this.entities.find(e => e.id === destEntityId && e.active);
+      if (!destEntity) {
+        for (const item of destItems) {
+          transportManager.addJunctionItem(dropoffPos.x, dropoffPos.y, item.resourceType, this.baseCampEntity?.id ?? null);
+        }
+        continue;
+      }
+
+      const destBuilding = destEntity.getComponent(Building);
+      if (destBuilding && destBuilding.state === 'awaiting_materials') {
+        for (const item of destItems) {
+          if (!destBuilding.deliverMaterial(item.resourceType)) {
+            transportManager.addJunctionItem(dropoffPos.x, dropoffPos.y, item.resourceType, this.baseCampEntity?.id ?? null);
+          }
+        }
+        continue;
+      }
+
+      const destStorage = destEntity.getComponent(Storage);
+      if (destStorage) {
+        for (const [res, count] of this.groupTransportItemsByResource(destItems)) {
+          const added = destStorage.addItem(res, count);
+          if (added > 0 && res === 'gold_coin' && destBuilding) {
+            for (let i = 0; i < added; i++) {
+              this.tryConsumeMilitaryGoldAfterDelivery(destEntity, destBuilding);
+            }
+          }
+          for (let i = added; i < count; i++) {
+            transportManager.addJunctionItem(dropoffPos.x, dropoffPos.y, res, this.baseCampEntity?.id ?? null);
+          }
+        }
+        continue;
+      }
+
+      for (const item of destItems) {
+        transportManager.addJunctionItem(dropoffPos.x, dropoffPos.y, item.resourceType, this.baseCampEntity?.id ?? null);
+      }
+    }
+
+    for (const item of remaining) {
+      transportManager.addJunctionItem(dropoffPos.x, dropoffPos.y, item.resourceType, item.destinationEntityId);
+    }
+  }
+
+  private groupTransportItemsByResource(items: TransportLoadItem[]): Map<string, number> {
+    const grouped = new Map<string, number>();
+    for (const item of items) {
+      grouped.set(item.resourceType, (grouped.get(item.resourceType) ?? 0) + 1);
+    }
+    return grouped;
   }
 
   private walkWorkerToCenter(segment: RoadSegment, movable: Movable, pos: Position, worker: Worker): void {
@@ -2897,7 +3241,12 @@ export class Game {
     if (this.inputSystem.hoverGridPos) {
       const hx = this.inputSystem.hoverGridPos.x;
       const hy = this.inputSystem.hoverGridPos.y;
-      const hoveredEntity = this.entities.find(entity => {
+      const hoveredWorker = this.findRoadWorkerAtPointer(
+        hx,
+        hy,
+        this.inputSystem.getHoverClientPos() ?? undefined
+      );
+      const hoveredEntity = hoveredWorker ?? this.entities.find(entity => {
         const pos = entity.getComponent(Position);
         const building = entity.getComponent(Building);
         if (!pos || !building) return false;
@@ -2905,8 +3254,10 @@ export class Game {
                hy >= pos.y && hy < pos.y + building.height;
       });
       this.renderSystem.hoveredEntityId = hoveredEntity?.id ?? null;
+      this.inputSystem.setHoverPointerActive(!!hoveredWorker);
     } else {
       this.renderSystem.hoveredEntityId = null;
+      this.inputSystem.setHoverPointerActive(false);
     }
 
     // Alt/Option insight: full tile grid while held; building / rock highlight only in view + stable hover
@@ -4738,10 +5089,52 @@ export class Game {
   }
 
   // Selection and editing functionality
+  private findRoadWorkerAtPointer(
+    gridX: number,
+    gridY: number,
+    clientPos?: { x: number; y: number }
+  ): Entity | null {
+    let best: { entity: Entity; distSq: number } | null = null;
+    for (const seg of roadSegmentManager.getSegments()) {
+      if (seg.assignedWorkerId == null) continue;
+      const entity = this.entities.find(e => e.id === seg.assignedWorkerId && e.active);
+      if (!entity) continue;
+      const worker = entity.getComponent(Worker);
+      const pos = entity.getComponent(Position);
+      if (!worker || !pos || worker.concealedInBuildingId != null) continue;
+
+      if (clientPos) {
+        const screen = this.renderSystem.gridToScreen(pos.x, pos.y);
+        const dx = clientPos.x - screen.x;
+        const dy = clientPos.y - screen.y;
+        const radius = worker.carrierType === 'donkey' ? 30 : 22;
+        const distSq = dx * dx + dy * dy;
+        if (distSq <= radius * radius && (!best || distSq < best.distSq)) {
+          best = { entity, distSq };
+        }
+      } else if (Math.floor(pos.x) === gridX && Math.floor(pos.y) === gridY) {
+        return entity;
+      }
+    }
+    return best?.entity ?? null;
+  }
+
   selectEntityAt(x: number, y: number, clientX?: number, clientY?: number): void {
     const surveyMenuWasOpen = this.cellSurveyMenuOpen;
     if (surveyMenuWasOpen) {
       eventBus.emit('survey:cell_menu_close');
+    }
+
+    const roadWorker = this.findRoadWorkerAtPointer(
+      x,
+      y,
+      clientX !== undefined && clientY !== undefined ? { x: clientX, y: clientY } : undefined
+    );
+    if (roadWorker) {
+      this.clearSurveyPending();
+      this.selectedEntity = roadWorker;
+      this.updateSelectionUI();
+      return;
     }
 
     // Find entity at this position (buildings and roads only, not workers)
@@ -4944,9 +5337,24 @@ export class Game {
       const building = this.selectedEntity.getComponent(Building);
       if (building) {
         eventBus.emit('building:selected', { entity: this.selectedEntity });
+        return;
       }
+      const worker = this.selectedEntity.getComponent(Worker);
+      if (worker && this.getRoadSegmentForWorkerId(this.selectedEntity.id)) {
+        eventBus.emit('road_worker:selected', {
+          entity: this.selectedEntity,
+          worker,
+          segment: this.getRoadSegmentForWorkerId(this.selectedEntity.id),
+          donkeysAtHq: this.donkeysAtHq,
+          canReplaceWithDonkey: this.canReplaceRoadWorkerWithDonkey(this.selectedEntity.id),
+          canReturnDonkeyToHq: this.canReturnRoadDonkeyToHq(this.selectedEntity.id),
+        });
+        return;
+      }
+      eventBus.emit('building:deselected');
     } else {
       eventBus.emit('building:deselected');
+      eventBus.emit('road_worker:deselected');
     }
   }
 
@@ -5026,7 +5434,16 @@ export class Game {
       specialistPools: {
         tools: this.toolSpecialistsAtHq,
         military: this.militarySpecialistsAtHq,
+        donkeys: this.donkeysAtHq,
       },
+      donkeyRoadSegments: roadSegmentManager
+        .getSegments()
+        .filter(seg => {
+          if (seg.assignedWorkerId == null) return false;
+          const entity = this.entities.find(e => e.id === seg.assignedWorkerId && e.active);
+          return entity?.getComponent(Worker)?.carrierType === 'donkey';
+        })
+        .map(seg => seg.id),
       camera: this.renderSystem.getCamera(),
       wildlife: this.wildlife.serialize(),
       demolitionSites: this.demolitionSites,
@@ -5066,6 +5483,7 @@ export class Game {
     this.buildingPriorities = this.createDefaultBuildingPriorities();
     this.toolSpecialistsAtHq = {};
     this.militarySpecialistsAtHq = 0;
+    this.donkeysAtHq = 1;
     this.workers.resetState();
     this.surveys.reset();
     this.pendingBuildingPickups.clear();
@@ -5115,6 +5533,7 @@ export class Game {
       this.pendingBuildingPickups.clear();
       this.toolSpecialistsAtHq = {};
       this.militarySpecialistsAtHq = 0;
+      this.donkeysAtHq = 0;
       this.demolitionSites = [];
       this.nextDemolitionSiteId = 1;
       this.enemyRealms = Array.isArray(saveData.enemyRealms) ? saveData.enemyRealms : [];
@@ -5153,6 +5572,10 @@ export class Game {
         const military = saveData.specialistPools.military;
         if (typeof military === 'number' && military > 0) {
           this.militarySpecialistsAtHq = Math.floor(military);
+        }
+        const donkeys = saveData.specialistPools.donkeys;
+        if (typeof donkeys === 'number' && donkeys > 0) {
+          this.donkeysAtHq = Math.floor(donkeys);
         }
       }
       this.baseCampEntity = null;
@@ -5266,13 +5689,25 @@ export class Game {
       roadSegmentManager.rebuildRoadTileSet(this.tileMap);
       if (saveData.roadSegments) {
         roadSegmentManager.deserialize(saveData.roadSegments);
+        const donkeyRoadSegments = new Set<number>(
+          Array.isArray(saveData.donkeyRoadSegments) ? saveData.donkeyRoadSegments : []
+        );
         // Re-spawn workers for segments that had them
         for (const seg of roadSegmentManager.getSegments()) {
           if (seg.assignedWorkerId !== null) {
             const rest = roadSegmentManager.getCenterRestPosition(seg);
             const worker = createWorker(rest.x, rest.y);
+            if (donkeyRoadSegments.has(seg.id)) {
+              const workerComp = worker.getComponent(Worker);
+              if (workerComp) {
+                workerComp.carrierType = 'donkey';
+                workerComp.transportCarryCapacity = 5;
+                workerComp.name = 'Donkey';
+              }
+            }
             this.addEntity(worker);
             seg.assignedWorkerId = worker.id;
+            this.workers.restoreRoadSegmentWorker(worker.id);
           }
         }
       } else {

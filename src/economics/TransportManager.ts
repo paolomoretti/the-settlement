@@ -42,6 +42,60 @@ export class TransportManager {
     return null;
   }
 
+  takeMatchingJunctionItemsForDirection(
+    x: number,
+    y: number,
+    segmentId: number,
+    pickupEndpointIdx: number,
+    match: JunctionItem,
+    maxCount: number
+  ): JunctionItem[] {
+    const key = `${x},${y}`;
+    const items = this.junctionItems.get(key);
+    if (!items || items.length === 0 || maxCount <= 0) return [];
+
+    const taken: JunctionItem[] = [];
+    for (let i = items.length - 1; i >= 0 && taken.length < maxCount; i--) {
+      const item = items[i]!;
+      if (
+        item.resourceType !== match.resourceType ||
+        item.destinationEntityId !== match.destinationEntityId
+      ) {
+        continue;
+      }
+      const dirIdx = this.getDirectionIndex(segmentId, item.destinationEntityId);
+      if (dirIdx === undefined || dirIdx === pickupEndpointIdx) continue;
+      taken.push(item);
+      items.splice(i, 1);
+    }
+    return taken.reverse();
+  }
+
+  takeJunctionItemsForDirection(
+    x: number,
+    y: number,
+    segmentId: number,
+    pickupEndpointIdx: number,
+    maxCount: number
+  ): JunctionItem[] {
+    const key = `${x},${y}`;
+    const items = this.junctionItems.get(key);
+    if (!items || items.length === 0 || maxCount <= 0) return [];
+
+    const taken: JunctionItem[] = [];
+    for (let i = 0; i < items.length && taken.length < maxCount;) {
+      const item = items[i]!;
+      const dirIdx = this.getDirectionIndex(segmentId, item.destinationEntityId);
+      if (dirIdx !== undefined && dirIdx !== pickupEndpointIdx) {
+        taken.push(item);
+        items.splice(i, 1);
+      } else {
+        i++;
+      }
+    }
+    return taken;
+  }
+
   hasJunctionItems(x: number, y: number): boolean {
     const items = this.junctionItems.get(`${x},${y}`);
     return !!items && items.length > 0;
@@ -73,6 +127,24 @@ export class TransportManager {
     this.pendingPickupVisuals.set(key, items);
   }
 
+  addPendingPickupVisuals(
+    x: number,
+    y: number,
+    resourceType: string,
+    destinationEntityId: number | null,
+    amount: number
+  ): void {
+    for (let i = 0; i < amount; i++) {
+      this.addPendingPickupVisual(x, y, resourceType, destinationEntityId);
+    }
+  }
+
+  addPendingPickupItems(x: number, y: number, items: JunctionItem[]): void {
+    for (const item of items) {
+      this.addPendingPickupVisual(x, y, item.resourceType, item.destinationEntityId);
+    }
+  }
+
   removePendingPickupVisual(x: number, y: number, resourceType: string): void {
     const key = `${x},${y}`;
     const items = this.pendingPickupVisuals.get(key);
@@ -80,6 +152,18 @@ export class TransportManager {
     const idx = items.findIndex(i => i.resourceType === resourceType);
     if (idx !== -1) items.splice(idx, 1);
     if (items.length === 0) this.pendingPickupVisuals.delete(key);
+  }
+
+  removePendingPickupVisuals(x: number, y: number, resourceType: string, amount: number): void {
+    for (let i = 0; i < amount; i++) {
+      this.removePendingPickupVisual(x, y, resourceType);
+    }
+  }
+
+  removePendingPickupItems(x: number, y: number, items: JunctionItem[]): void {
+    for (const item of items) {
+      this.removePendingPickupVisual(x, y, item.resourceType);
+    }
   }
 
   clearItemsAt(x: number, y: number): void {

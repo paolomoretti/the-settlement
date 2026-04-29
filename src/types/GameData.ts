@@ -31,6 +31,7 @@ export type ResourceType =
   | 'meat'
   | 'ham'
   | 'beer'
+  | 'donkey'
 
   // Tools
   | 'hammer'

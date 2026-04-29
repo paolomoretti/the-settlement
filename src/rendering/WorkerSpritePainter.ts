@@ -57,6 +57,7 @@ function paintMilitaryWarrior(
   facing: number,
   isMoving: boolean,
   frame: number,
+  now: number,
   worker: Worker,
   enemyTint: boolean = false
 ): void {
@@ -69,7 +70,7 @@ function paintMilitaryWarrior(
 
   const legOffsets = [[0, 0], [-1, 1], [0, 0], [1, -1]] as const;
   const [leftLeg, rightLeg] = isCombatDuel ? [0, 0] : legOffsets[frame];
-  const duelT = isCombatDuel ? Date.now() / 145 : 0;
+  const duelT = isCombatDuel ? now / 145 : 0;
   const duelSwing = isCombatDuel ? Math.sin(duelT) * 2.2 + Math.sin(duelT * 0.47) * 0.9 : 0;
   const shieldBrace = isCombatDuel ? Math.cos(duelT * 0.85) * 1.15 : 0;
   const walkArmSwing = isCombatDuel ? duelSwing : isMoving ? (frame === 1 ? 1 : frame === 3 ? -1 : 0) : 0;
@@ -226,7 +227,7 @@ export function paintWorkerSpriteBody(
   ctx.save();
 
   if (worker.role === 'military') {
-    paintMilitaryWarrior(ctx, loadSprite, s, facing, isMoving, frame, worker, enemyTint);
+    paintMilitaryWarrior(ctx, loadSprite, s, facing, isMoving, frame, now, worker, enemyTint);
     ctx.restore();
     return;
   }

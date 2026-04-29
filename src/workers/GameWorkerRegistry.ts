@@ -22,12 +22,21 @@ import { dataManager } from '@/data/DataManager';
 import { roadSegmentManager, RoadSegment } from '@/economics/RoadSegmentManager';
 import { transportManager } from '@/economics/TransportManager';
 import { createWorker } from '@/entities/EntityFactory';
+import { getSimulationNowMs } from '@/core/simulationClock';
 import { applyProductionCycleOutputs } from '@/systems/ProductionSystem';
 import { getEntityFaction, isPlayerOwned, setEntityFaction } from '@/components/ownerUtils';
 import type { ResourceType, BuildingDefinition, AnimationConfig, BuildingType } from '@/types/GameData';
 import type { WildlifeCoordinator } from '@/wildlife/WildlifeCoordinator';
 
 const HQ_STREET_DISPATCH_SPACING_MS = 500;
+
+type PendingHqStreetEntry = {
+  entity: Entity;
+  path: Position[];
+  speed?: number;
+  onRelease?: () => void;
+  releaseAt: number;
+};
 
 /** Same facing convention as `RenderSystem.renderWorkerSprite` for movement vectors. */
 function gridFacingTowardWater(dx: number, dy: number): number {
@@ -117,6 +126,7 @@ export class GameWorkerRegistry {
   private readonly animationWorkers = new Map<number, AnimationWorkerState>();
   private readonly reservedTreeTiles = new Set<string>();
   private readonly surveyorWorkers = new Set<number>();
+  private readonly pendingHqStreetEntries: PendingHqStreetEntry[] = [];
   private nextHqStreetDispatchAtMs = 0;
 
   constructor(private readonly world: WorkerWorldAccess) {}
@@ -241,26 +251,40 @@ export class GameWorkerRegistry {
     worker.setState('idle');
     movable.clearPath();
 
-    const now = Date.now();
+    const now = getSimulationNowMs();
     const releaseAt = Math.max(now, this.nextHqStreetDispatchAtMs);
     this.nextHqStreetDispatchAtMs = releaseAt + HQ_STREET_DISPATCH_SPACING_MS;
+    this.pendingHqStreetEntries.push({
+      entity,
+      path: [...path],
+      speed: options.speed,
+      onRelease: options.onRelease,
+      releaseAt,
+    });
+  }
 
-    setTimeout(() => {
-      if (!entity.active) return;
-      const releaseWorker = entity.getComponent(Worker);
-      const releaseMovable = entity.getComponent(Movable);
-      if (!releaseWorker || !releaseMovable) return;
+  private processHqStreetEntries(): void {
+    const now = getSimulationNowMs();
+    for (let i = this.pendingHqStreetEntries.length - 1; i >= 0; i--) {
+      const entry = this.pendingHqStreetEntries[i]!;
+      if (now < entry.releaseAt) continue;
+      this.pendingHqStreetEntries.splice(i, 1);
+
+      if (!entry.entity.active) continue;
+      const releaseWorker = entry.entity.getComponent(Worker);
+      const releaseMovable = entry.entity.getComponent(Movable);
+      if (!releaseWorker || !releaseMovable) continue;
 
       releaseWorker.concealedInBuildingId = null;
-      if (typeof options.speed === 'number') {
-        releaseMovable.speed = options.speed;
+      if (typeof entry.speed === 'number') {
+        releaseMovable.speed = entry.speed;
       }
-      if (path.length > 0) {
-        releaseMovable.setPath(path);
+      if (entry.path.length > 0) {
+        releaseMovable.setPath(entry.path);
         releaseWorker.setState('walking');
       }
-      options.onRelease?.();
-    }, Math.max(0, releaseAt - now));
+      entry.onRelease?.();
+    }
   }
 
   detachSurveyorWorker(workerEntityId: number): void {
@@ -377,6 +401,7 @@ export class GameWorkerRegistry {
   }
 
   updateConstructionDelivery(): void {
+    this.processHqStreetEntries();
     const entities = [...this.world.getEntities()];
     const tileMap = this.world.getTileMap();
     const pathFinder = this.world.getPathFinder();
@@ -461,14 +486,14 @@ export class GameWorkerRegistry {
           continue;
         }
 
-        building.beginConstruction();
+        building.beginConstruction(getSimulationNowMs());
         if (builderEntityId != null) {
           const builderEntity = entities.find(e => e.id === builderEntityId && e.active);
           const w = builderEntity?.getComponent(Worker);
           if (w) {
             w.hammerConstructionEnabled = true;
             w.setState('working');
-            w.buildIdleUntil = Date.now() + 1200 + Math.random() * 800;
+            w.buildIdleUntil = getSimulationNowMs() + 1200 + Math.random() * 800;
           }
         }
         continue;
@@ -641,7 +666,7 @@ export class GameWorkerRegistry {
       if (!movable || movable.isMoving) continue;
 
       const patrolWorker = builderEntity.getComponent(Worker);
-      if (patrolWorker && patrolWorker.buildIdleUntil > Date.now()) continue;
+      if (patrolWorker && patrolWorker.buildIdleUntil > getSimulationNowMs()) continue;
 
       const builderPos = builderEntity.getComponent(Position);
       if (!builderPos) continue;
@@ -970,7 +995,7 @@ export class GameWorkerRegistry {
         }
 
         const speed = animCfg.workerSpeed;
-        const nowMs = Date.now();
+        const nowMs = getSimulationNowMs();
 
         if (plant.phase === 'to_site') {
           if (movable.isMoving) continue;
@@ -1060,7 +1085,7 @@ export class GameWorkerRegistry {
             const bDefH = bldgH ? dataManager.getBuilding(bldgH.buildingType) : null;
             const animH = bDefH?.animation;
             if (!gather.terrainModified) {
-              const nowMsH = Date.now();
+              const nowMsH = getSimulationNowMs();
               if (gather.digUntilMs === undefined) {
                 const digSec = animH?.type === 'gather' ? animH.digAtSiteSec ?? 2.5 : 2.5;
                 gather.digUntilMs = nowMsH + digSec * 1000;
@@ -1102,7 +1127,7 @@ export class GameWorkerRegistry {
           const anim = bDef?.animation;
 
           if ((gather.rockGather || gather.waterGather || gather.mineGather) && anim?.type === 'gather') {
-            const nowMs = Date.now();
+            const nowMs = getSimulationNowMs();
             if (gather.digUntilMs === undefined) {
               if (gather.waterGather && bldg && anim && bDef?.production) {
                 const bPos = buildingEntity.getComponent(Position);
@@ -1704,6 +1729,7 @@ export class GameWorkerRegistry {
     this.animationWorkers.clear();
     this.reservedTreeTiles.clear();
     this.surveyorWorkers.clear();
+    this.pendingHqStreetEntries.length = 0;
     this.nextHqStreetDispatchAtMs = 0;
   }
 

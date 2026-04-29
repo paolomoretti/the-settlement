@@ -45,11 +45,13 @@ import { ensureWellAquiferInitialized } from '@/map/wellAquifer';
 import { WildlifeCoordinator } from '@/wildlife/WildlifeCoordinator';
 import { TerritoryCoordinator } from '@/map/TerritoryCoordinator';
 import { planEnemyVillages, type EnemyVillagePlan, type EnemyVillageBuildingPlan } from '@/world/EnemyVillageGenerator';
+import { setSimulationNowMs } from './simulationClock';
 
 const DEMOLITION_FIRE_DURATION_MS = 30_000;
 const DEMOLITION_SCORCH_DURATION_MS = 60_000;
 const ENEMY_ATTACK_DUEL_MS = 10_000;
 const ENEMY_ATTACK_FALLEN_MS = 2_000;
+const FAST_FORWARD_TIME_SCALE = 3;
 
 type MilitaryRank = 1 | 2 | 3;
 export type AttackRankSelection = Record<MilitaryRank, number>;
@@ -98,6 +100,8 @@ export class Game {
   private systems: System[] = [];
   private running = false;
   private lastTime = 0;
+  private simulationNowMs = Date.now();
+  private timeScale = 1;
   private fps = 0;
   private frameCount = 0;
   private fpsTime = 0;
@@ -162,10 +166,13 @@ export class Game {
   private nextEnemyPressureCheckAt = 0;
   private nextEnemyRoadMaintenanceAt = 0;
   private nextBattleClashAt = 0;
+  private pendingWellDemolitions = new Map<number, number>();
 
   private readonly frameHooks: Array<() => void> = [];
 
   constructor(private canvas: HTMLCanvasElement, skipInit = false) {
+    setSimulationNowMs(this.simulationNowMs);
+
     // Initialize large map (20x bigger: 1000x1000)
     this.tileMap = new TileMap(1000, 1000);
     this.territory = new TerritoryCoordinator(this.tileMap);
@@ -459,13 +466,9 @@ export class Game {
     });
 
     eventBus.on('well:aquifer_depleted', (data: { entityId: number }) => {
-      window.setTimeout(() => {
-        const ent = this.entities.find(e => e.id === data.entityId && e.active);
-        if (!ent) return;
-        const b = ent.getComponent(Building);
-        if (b?.buildingType !== 'well') return;
-        this.destroyBuildingEntity(ent);
-      }, 2000);
+      if (!this.pendingWellDemolitions.has(data.entityId)) {
+        this.pendingWellDemolitions.set(data.entityId, this.getSimulationNowMs() + 2000);
+      }
     });
 
     eventBus.on('military:garrison_changed', () => {
@@ -1171,7 +1174,7 @@ export class Game {
   }
 
   private isDemolitionFireBlockingCell(x: number, y: number): boolean {
-    const now = Date.now();
+    const now = this.simulationNowMs;
     return this.demolitionSites.some(site =>
       now - site.startedAt < DEMOLITION_FIRE_DURATION_MS &&
       x >= site.x &&
@@ -1188,13 +1191,13 @@ export class Game {
       y,
       width,
       height,
-      startedAt: Date.now(),
+      startedAt: this.simulationNowMs,
     });
     this.syncDemolitionSitesToRender();
   }
 
   private cleanupDemolitionSites(): void {
-    const expiresBefore = Date.now() - DEMOLITION_FIRE_DURATION_MS - DEMOLITION_SCORCH_DURATION_MS;
+    const expiresBefore = this.simulationNowMs - DEMOLITION_FIRE_DURATION_MS - DEMOLITION_SCORCH_DURATION_MS;
     const before = this.demolitionSites.length;
     this.demolitionSites = this.demolitionSites.filter(site => site.startedAt > expiresBefore);
     if (this.demolitionSites.length !== before) this.syncDemolitionSitesToRender();
@@ -1346,7 +1349,7 @@ export class Game {
     building.state = 'complete';
     building.constructionStartedAt = null;
     building.constructionProgress = 1;
-    building.completedAt = Date.now();
+    building.completedAt = this.simulationNowMs;
     building.hasOperator = true;
 
     this.addEntity(entity);
@@ -1535,7 +1538,7 @@ export class Game {
         // No carts needed, but keep the visible builder arrival -> build -> return sequence.
         building.startAwaitingMaterials(building.buildTimeSec, {});
       } else {
-        building.startConstruction(building.buildTimeSec);
+        building.startConstruction(building.buildTimeSec, this.simulationNowMs);
       }
     }
 
@@ -1869,7 +1872,7 @@ export class Game {
    */
   private recheckConstructionMaterials(force = false): void {
     if (!this.baseCampEntity) return;
-    const now = Date.now();
+    const now = this.simulationNowMs;
     if (!force && now - this.lastMaterialCheckTime < 2000) return;
     this.lastMaterialCheckTime = now;
 
@@ -2264,7 +2267,7 @@ export class Game {
    */
   private recheckProductionInputDeliveries(force = false): void {
     if (!this.baseCampEntity) return;
-    const now = Date.now();
+    const now = this.simulationNowMs;
     if (!force && now - this.lastProductionInputCheckTime < 2000) return;
     this.lastProductionInputCheckTime = now;
 
@@ -2802,11 +2805,30 @@ export class Game {
     this.running = false;
   }
 
+  getSimulationNowMs(): number {
+    return this.simulationNowMs;
+  }
+
+  getTimeScale(): number {
+    return this.timeScale;
+  }
+
+  isFastForwardEnabled(): boolean {
+    return this.timeScale > 1;
+  }
+
+  setFastForwardEnabled(enabled: boolean): void {
+    this.timeScale = enabled ? FAST_FORWARD_TIME_SCALE : 1;
+  }
+
   private gameLoop = (currentTime: number): void => {
     if (!this.running) return;
 
-    const deltaTime = Math.min((currentTime - this.lastTime) / 1000, 0.1);
+    const realDeltaTime = Math.min((currentTime - this.lastTime) / 1000, 0.1);
+    const deltaTime = realDeltaTime * this.timeScale;
     this.lastTime = currentTime;
+    this.simulationNowMs += deltaTime * 1000;
+    setSimulationNowMs(this.simulationNowMs);
 
     this.worldTimeSeconds += deltaTime;
     while (this.worldTimeSeconds >= this.nextWaterFishRegenWorldSecond) {
@@ -2814,12 +2836,13 @@ export class Game {
       this.tileMap.applyWaterFishPopulationRegen();
     }
     this.cleanupDemolitionSites();
+    this.processPendingWellDemolitions();
 
-    this.wildlife.tick(this.tileMap);
+    this.wildlife.tick(this.tileMap, this.simulationNowMs);
 
     // Update FPS
     this.frameCount++;
-    this.fpsTime += deltaTime;
+    this.fpsTime += realDeltaTime;
     if (this.fpsTime >= 1) {
       this.fps = this.frameCount;
       this.frameCount = 0;
@@ -2949,9 +2972,9 @@ export class Game {
     this.updateEnemyBorderPressure();
     this.updateEnemyRoadMaintenance();
 
-    this.surveys.tick();
+    this.surveys.tick(this.simulationNowMs);
     this.renderSystem.setSurveyWorkerIdsOnTop(this.surveys.getActiveSurveyorWorkerIds());
-    this.renderSystem.setSurveyOverlay(this.surveys.getOverlayForRender());
+    this.renderSystem.setSurveyOverlay(this.surveys.getOverlayForRender(this.simulationNowMs));
 
     // Update all systems
     this.systems.forEach(system => system.update(deltaTime));
@@ -2968,7 +2991,7 @@ export class Game {
 
     // Periodic transport heal: `rescueStrandedItems` alone does not refresh direction maps, so goods
     // can sit on roads until the next road edit triggers `recalculate` + `recomputeTransportRoutes`.
-    const now = Date.now();
+    const now = this.simulationNowMs;
     if (now - this.lastPeriodicTransportHealTime > 8000) {
       this.lastPeriodicTransportHealTime = now;
       roadSegmentManager.recalculate(this.tileMap);
@@ -2998,7 +3021,7 @@ export class Game {
       if (!entity.active) continue;
       const building = entity.getComponent(Building);
       if (building && building.state === 'under_construction') {
-        building.updateConstruction();
+        building.updateConstruction(this.simulationNowMs);
         if (building.isComplete()) {
           audioManager.playSound('building_complete');
           this.workers.returnBuilder(entity);
@@ -3050,6 +3073,19 @@ export class Game {
     if ((tile.cellWellWaterRemaining ?? 0) <= 0) {
       building.outOfMapResources = true;
       eventBus.emit('well:aquifer_depleted', { entityId: entity.id });
+    }
+  }
+
+  private processPendingWellDemolitions(): void {
+    const now = this.simulationNowMs;
+    for (const [entityId, demolishAt] of [...this.pendingWellDemolitions]) {
+      if (now < demolishAt) continue;
+      this.pendingWellDemolitions.delete(entityId);
+      const ent = this.entities.find(e => e.id === entityId && e.active);
+      if (!ent) continue;
+      const b = ent.getComponent(Building);
+      if (b?.buildingType !== 'well') continue;
+      this.destroyBuildingEntity(ent);
     }
   }
 
@@ -3443,7 +3479,7 @@ export class Game {
     const attackConfig = dataManager.getGameConfig().enemyRealms.attacks;
     if (!attackConfig.enabled || this.enemyRealms.length === 0) return;
 
-    const now = Date.now();
+    const now = this.simulationNowMs;
     if (now < this.nextEnemyPressureCheckAt) return;
     this.nextEnemyPressureCheckAt = now + attackConfig.checkIntervalMs;
 
@@ -3712,7 +3748,7 @@ export class Game {
     const config = dataManager.getGameConfig().enemyRealms.roadMaintenance;
     if (!config.enabled || this.enemyRealms.length === 0) return;
 
-    const now = Date.now();
+    const now = this.simulationNowMs;
     if (now < this.nextEnemyRoadMaintenanceAt) return;
     this.nextEnemyRoadMaintenanceAt = now + config.intervalMs;
 
@@ -4093,7 +4129,7 @@ export class Game {
       this.nextBattleClashAt = 0;
       return;
     }
-    const now = Date.now();
+    const now = this.simulationNowMs;
     for (const attack of this.activeEnemyAttacks) {
       if (attack.phase === 'complete') continue;
       if (attack.phase === 'marching') {
@@ -4204,7 +4240,7 @@ export class Game {
     }
 
     attack.phase = 'duel';
-    attack.duelStartedAt = Date.now();
+    attack.duelStartedAt = this.simulationNowMs;
     for (const id of [attack.currentAttackerId, attack.currentDefenderId]) {
       const worker = this.entities.find(e => e.id === id)?.getComponent(Worker);
       if (!worker) continue;
@@ -4986,6 +5022,7 @@ export class Game {
       population: this.population,
       productionPriorities: this.productionPriorities,
       buildingPriorities: this.buildingPriorities,
+      simulationNowMs: this.simulationNowMs,
       specialistPools: {
         tools: this.toolSpecialistsAtHq,
         military: this.militarySpecialistsAtHq,
@@ -4994,6 +5031,10 @@ export class Game {
       wildlife: this.wildlife.serialize(),
       demolitionSites: this.demolitionSites,
       nextDemolitionSiteId: this.nextDemolitionSiteId,
+      pendingWellDemolitions: Array.from(this.pendingWellDemolitions.entries()).map(([entityId, demolishAt]) => ({
+        entityId,
+        demolishAt,
+      })),
       enemyRealms: this.enemyRealms,
       timestamp: Date.now()
     };
@@ -5019,6 +5060,8 @@ export class Game {
     this.dragPreviewPosition = null;
     this.inventory = {};
     this.population = { current: 0, max: 0 };
+    this.simulationNowMs = Date.now();
+    setSimulationNowMs(this.simulationNowMs);
     this.productionPriorities = this.createDefaultProductionPriorities();
     this.buildingPriorities = this.createDefaultBuildingPriorities();
     this.toolSpecialistsAtHq = {};
@@ -5033,6 +5076,8 @@ export class Game {
     this.nextEnemyAttackId = 1;
     this.nextEnemyPressureCheckAt = 0;
     this.nextEnemyRoadMaintenanceAt = 0;
+    this.nextBattleClashAt = 0;
+    this.pendingWellDemolitions.clear();
     this.syncDemolitionSitesToRender();
 
     this.wildlife.reset();
@@ -5043,6 +5088,12 @@ export class Game {
 
   loadSaveData(saveData: any): boolean {
     try {
+      this.simulationNowMs =
+        typeof saveData?.simulationNowMs === 'number' && Number.isFinite(saveData.simulationNowMs)
+          ? Math.max(0, saveData.simulationNowMs)
+          : Date.now();
+      setSimulationNowMs(this.simulationNowMs);
+
       this.tileMap = TileMap.deserialize(saveData.map);
       this.territory = new TerritoryCoordinator(this.tileMap);
       this.renderSystem.updateTileMap(this.tileMap);
@@ -5071,6 +5122,8 @@ export class Game {
       this.nextEnemyAttackId = 1;
       this.nextEnemyPressureCheckAt = 0;
       this.nextEnemyRoadMaintenanceAt = 0;
+      this.nextBattleClashAt = 0;
+      this.pendingWellDemolitions.clear();
       this.syncDemolitionSitesToRender();
 
       if (saveData.wildlife) {
@@ -5127,14 +5180,16 @@ export class Game {
             building.materialsDelivered = buildingData.materialsDelivered || {};
             building.builderArrived = buildingData.builderArrived || false;
           } else if (buildingData.constructionStartedAt) {
-            building.constructionStartedAt = buildingData.constructionStartedAt;
+            building.constructionStartedAt = Math.min(buildingData.constructionStartedAt, this.simulationNowMs);
             building.buildTimeSec = buildingData.buildTimeSec;
             building.state = 'under_construction';
-            building.updateConstruction();
+            building.updateConstruction(this.simulationNowMs);
           } else {
             building.state = 'complete';
             building.constructionStartedAt = null;
-            building.completedAt = buildingData.completedAt || Date.now();
+            building.completedAt = buildingData.completedAt
+              ? Math.min(buildingData.completedAt, this.simulationNowMs)
+              : this.simulationNowMs;
           }
 
           if (buildingData.hasOperator === false) {
@@ -5247,7 +5302,7 @@ export class Game {
       }
 
       if (Array.isArray(saveData.demolitionSites)) {
-        const now = Date.now();
+        const now = this.simulationNowMs;
         const maxAge = DEMOLITION_FIRE_DURATION_MS + DEMOLITION_SCORCH_DURATION_MS;
         this.demolitionSites = saveData.demolitionSites
           .filter((site: any) =>
@@ -5257,7 +5312,7 @@ export class Game {
             typeof site.width === 'number' &&
             typeof site.height === 'number' &&
             typeof site.startedAt === 'number' &&
-            now - site.startedAt < maxAge
+            Math.max(0, now - site.startedAt) < maxAge
           )
           .map((site: any) => ({
             id: site.id,
@@ -5265,12 +5320,25 @@ export class Game {
             y: site.y,
             width: site.width,
             height: site.height,
-            startedAt: site.startedAt,
+            startedAt: Math.min(site.startedAt, now),
           }));
         const maxId = this.demolitionSites.reduce((m, site) => Math.max(m, site.id), 0);
         const savedNextId = typeof saveData.nextDemolitionSiteId === 'number' ? saveData.nextDemolitionSiteId : 1;
         this.nextDemolitionSiteId = Math.max(savedNextId, maxId + 1);
         this.syncDemolitionSitesToRender();
+      }
+
+      if (Array.isArray(saveData.pendingWellDemolitions)) {
+        for (const pending of saveData.pendingWellDemolitions) {
+          if (
+            pending &&
+            typeof pending.entityId === 'number' &&
+            typeof pending.demolishAt === 'number' &&
+            Number.isFinite(pending.demolishAt)
+          ) {
+            this.pendingWellDemolitions.set(pending.entityId, Math.max(this.simulationNowMs, pending.demolishAt));
+          }
+        }
       }
 
       if (saveData.camera) {

@@ -2,7 +2,7 @@
 
 **Purpose:** Single reference for **how the player interacts with the game** — mouse, keyboard, touch, and HUD. Use this when building in-game help, onboarding, or tooltips. Keep it in sync with `src/systems/InputSystem.ts`, `src/input/KeyboardShortcuts.ts`, `src/main.ts`, `src/systems/RenderSystem.ts` (minimap), and UI classes noted below.
 
-**Related deep-dives:** [Keyboard shortcuts](KEYBOARD_SHORTCUTS.md) (hotkey implementation), [Alt / Option hover insight](HOVER_TOOLTIP.md) (grid + tooltips).
+**Related deep-dives:** [Keyboard shortcuts](KEYBOARD_SHORTCUTS.md) (hotkey implementation), [Alt / Option hover insight](HOVER_TOOLTIP.md) (grid + tooltips), [Game speed](GAME_SPEED.md) (fast-forward simulation clock).
 
 ---
 
@@ -81,6 +81,7 @@ Behavior depends on **input mode** (toolbar, hotkeys, or post-placement return t
 
 | Control | Action |
 |--------|--------|
+| **Fast forward** | Toggle full gameplay simulation speed between normal `1x` and fast `3x`. |
 | **Settings** (options icon) `[O]` | Toggle options overlay (when not blocked by stricter modal checks — see `KeyboardShortcuts`). |
 | **Exit** | Flow to exit / save-and-exit dialogs. |
 
@@ -137,7 +138,7 @@ Full table and extension notes: [KEYBOARD_SHORTCUTS.md](KEYBOARD_SHORTCUTS.md).
 | Canvas pointer modes, right-pan, road/erase/build | `src/systems/InputSystem.ts` |
 | Hotkeys | `src/input/KeyboardShortcuts.ts`, `src/input/InsightAltKey.ts` |
 | Selection, placement, survey, inventory open | `src/core/Game.ts` |
-| Toolbar wiring | `src/main.ts` (`setupGameUI`) |
+| Toolbar / top-right chrome wiring | `src/main.ts` (`setupGameUI`) |
 | Minimap | `src/systems/RenderSystem.ts` |
 | Canvas hover tooltip (Alt) | `src/ui/CanvasHoverTooltip.ts`, `src/ui/hoverInsight/buildHoverLines.ts` |
 

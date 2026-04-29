@@ -3,6 +3,7 @@
  */
 
 import { Component } from '@/core/Component';
+import { getSimulationNowMs } from '@/core/simulationClock';
 import { BuildingType } from '@/types/GameData';
 
 export type { BuildingType };
@@ -15,7 +16,7 @@ export type MilitaryGarrisonSlot = { rank: 1 | 2 | 3; workerEntityId: number };
 export class Building extends Component {
   public state: BuildingState = 'complete';
   public constructionProgress: number = 0; // 0-1
-  public constructionStartedAt: number | null = null; // Unix timestamp
+  public constructionStartedAt: number | null = null; // Simulation timestamp
   public buildTimeSec: number = 0; // Total build time in seconds
   public completedAt: number | null = null;
   public width: number; // Width in tiles
@@ -37,9 +38,9 @@ export class Building extends Component {
   public animationWorkerId: number | null = null;
   /** Lumberjack / quarry / fisher: no harvestable tile within search radius with a short enough off-road walk from the entrance. */
   public outOfMapResources: boolean = false;
-  /** Throttle reachability scans for the fisher’s water tiles (realtime ms). */
+  /** Throttle reachability scans for the fisher's water tiles (simulation ms). */
   public lastWaterFishProbeAt: number = 0;
-  /** Throttle reachability scans for wild rabbits near the hunter (realtime ms). */
+  /** Throttle reachability scans for wild rabbits near the hunter (simulation ms). */
   public lastHuntRabbitProbeAt: number = 0;
 
   /** Length = `military.soldierCapacity` when set; entries `null` = empty slot. */
@@ -77,22 +78,22 @@ export class Building extends Component {
     return this.state === 'complete';
   }
 
-  startConstruction(buildTimeSec: number): void {
+  startConstruction(buildTimeSec: number, nowMs: number = getSimulationNowMs()): void {
     if (buildTimeSec <= 0) return;
     this.state = 'under_construction';
     this.buildTimeSec = buildTimeSec;
-    this.constructionStartedAt = Date.now();
+    this.constructionStartedAt = nowMs;
     this.constructionProgress = 0;
   }
 
-  updateConstruction(): void {
+  updateConstruction(nowMs: number = getSimulationNowMs()): void {
     if (this.state !== 'under_construction' || !this.constructionStartedAt) return;
-    const elapsed = (Date.now() - this.constructionStartedAt) / 1000;
+    const elapsed = (nowMs - this.constructionStartedAt) / 1000;
     this.constructionProgress = Math.min(1, elapsed / this.buildTimeSec);
     if (this.constructionProgress >= 1) {
       this.state = 'complete';
       this.constructionStartedAt = null;
-      this.completedAt = Date.now();
+      this.completedAt = nowMs;
     }
   }
 
@@ -128,18 +129,18 @@ export class Building extends Component {
            this.areMaterialsDelivered();
   }
 
-  beginConstruction(): void {
+  beginConstruction(nowMs: number = getSimulationNowMs()): void {
     this.state = 'under_construction';
-    this.constructionStartedAt = Date.now();
+    this.constructionStartedAt = nowMs;
     this.constructionProgress = 0;
     this.constructionMaterials = null;
     this.materialsSent = {};
     this.materialsDelivered = {};
   }
 
-  getProductionProgress(productionTimeSec: number): number {
+  getProductionProgress(productionTimeSec: number, nowMs: number = getSimulationNowMs()): number {
     if (!this.completedAt || this.state !== 'complete' || productionTimeSec <= 0) return 0;
-    const elapsed = (Date.now() - this.completedAt) / 1000;
+    const elapsed = (nowMs - this.completedAt) / 1000;
     return (elapsed % productionTimeSec) / productionTimeSec;
   }
 

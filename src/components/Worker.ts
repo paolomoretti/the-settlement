@@ -3,6 +3,7 @@
  */
 
 import { Component } from '@/core/Component';
+import { getSimulationNowMs } from '@/core/simulationClock';
 
 export type WorkerState = 'idle' | 'walking' | 'working' | 'carrying';
 
@@ -120,7 +121,7 @@ export class Worker extends Component {
   public returnToHqToolSpecialist: string | null = null;
   /** Builder may hammer on site only after `beginConstruction()` runs. */
   public hammerConstructionEnabled = false;
-  /** Builder stands and plays hammer idle until this time (ms since epoch). */
+  /** Builder stands and plays hammer idle until this simulation time. */
   public buildIdleUntil = 0;
 
   public idleAnim: IdleAnim = 'none';
@@ -137,10 +138,10 @@ export class Worker extends Component {
 
   /** Monotonic idle on tile (no walk / no job state); cleared when moving or non-idle. Used for rare floor naps. */
   public idleContinuousSinceMs: number | null = null;
-  /** When set and `Date.now() <` this, worker is drawn napping on the ground. */
+  /** When set and the simulation clock has not reached it, worker is drawn napping on the ground. */
   public floorSleepUntilMs: number | null = null;
   public floorSleepStartedAtMs: number | null = null;
-  /** Next wall-clock time to roll for starting a floor nap (throttles probability). */
+  /** Next simulation time to roll for starting a floor nap (throttles probability). */
   public nextFloorSleepProbeMs: number | null = null;
 
   constructor(public name: string = 'Peasant', role: WorkerRole = 'peasant') {
@@ -148,7 +149,7 @@ export class Worker extends Component {
     this.role = role;
     const variants = WORKER_DEFS[role].variants;
     this.appearance = { ...variants[Math.floor(Math.random() * variants.length)] };
-    this.nextIdleCheck = Date.now() + 2000 + Math.random() * 5000;
+    this.nextIdleCheck = getSimulationNowMs() + 2000 + Math.random() * 5000;
     this.idleFacing = Math.floor(Math.random() * 4);
     if (role === 'military') {
       this.militaryRank = 1;

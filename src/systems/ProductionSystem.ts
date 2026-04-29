@@ -8,6 +8,7 @@ import { Storage } from '@/components/Storage';
 import { isPlayerOwned } from '@/components/ownerUtils';
 import { resourceManager } from '@/economics/ResourceManager';
 import { dataManager } from '@/data/DataManager';
+import { getSimulationNowMs } from '@/core/simulationClock';
 import { rollWellAquiferCapacity } from '@/map/wellAquifer';
 import type { TileMap } from '@/map/TileMap';
 import type { PathFinder } from '@/pathfinding/AStar';
@@ -296,7 +297,7 @@ export class ProductionSystem extends System {
         pos &&
         building.animationWorkerId == null
       ) {
-        const now = Date.now();
+        const now = getSimulationNowMs();
         if (now - building.lastWaterFishProbeAt >= 500) {
           building.lastWaterFishProbeAt = now;
           const foot = new Set<string>();
@@ -337,7 +338,7 @@ export class ProductionSystem extends System {
         building.animationWorkerId == null &&
         this.getWildlife
       ) {
-        const now = Date.now();
+        const now = getSimulationNowMs();
         if (now - building.lastHuntRabbitProbeAt >= 500) {
           building.lastHuntRabbitProbeAt = now;
           const foot = new Set<string>();

@@ -5,6 +5,7 @@
 
 import type { TileMap } from '@/map/TileMap';
 import type { PathFinder } from '@/pathfinding/AStar';
+import { getSimulationNowMs } from '@/core/simulationClock';
 import { Position } from '@/components/Position';
 import type { Tile } from '@/map/Tile';
 
@@ -182,7 +183,7 @@ export class WildlifeCoordinator {
             : 'brown';
         const animSeed = typeof raw.animSeed === 'number' ? raw.animSeed : Math.random() * 1000;
         const nextWander =
-          typeof raw.nextWanderAtMs === 'number' ? raw.nextWanderAtMs : Date.now() + WANDER_INTERVAL_MS;
+          typeof raw.nextWanderAtMs === 'number' ? raw.nextWanderAtMs : getSimulationNowMs() + WANDER_INTERVAL_MS;
         this.insertRabbit({
           id: raw.id,
           originX: raw.originX,
@@ -210,16 +211,15 @@ export class WildlifeCoordinator {
         this.tryPlaceStarterRabbitsLoose(tileMap, centerX, centerY, target - placed);
       }
     }
-    this.scheduleNextSpawnFromNow();
+    this.scheduleNextSpawnFromNow(getSimulationNowMs());
   }
 
   /** Saves from before wildlife: periodic spawns only (no starter burst). */
   onLoadedLegacySave(): void {
-    this.scheduleNextSpawnFromNow();
+    this.scheduleNextSpawnFromNow(getSimulationNowMs());
   }
 
-  tick(tileMap: TileMap): void {
-    const now = Date.now();
+  tick(tileMap: TileMap, now: number = getSimulationNowMs()): void {
     this.advanceRabbitJumps(now);
 
     for (const r of this.rabbits) {
@@ -353,9 +353,9 @@ export class WildlifeCoordinator {
     this.reservedForHunt.delete(id);
   }
 
-  private scheduleNextSpawnFromNow(): void {
+  private scheduleNextSpawnFromNow(now: number = getSimulationNowMs()): void {
     const jitter = Math.floor(Math.random() * 8000);
-    this.nextSpawnAttemptAtMs = Date.now() + SPAWN_INTERVAL_MS + jitter;
+    this.nextSpawnAttemptAtMs = now + SPAWN_INTERVAL_MS + jitter;
   }
 
   private insertRabbit(r: WildRabbit): void {
@@ -393,7 +393,7 @@ export class WildlifeCoordinator {
     for (const c of candidates) {
       if (placed >= count) break;
       if (this.cellOccupied.has(cellKey(c.x, c.y))) continue;
-      const now = Date.now();
+      const now = getSimulationNowMs();
       this.insertRabbit({
         id: this.nextRabbitId++,
         originX: c.x,
@@ -419,7 +419,7 @@ export class WildlifeCoordinator {
       const tile = tileMap.getTile(x, y);
       if (!isValidRabbitStandTile(tile)) continue;
       if (this.cellOccupied.has(cellKey(x, y))) continue;
-      const now = Date.now();
+      const now = getSimulationNowMs();
       this.insertRabbit({
         id: this.nextRabbitId++,
         originX: x,
@@ -479,7 +479,7 @@ export class WildlifeCoordinator {
 
     const w = tileMap.width;
     const h = tileMap.height;
-    const now = Date.now();
+    const now = getSimulationNowMs();
 
     for (let b = 0; b < toPlace; b++) {
       let placedOne = false;

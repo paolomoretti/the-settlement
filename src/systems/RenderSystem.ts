@@ -4,6 +4,7 @@
 
 import { System } from '@/core/System';
 import { Entity } from '@/core/Entity';
+import { getSimulationNowMs } from '@/core/simulationClock';
 import { Position } from '@/components/Position';
 import { Renderable } from '@/components/Renderable';
 import { Building } from '@/components/Building';
@@ -39,6 +40,8 @@ import { getEnemyFactionStyle, getEntityFaction, isPlayerOwned } from '@/compone
 type FlatShoreCut =
   | { axis: 'horizontal'; worldY: number; grassHalf: 'upper' | 'lower' }
   | { axis: 'vertical'; worldX: number; grassHalf: 'left' | 'right' };
+
+type GridPoint = { x: number; y: number };
 
 const FLAT_SHORE_CLIP_EXTENT = 1_000_000;
 
@@ -190,7 +193,7 @@ export class RenderSystem extends System {
     // Center camera on map
     this.centerCamera();
 
-    this.nextFishSpawn = Date.now() + nextFishSpawnGapMs();
+    this.nextFishSpawn = getSimulationNowMs() + nextFishSpawnGapMs();
 
     this.preloadSprites(collectAllCataloguedBuildingSpritePaths());
 
@@ -443,30 +446,12 @@ export class RenderSystem extends System {
     // Sort entities by isometric draw depth (float); workers tie-break on top of buildings
     const sortedEntities = visibleEntities.sort((a, b) => this.compareEntityDrawOrder(a, b));
 
-    // Render road stub for disconnected buildings (before depth-sorted pass)
+    // Render road stubs for disconnected buildings (before depth-sorted pass)
     for (const entity of visibleEntities) {
       const building = entity.getComponent(Building);
       if (!building || building.isActive) continue;
-      const entrance = building.getEntranceOffset();
-      if (!entrance) continue;
       const pos = entity.getComponent(Position)!;
-      const ex = pos.x + entrance.dx;
-      const ey = pos.y + entrance.dy;
-      const outX = ex + 1;
-      const outY = ey;
-      const entranceCenter = this.iso.gridToScreen(ex, ey);
-      this.terrainTextures.drawRoad(this.ctx, 4, entranceCenter.x, entranceCenter.y, ex, ey);
-      const outCenter = this.iso.gridToScreen(outX, outY);
-      this.terrainTextures.drawRoad(this.ctx, 1, outCenter.x, outCenter.y, outX, outY);
-      const corners = this.iso.getTileCorners(outX, outY);
-      this.ctx.beginPath();
-      this.ctx.moveTo(corners[0].x, corners[0].y);
-      for (let i = 1; i < corners.length; i++) {
-        this.ctx.lineTo(corners[i].x, corners[i].y);
-      }
-      this.ctx.closePath();
-      this.ctx.fillStyle = 'rgba(200, 60, 60, 0.2)';
-      this.ctx.fill();
+      this.renderDisconnectedBuildingRoadHints(pos.x, pos.y, building.width, building.height);
     }
 
     // Render junction items on road tiles
@@ -583,7 +568,7 @@ export class RenderSystem extends System {
   }
 
   private updateDemolitionFires(dt: number): void {
-    const now = Date.now();
+    const now = getSimulationNowMs();
     const activeIds = new Set<number>();
 
     for (const site of this.demolitionSites) {
@@ -789,6 +774,8 @@ export class RenderSystem extends System {
     const spritePath = `/assets/buildings/${buildingType}.png`;
     const sprite = this.loadSprite(spritePath);
 
+    const canPlace = this.canPlacePreview(gridX, gridY, size.width, size.height);
+
     if (sprite) {
       this.renderSpritePreview(
         gridX,
@@ -798,7 +785,8 @@ export class RenderSystem extends System {
         sprite,
         buildingType,
         visual.offsetX ?? 0,
-        visual.offsetY ?? 0
+        visual.offsetY ?? 0,
+        canPlace
       );
     } else {
       this.renderBuildingPreview(
@@ -809,8 +797,13 @@ export class RenderSystem extends System {
         visual.buildingHeight,
         visual.color,
         visual.offsetX ?? 0,
-        visual.offsetY ?? 0
+        visual.offsetY ?? 0,
+        canPlace
       );
+    }
+
+    if (buildingDef.requiresRoad) {
+      this.renderBuildingConnectionPreview(gridX, gridY, size.width, size.height, canPlace);
     }
   }
 
@@ -822,9 +815,9 @@ export class RenderSystem extends System {
     sprite: HTMLImageElement,
     buildingType?: string,
     offsetX: number = 0,
-    offsetY: number = 0
+    offsetY: number = 0,
+    canPlace: boolean = this.canPlacePreview(gridX, gridY, width, depth)
   ): void {
-    const canPlace = this.canPlacePreview(gridX, gridY, width, depth);
     const tileHighlight = canPlace ? 'rgba(255, 255, 255, 0.2)' : 'rgba(200, 50, 50, 0.35)';
 
     this.highlightTiles(gridX, gridY, width, depth, tileHighlight);
@@ -1403,6 +1396,105 @@ export class RenderSystem extends System {
     return true;
   }
 
+  private getBuildingRoadConnectionCells(
+    gridX: number,
+    gridY: number,
+    width: number,
+    depth: number
+  ): GridPoint[] {
+    const entranceRow = Math.ceil((depth - 1) / 2);
+    const entranceColumn = Math.max(0, width - 1);
+    const candidates: GridPoint[] = [
+      { x: gridX + width, y: gridY + entranceRow },
+      { x: gridX + entranceColumn, y: gridY + depth },
+    ];
+    const seen = new Set<string>();
+    return candidates.filter(cell => {
+      const key = `${cell.x},${cell.y}`;
+      if (seen.has(key) || !this.tileMap.isInBounds(cell.x, cell.y)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  private getRoadMaskWithExtraConnections(cell: GridPoint, connectionCells: GridPoint[]): number {
+    const isConnectionCell = (x: number, y: number): boolean =>
+      connectionCells.some(candidate => candidate.x === x && candidate.y === y);
+    let mask = this.getRoadConfig(cell.x, cell.y);
+    if (isConnectionCell(cell.x - 1, cell.y)) mask |= 1;
+    if (isConnectionCell(cell.x, cell.y - 1)) mask |= 2;
+    if (isConnectionCell(cell.x + 1, cell.y)) mask |= 4;
+    if (isConnectionCell(cell.x, cell.y + 1)) mask |= 8;
+    return mask;
+  }
+
+  private renderBuildingConnectionPreview(
+    gridX: number,
+    gridY: number,
+    width: number,
+    depth: number,
+    buildingCanPlace: boolean
+  ): void {
+    const connectionCells = this.getBuildingRoadConnectionCells(gridX, gridY, width, depth);
+    for (const cell of connectionCells) {
+      const tile = this.tileMap.getTile(cell.x, cell.y);
+      if (!tile) continue;
+      const roadAlreadyThere = tile.hasRoad && !tile.isOccupied();
+      const canAddRoad = this.canPreviewAddRoadAt(cell.x, cell.y);
+      const validConnection = buildingCanPlace && (roadAlreadyThere || canAddRoad);
+      const center = this.iso.gridToScreen(cell.x, cell.y);
+      const mask = this.getRoadMaskWithExtraConnections(cell, connectionCells);
+
+      if (roadAlreadyThere || canAddRoad) {
+        this.ctx.save();
+        this.ctx.globalAlpha = validConnection ? 0.9 : 0.4;
+        this.terrainTextures.drawRoad(this.ctx, mask, center.x, center.y, cell.x, cell.y);
+        this.ctx.restore();
+      }
+
+      this.strokeConnectionHintTile(cell.x, cell.y, validConnection);
+    }
+  }
+
+  private renderDisconnectedBuildingRoadHints(gridX: number, gridY: number, width: number, depth: number): void {
+    const connectionCells = this.getBuildingRoadConnectionCells(gridX, gridY, width, depth);
+    for (const cell of connectionCells) {
+      const center = this.iso.gridToScreen(cell.x, cell.y);
+      const mask = this.getRoadMaskWithExtraConnections(cell, connectionCells);
+      this.terrainTextures.drawRoad(this.ctx, mask, center.x, center.y, cell.x, cell.y);
+      this.fillConnectionHintTile(cell.x, cell.y, 'rgba(200, 60, 60, 0.2)');
+    }
+  }
+
+  private fillConnectionHintTile(gridX: number, gridY: number, fillStyle: string): void {
+    const corners = this.iso.getTileCorners(gridX, gridY);
+    this.ctx.beginPath();
+    this.ctx.moveTo(corners[0].x, corners[0].y);
+    for (let i = 1; i < corners.length; i++) {
+      this.ctx.lineTo(corners[i].x, corners[i].y);
+    }
+    this.ctx.closePath();
+    this.ctx.fillStyle = fillStyle;
+    this.ctx.fill();
+  }
+
+  private strokeConnectionHintTile(gridX: number, gridY: number, valid: boolean): void {
+    this.fillConnectionHintTile(
+      gridX,
+      gridY,
+      valid ? 'rgba(255, 224, 150, 0.16)' : 'rgba(200, 50, 50, 0.2)'
+    );
+    const corners = this.iso.getTileCorners(gridX, gridY);
+    this.ctx.beginPath();
+    this.ctx.moveTo(corners[0].x, corners[0].y);
+    corners.forEach(corner => this.ctx.lineTo(corner.x, corner.y));
+    this.ctx.closePath();
+    this.ctx.strokeStyle = valid ? 'rgba(255, 224, 150, 0.92)' : 'rgba(200, 50, 50, 0.8)';
+    this.ctx.lineWidth = 2.4;
+    this.ctx.lineJoin = 'round';
+    this.ctx.stroke();
+  }
+
   private renderBuildingPreview(
     gridX: number,
     gridY: number,
@@ -1411,10 +1503,9 @@ export class RenderSystem extends System {
     height: number,
     color: string,
     offsetX: number = 0,
-    offsetY: number = 0
+    offsetY: number = 0,
+    canPlace: boolean = this.canPlacePreview(gridX, gridY, width, depth)
   ): void {
-    const canPlace = this.canPlacePreview(gridX, gridY, width, depth);
-
     const previewColor = canPlace ? color : '#cc3333';
     const tileHighlight = canPlace ? 'rgba(255, 255, 255, 0.2)' : 'rgba(200, 50, 50, 0.35)';
     const outlineColor = canPlace ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 80, 80, 0.9)';
@@ -1528,7 +1619,7 @@ export class RenderSystem extends System {
     minY: number;
     maxY: number;
   }): void {
-    const now = Date.now();
+    const now = getSimulationNowMs();
     for (const site of this.demolitionSites) {
       if (
         site.x + site.width < viewportBounds.minX ||
@@ -2283,7 +2374,7 @@ export class RenderSystem extends System {
     let gx = rabbit.x;
     let gy = rabbit.y;
     if (j) {
-      const nowMs = Date.now();
+      const nowMs = getSimulationNowMs();
       const rawT = (nowMs - j.startMs) / RABBIT_JUMP_DURATION_MS;
       const t = Math.max(0, Math.min(1, rawT));
       const u = 1 - (1 - t) * (1 - t);
@@ -2331,7 +2422,7 @@ export class RenderSystem extends System {
    */
   private renderWildRabbit(rabbit: WildRabbit): void {
     const ctx = this.ctx;
-    const nowMs = Date.now();
+    const nowMs = getSimulationNowMs();
     const j = rabbit.jumping;
     const { gx, gy } = this.getWildRabbitGridPosition(rabbit);
     let jumpArcPx = 0;
@@ -2542,7 +2633,7 @@ export class RenderSystem extends System {
     }
 
     const demolitionSitesByDepth = new Map<number, DemolitionSiteVisual[]>();
-    const now = Date.now();
+    const now = getSimulationNowMs();
     for (const site of this.demolitionSites) {
       if (now - site.startedAt >= DEMOLITION_FIRE_DURATION_MS) continue;
       const depth = Math.floor(site.x + site.y + site.width + site.height - 2);
@@ -3206,7 +3297,7 @@ export class RenderSystem extends System {
   }
 
   private renderFishJumps(): void {
-    const now = Date.now();
+    const now = getSimulationNowMs();
     const JUMP_DURATION = 1200;
 
     if (now >= this.nextFishSpawn) {
@@ -3239,7 +3330,7 @@ export class RenderSystem extends System {
       const tile = this.tileMap.getTile(x, y);
       if (!tile || tile.terrain !== 'water' || !tile.isExplored()) continue;
       if (this.tileMap.getWaterFishRemainingAt(x, y) <= 0) continue;
-      this.fishJumps.push({ x, y, startTime: Date.now() });
+      this.fishJumps.push({ x, y, startTime: getSimulationNowMs() });
       return;
     }
   }
@@ -3551,7 +3642,7 @@ export class RenderSystem extends System {
     const tileH = this.iso.tileHeight;
     const centerX = ((building.width - building.height) * tileW) / 4;
     const centerY = ((building.width + building.height) * tileH) / 4;
-    const bob = Math.sin(Date.now() * 0.004) * 2.5;
+    const bob = Math.sin(getSimulationNowMs() * 0.004) * 2.5;
     const y = centerY - building.buildingHeight - 28 + bob;
     const size = 11;
 
@@ -3847,7 +3938,7 @@ export class RenderSystem extends System {
     const bubbleH = isHovered ? 34 : 40;
     const radius = 8;
 
-    const bob = Math.sin(Date.now() * 0.003) * 2;
+    const bob = Math.sin(getSimulationNowMs() * 0.003) * 2;
 
     this.ctx.save();
     this.ctx.translate(bubbleX, bubbleY + bob);
@@ -4093,7 +4184,7 @@ export class RenderSystem extends System {
       worker.nextFloorSleepProbeMs = null;
       return;
     }
-    const now = Date.now();
+    const now = getSimulationNowMs();
     if (worker.idleContinuousSinceMs == null) {
       worker.idleContinuousSinceMs = now;
     }
@@ -4108,7 +4199,7 @@ export class RenderSystem extends System {
   private static readonly FLOOR_NAP_ROLL = 0.052;
 
   private updateIdleAnimation(worker: Worker): void {
-    const now = Date.now();
+    const now = getSimulationNowMs();
     if (
       (worker.visualActivity === 'production_well' || worker.visualActivity === 'production_mill') &&
       worker.state === 'working'
@@ -4255,13 +4346,13 @@ export class RenderSystem extends System {
       else if (dirX < 0 && dirY <= 0) facing = 2;
       else facing = 3;
       worker.idleAnim = 'none';
-      worker.nextIdleCheck = Date.now() + 2000 + Math.random() * 4000;
+      worker.nextIdleCheck = getSimulationNowMs() + 2000 + Math.random() * 4000;
     } else {
       this.updateIdleAnimation(worker);
       facing = worker.idleFacing;
     }
 
-    const now = Date.now();
+    const now = getSimulationNowMs();
     const isCombatDuel = worker.visualActivity === 'combat_duel' && worker.role === 'military';
     const frame = isMoving || isCombatDuel ? Math.floor(now / (isCombatDuel ? 120 : 200)) % 4 : 0;
     // Keep military close to civilian size; body proportions are normalized in painter.

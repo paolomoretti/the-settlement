@@ -342,6 +342,32 @@ function setupGameUI(game: Game): void {
     });
   }
 
+  const fastForwardButton = document.getElementById('btn-fast-forward') as HTMLButtonElement | null;
+  const fastForwardIcon = fastForwardButton?.querySelector<HTMLImageElement>('.btn-fast-forward-icon') ?? null;
+  const syncFastForwardButton = (): void => {
+    if (!fastForwardButton) return;
+    const enabled = game.isFastForwardEnabled();
+    fastForwardButton.classList.toggle('is-active', enabled);
+    fastForwardButton.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    fastForwardButton.setAttribute('aria-label', enabled ? 'Disable fast forward' : 'Enable fast forward');
+    if (fastForwardIcon) {
+      fastForwardIcon.src = enabled
+        ? fastForwardIcon.dataset.activeSrc ?? '/assets/ui/fast_forward_selected.png'
+        : fastForwardIcon.dataset.normalSrc ?? '/assets/ui/fast_forward.png';
+    }
+  };
+  if (fastForwardButton) {
+    tippy(fastForwardButton, {
+      ...iconBarTippy,
+      content: 'Fast forward (3x)',
+    });
+    fastForwardButton.addEventListener('click', () => {
+      game.setFastForwardEnabled(!game.isFastForwardEnabled());
+      syncFastForwardButton();
+    });
+    syncFastForwardButton();
+  }
+
   const optionsButton = document.getElementById('btn-options');
   if (optionsButton) {
     tippy(optionsButton, {

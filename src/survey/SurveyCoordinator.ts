@@ -5,6 +5,7 @@
 
 import { Entity } from '@/core/Entity';
 import { eventBus } from '@/core/EventBus';
+import { getSimulationNowMs } from '@/core/simulationClock';
 import { Position } from '@/components/Position';
 import { Movable } from '@/components/Movable';
 import { Worker } from '@/components/Worker';
@@ -180,7 +181,7 @@ export class SurveyCoordinator {
     return false;
   }
 
-  canSendSurveyorTo(centerX: number, centerY: number, now: number = Date.now()): boolean {
+  canSendSurveyorTo(centerX: number, centerY: number, now: number = getSimulationNowMs()): boolean {
     if (!this.isTileEligibleForSurveyTarget(centerX, centerY)) return false;
     if (this.isAreaBlockedForNewCenter(centerX, centerY, now)) return false;
     if (this.deps.getAvailablePopulation() <= 0) return false;
@@ -189,7 +190,7 @@ export class SurveyCoordinator {
   }
 
   tryDispatchSurveyor(centerX: number, centerY: number): boolean {
-    const now = Date.now();
+    const now = getSimulationNowMs();
     if (!this.canSendSurveyorTo(centerX, centerY, now)) return false;
 
     const tileMap = this.deps.getTileMap();
@@ -337,7 +338,7 @@ export class SurveyCoordinator {
     return Math.floor(pos.x + 1e-6) === tx && Math.floor(pos.y + 1e-6) === ty;
   }
 
-  tick(now: number = Date.now()): void {
+  tick(now: number = getSimulationNowMs()): void {
     const tileMap = this.deps.getTileMap();
     const entities = this.deps.getEntities();
     const mapSeed = this.deps.getMapSeed();
@@ -491,7 +492,7 @@ export class SurveyCoordinator {
       s.workerEntityId = null;
       s.phase = 'cooldown';
       if (s.postSurveyUnlockAt === 0) {
-        s.postSurveyUnlockAt = Date.now();
+        s.postSurveyUnlockAt = getSimulationNowMs();
       }
     }
     eventBus.emit('survey:session_updated');
@@ -521,7 +522,7 @@ export class SurveyCoordinator {
     return out;
   }
 
-  getOverlayForRender(now: number = Date.now()): SurveyOverlayForRender {
+  getOverlayForRender(now: number = getSimulationNowMs()): SurveyOverlayForRender {
     const flags: Array<{ x: number; y: number }> = [];
     const labels: Array<{ x: number; y: number; resource: ResourceType }> = [];
     let progress: SurveyOverlayForRender['progress'] = null;

@@ -1,3 +1,5 @@
+import { getSimulationNowMs } from '@/core/simulationClock';
+
 export type TransportStatus = 'waiting' | 'assigned' | 'in_transit' | 'delivered';
 
 export interface TransportRequest {
@@ -29,7 +31,7 @@ export class TransportQueue {
       amount,
       status: 'waiting',
       assignedWorkerId: null,
-      createdAt: Date.now(),
+      createdAt: getSimulationNowMs(),
     };
     this.requests.set(request.id, request);
     return request;

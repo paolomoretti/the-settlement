@@ -12,7 +12,7 @@ A **segment** is a continuous stretch of road tiles between two **nodes**. A nod
 
 - A **dead end** — has 0 or 1 cardinal road neighbors
 - A **junction** — has 3+ cardinal road neighbors
-- **Building-adjacent** — cardinally adjacent to a building **entrance tile** (occupied + hasRoad)
+- **Building-adjacent** — cardinally adjacent to an occupied building footprint tile. The formal entrance tile is occupied + `hasRoad`, but side roads touching any footprint edge can also seed routes.
 
 Tiles with exactly 2 cardinal road neighbors and no adjacent buildings are **corridor tiles** — they're interior to a segment, not boundaries.
 
@@ -28,7 +28,7 @@ The building splits the road into 2 segments. Each gets one worker.
 ### Segment Computation Algorithm
 
 1. Collect all road tile positions (tracked incrementally via `addRoad`/`removeRoad`)
-2. Classify each road tile: node or corridor (using 4-directional road neighbors + 4-directional entrance adjacency)
+2. Classify each road tile: node or corridor (using 4-directional road neighbors + 4-directional building-footprint adjacency)
 3. From each node, trace outward along each branch through corridor tiles until hitting another node
 4. Each trace = one segment (ordered tile list + two endpoint nodes)
 5. Deduplicate via edge tracking so each segment is only created once

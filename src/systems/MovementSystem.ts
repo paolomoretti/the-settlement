@@ -7,6 +7,7 @@ import { Entity } from '@/core/Entity';
 import { Position } from '@/components/Position';
 import { Movable } from '@/components/Movable';
 import { Worker } from '@/components/Worker';
+import { getSimulationNowMs } from '@/core/simulationClock';
 
 export class MovementSystem extends System {
   constructor(private readonly shouldMoveEntity: (entity: Entity) => boolean = () => true) {
@@ -39,7 +40,7 @@ export class MovementSystem extends System {
               worker.carryingResource === 'hammer'
             ) {
               worker.setState('working');
-              worker.buildIdleUntil = Date.now() + 1600 + Math.random() * 1400;
+              worker.buildIdleUntil = getSimulationNowMs() + 1600 + Math.random() * 1400;
             } else {
               worker.setState(worker.carryingResource ? 'carrying' : 'idle');
             }
@@ -85,7 +86,7 @@ export class MovementSystem extends System {
                 worker.carryingResource === 'hammer'
               ) {
                 worker.setState('working');
-                worker.buildIdleUntil = Date.now() + 1600 + Math.random() * 1400;
+                worker.buildIdleUntil = getSimulationNowMs() + 1600 + Math.random() * 1400;
               } else {
                 worker.setState(worker.carryingResource ? 'carrying' : 'idle');
               }

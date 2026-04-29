@@ -96,13 +96,19 @@
       filter: brightness(1.15) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45));
     }
 
+    #top-right-actions button.chromeless-icon-btn.is-active,
+    #top-right-actions button.chromeless-icon-btn[aria-pressed="true"] {
+      background: rgba(255, 255, 255, 0.08) !important;
+    }
+
     #top-right-actions button.chromeless-icon-btn {
       min-width: 72px;
       min-height: 72px;
     }
 
     #top-right-actions button.chromeless-icon-btn .btn-options-icon,
-    #top-right-actions button.chromeless-icon-btn .btn-exit-icon {
+    #top-right-actions button.chromeless-icon-btn .btn-exit-icon,
+    #top-right-actions button.chromeless-icon-btn .btn-fast-forward-icon {
       width: 64px;
       height: 64px;
       display: block;
@@ -1919,6 +1925,16 @@
         <div>Mode: <span id="current-mode">View</span></div>
       </div>
       <div id="top-right-actions">
+        <button type="button" id="btn-fast-forward" class="chromeless-icon-btn btn-top-fast-forward" aria-label="Enable fast forward" aria-pressed="false">
+          <img
+            class="btn-fast-forward-icon"
+            src="/assets/ui/fast_forward.png"
+            data-normal-src="/assets/ui/fast_forward.png"
+            data-active-src="/assets/ui/fast_forward_selected.png"
+            alt=""
+            decoding="async"
+          >
+        </button>
         <button type="button" id="btn-options" class="chromeless-icon-btn btn-top-options" aria-label="Settings">
           <img class="btn-options-icon" src="/assets/ui/options.png" alt="" decoding="async">
         </button>

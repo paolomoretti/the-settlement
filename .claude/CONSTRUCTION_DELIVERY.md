@@ -131,6 +131,7 @@ When a building in `awaiting_materials` is deleted:
 - If no road connection, `updateConstructionDelivery()` retries each frame
 - Junction items at base camp entrance wait until routes are computed (items with no valid direction are skipped by workers)
 - When road is built → `recomputeTransportRoutes()` adds the construction site → items start flowing
+- Placement previews and disconnected-building hints show the two preferred road start cells on the building's right/front edge: one to the right of the entrance row and one below the rightmost/front column. Either side-road can activate the building because road connectivity checks any cardinal road touching the footprint.
 
 ---
 

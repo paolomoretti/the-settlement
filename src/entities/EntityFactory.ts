@@ -12,6 +12,7 @@ import { Production } from '@/components/Production';
 import { Storage } from '@/components/Storage';
 import { Owner } from '@/components/Owner';
 import { dataManager } from '@/data/DataManager';
+import { getSimulationNowMs } from '@/core/simulationClock';
 import { ResourceType } from '@/types/GameData';
 import { BUILDING_FINAL_SPRITES } from '@/catalog/buildingSprites';
 
@@ -106,7 +107,7 @@ export function createBuilding(
   if (buildingDef.buildTime > 0) {
     buildingComp.buildTimeSec = buildingDef.buildTime;
   } else {
-    buildingComp.completedAt = Date.now();
+    buildingComp.completedAt = getSimulationNowMs();
     const cap = buildingDef.military?.soldierCapacity;
     if (typeof cap === 'number' && cap > 0) {
       buildingComp.initMilitaryGarrison(cap);

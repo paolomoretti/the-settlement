@@ -595,23 +595,23 @@
       }
 
       .popover-storage-grid {
-        display: grid;
-        grid-template-columns: repeat(var(--storage-slots, 10), minmax(0, 1fr));
+        display: flex;
+        flex-wrap: wrap;
         gap: 3px;
-        width: 100%;
       }
 
       .popover-storage-cell {
         display: flex;
         align-items: center;
         justify-content: center;
-        aspect-ratio: 1;
-        min-width: 0;
+        width: 35px;
+        height: 35px;
         border: 1px solid rgba(154, 183, 145, 0.28);
         border-radius: 3px;
         background: rgba(0, 0, 0, 0.22);
         box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
         overflow: hidden;
+        flex-shrink: 0;
       }
 
       .popover-storage-cell--filled {
@@ -627,6 +627,38 @@
         margin-top: 6px;
         color: #888;
         font-size: 10px;
+      }
+
+      .popover-military-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+
+      .popover-military-cell {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 35px;
+        height: 35px;
+        border: 1px solid rgba(154, 183, 145, 0.28);
+        border-radius: 4px;
+        background: rgba(0, 0, 0, 0.22);
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
+        overflow: hidden;
+        flex-shrink: 0;
+        cursor: default;
+      }
+
+      .popover-military-cell--occupied {
+        background: rgba(100, 130, 80, 0.18);
+        border-color: rgba(180, 210, 150, 0.55);
+      }
+
+      .popover-military-cell canvas {
+        display: block;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
       }
 
       .popover-current-output {

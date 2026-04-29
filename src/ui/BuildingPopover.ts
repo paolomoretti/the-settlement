@@ -9,6 +9,8 @@ import { dataManager } from '@/data/DataManager';
 import { eventBus } from '@/core/EventBus';
 import { BuildingType, BuildingDefinition } from '@/types/GameData';
 import type { AttackRankSelection } from '@/core/Game';
+import { paintMilitaryHeadOnCanvas } from '@/rendering/WorkerSpritePainter';
+import { WORKER_DEFS } from '@/components/Worker';
 
 export class BuildingPopover {
   private game: Game;
@@ -29,6 +31,7 @@ export class BuildingPopover {
   private militaryPanelEl: HTMLElement | null = null;
   private staffingStatusEl: HTMLElement | null = null;
   private productionTimeSec: number = 0;
+  private _militaryPanelKey: string | null = null;
 
   constructor(game: Game) {
     this.game = game;
@@ -55,6 +58,7 @@ export class BuildingPopover {
       this.gatherWarningEl = null;
       this.militaryPanelEl = null;
       this.staffingStatusEl = null;
+      this._militaryPanelKey = null;
     };
   }
 
@@ -229,11 +233,63 @@ export class BuildingPopover {
       building.initMilitaryGarrison(cap);
     }
     if (!building.militaryGarrison) return;
+
     const filled = building.getMilitaryGarrisonFilledCount();
-    const ranks = building.militaryGarrison.map(s => (s ? `R${s.rank}` : '—')).join(' ');
-    this.militaryPanelEl.innerHTML =
-      `<span class="popover-label">Garrison:</span> ${filled}/${cap} <span style="color:#aaa;font-size:10px">${ranks}</span>` +
-      `<div style="color:#888;font-size:10px;margin-top:4px">Settlers march from HQ when you have 1+ sword &amp; shield <b>in HQ storage</b> and a road path. Auto-fill runs every few seconds.</div>`;
+    const key = building.militaryGarrison
+      .map(s => (s ? `${s.rank}:${s.workerEntityId}` : 'null'))
+      .join(',');
+    if (key === this._militaryPanelKey) return;
+    this._militaryPanelKey = key;
+
+    // Rebuild the panel DOM imperatively so we can paint canvases immediately.
+    this.militaryPanelEl.innerHTML = '';
+
+    const title = document.createElement('div');
+    title.className = 'popover-section-title';
+    title.textContent = 'Military Units';
+    this.militaryPanelEl.appendChild(title);
+
+    const meta = document.createElement('div');
+    meta.className = 'popover-storage-meta';
+    const countSpan = document.createElement('span');
+    countSpan.className = filled > 0 ? 'popover-status-good' : 'popover-status-warn';
+    countSpan.textContent = `${filled}/${cap}`;
+    meta.appendChild(countSpan);
+    if (filled === cap && cap > 0) {
+      const stationedSpan = document.createElement('span');
+      stationedSpan.className = 'popover-status-good';
+      stationedSpan.textContent = 'Stationed';
+      meta.appendChild(stationedSpan);
+    }
+    this.militaryPanelEl.appendChild(meta);
+
+    const defaultAppearance = WORKER_DEFS.military.variants[0];
+    const grid = document.createElement('div');
+    grid.className = 'popover-military-grid';
+
+    for (const slot of building.militaryGarrison) {
+      const cell = document.createElement('div');
+      if (slot) {
+        cell.className = 'popover-military-cell popover-military-cell--occupied';
+        const rankName = slot.rank === 1 ? 'Rank 1' : slot.rank === 2 ? 'Rank 2' : 'Rank 3';
+        cell.title = rankName;
+        const canvas = document.createElement('canvas');
+        paintMilitaryHeadOnCanvas(canvas, slot.rank, defaultAppearance);
+        cell.appendChild(canvas);
+      } else {
+        cell.className = 'popover-military-cell';
+        cell.title = 'Empty slot';
+      }
+      grid.appendChild(cell);
+    }
+
+    this.militaryPanelEl.appendChild(grid);
+
+    const hint = document.createElement('div');
+    hint.style.cssText = 'color:#888;font-size:10px;margin-top:6px;line-height:1.4';
+    hint.innerHTML =
+      'Settlers march from HQ when you have 1+ sword &amp; shield <b>in HQ storage</b> and a road path. Auto-fill runs every few seconds.';
+    this.militaryPanelEl.appendChild(hint);
   }
 
   private updateGatherWarning(): void {
@@ -435,7 +491,7 @@ export class BuildingPopover {
       `<span class="${isFull ? 'popover-status-bad' : 'popover-status-good'}">${totalStored}/${capacity}</span>` +
       (isFull ? `<span class="popover-status-bad">Full</span>` : previewNote) +
       `</div>` +
-      `<div class="popover-storage-grid" style="--storage-slots:${slotCount}">${cells}</div>` +
+      `<div class="popover-storage-grid">${cells}</div>` +
       accepts;
   }
 
@@ -640,7 +696,7 @@ export class BuildingPopover {
     } else if (isMilitaryPost) {
       const filled = building.getMilitaryGarrisonFilledCount();
       const color = filled > 0 ? '#4caf50' : '#ffb74d';
-      const text = filled > 0 ? 'Garrisoned' : 'Awaiting garrison';
+      const text = filled > 0 ? 'Stationed' : 'Awaiting troops';
       status.innerHTML = `<span class="popover-label">Status:</span> <span style="color:${color}">${text} (${filled}/${militaryCap})</span>`;
     } else {
       status.innerHTML = `<span class="popover-label">Status:</span> <span style="color:#4caf50">Complete</span>`;
@@ -756,9 +812,7 @@ export class BuildingPopover {
 
     if (isMilitaryPost) {
       const mil = document.createElement('div');
-      mil.className = 'popover-row';
-      mil.style.fontSize = '11px';
-      mil.style.lineHeight = '1.5';
+      mil.className = 'popover-detail-card';
       this.militaryPanelEl = mil;
       el.appendChild(mil);
     }

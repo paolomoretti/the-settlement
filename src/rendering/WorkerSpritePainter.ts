@@ -636,3 +636,65 @@ export function paintWorkerFloorNap(
   drawWorkerNapZLetters(ctx, worker, now, s);
   ctx.restore();
 }
+
+/**
+ * Renders a head-portrait of a military soldier onto the given canvas.
+ * Canvas is sized to 35x35 CSS pixels (DPR-aware).
+ */
+export function paintMilitaryHeadOnCanvas(
+  canvas: HTMLCanvasElement,
+  rank: 1 | 2 | 3,
+  appearance: WorkerAppearance
+): void {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(35 * dpr);
+  canvas.height = Math.round(35 * dpr);
+  canvas.style.width = '35px';
+  canvas.style.height = '35px';
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.scale(dpr, dpr);
+
+  const s = 2.5;
+  const cx = 17.5;
+  const cy = 48;
+  ctx.translate(cx, cy);
+
+  const px = (x: number, y: number, w: number, h: number, color: string): void => {
+    ctx.fillStyle = color;
+    ctx.fillRect(x * s, y * s, w * s, h * s);
+  };
+
+  // Tunic collar (visible top of body)
+  px(-2, -9, 5, 5, appearance.tunic);
+  px(-2, -5, 5, 1, darkenColor(appearance.tunic, 0.75));
+
+  // Head — rank-based helmet or bare hair
+  if (rank >= 2) {
+    // Helmet base
+    px(-3, -14, 7, 4, '#5a5a5a');
+    // Notches
+    px(-2, -15, 1, 1, '#4a4a4a');
+    px(2, -15, 1, 1, '#4a4a4a');
+    if (rank >= 3) {
+      // Gold crown
+      px(-2, -16, 5, 2, '#d4af37');
+      px(-1, -17, 3, 1, '#f0d060');
+      px(0, -18, 1, 1, '#f8e090');
+      // Cheek plates
+      px(-3, -16, 1, 2, '#3a2a1e');
+      px(3, -16, 1, 2, '#3a2a1e');
+    }
+  } else {
+    // Rank 1 — bare head with hair
+    px(-2, -15, 5, 3, appearance.hair);
+  }
+
+  // Face (always front-facing)
+  px(-2, -13, 5, 4, appearance.skin);
+  px(-1, -12, 1, 1, '#1a1008');
+  px(1, -12, 1, 1, '#1a1008');
+}

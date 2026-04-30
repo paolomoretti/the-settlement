@@ -58,6 +58,10 @@ interface SmokeParticle {
    * a random ±22 brightness jitter baked in at emit time.
    */
   baseGray: number;
+  /**
+   * Peak alpha multiplier — core puffs are more opaque than edge wisps.
+   */
+  maxAlpha: number;
 }
 
 const rand = (min: number, max: number): number => min + Math.random() * (max - min);
@@ -102,7 +106,8 @@ export function createChimneySmoke(options: ChimneySmokeOptions): ChimneySmoke {
 
       const density = clamp(this.density, 0, 3);
       const rate = 2.6 * density;
-      const maxParticles = Math.ceil(16 * density);
+      // Room for both core puffs and edge wisps, which live slightly longer.
+      const maxParticles = Math.ceil(22 * density);
 
       if (this.emitting && density > 0) {
         acc += dt * rate;
@@ -127,7 +132,7 @@ export function createChimneySmoke(options: ChimneySmokeOptions): ChimneySmoke {
 
         const fadeIn = clamp(t / 0.16, 0, 1);
         const fadeOut = 1 - easeIn(clamp((t - 0.34) / 0.66, 0, 1));
-        p.alpha = fadeIn * fadeOut * 0.56;
+        p.alpha = fadeIn * fadeOut * p.maxAlpha;
       }
 
       for (let i = particles.length - 1; i >= 0; i--) {
@@ -174,23 +179,47 @@ export function createChimneySmoke(options: ChimneySmokeOptions): ChimneySmoke {
     if (particles.length >= maxParticles) return;
 
     const densityScale = clamp(emitter.density, 0.35, 3);
-    // Bake per-particle brightness jitter: ±22 from the shade base so each
-    // puff is slightly lighter or darker, breaking up visual uniformity.
+    // Bake per-particle brightness jitter so each puff is slightly
+    // lighter or darker, breaking up visual uniformity.
     const baseGray = clamp(shadeToGray(emitter.shade) + rand(-22, 22), 5, 250);
 
-    particles.push({
-      x: emitter.x + rand(-2, 2),
-      y: emitter.y + rand(-3, 2),
-      vx: rand(-1.5, 2.8),
-      vy: -24 + rand(-3, 2),
-      age: 0,
-      life: 3.8 * rand(0.85, 1.2),
-      startSize: rand(3, 5) * Math.min(1.15, densityScale),
-      endSize: rand(17, 26) * Math.min(1.2, densityScale),
-      size: 5,
-      alpha: 0,
-      baseGray,
-    });
+    if (Math.random() < 0.38) {
+      // ── Wisp particle (≈40%) ────────────────────────────────────────────
+      // Spawns wider from the chimney mouth, rises slower, stays small.
+      // Creates the spreading "edge columns" that flank the tight core.
+      particles.push({
+        x: emitter.x + rand(-5.5, 5.5),
+        y: emitter.y + rand(-4, 1),
+        vx: rand(-3.5, 4.5),
+        vy: -15 + rand(-2, 3),
+        age: 0,
+        life: 4.8 * rand(0.8, 1.25),
+        startSize: rand(1.5, 2.8),
+        endSize: rand(7, 14) * Math.min(1.1, densityScale),
+        size: 2,
+        alpha: 0,
+        baseGray,
+        maxAlpha: 0.4,
+      });
+    } else {
+      // ── Core puff (≈60%) ────────────────────────────────────────────────
+      // Tight spawn near the chimney centre, rises fast, billows large.
+      // Forms the dense main column.
+      particles.push({
+        x: emitter.x + rand(-1.5, 1.5),
+        y: emitter.y + rand(-3, 1),
+        vx: rand(-1.2, 2.2),
+        vy: -24 + rand(-3, 2),
+        age: 0,
+        life: 3.8 * rand(0.85, 1.2),
+        startSize: rand(3, 5) * Math.min(1.15, densityScale),
+        endSize: rand(16, 26) * Math.min(1.2, densityScale),
+        size: 5,
+        alpha: 0,
+        baseGray,
+        maxAlpha: 0.56,
+      });
+    }
   }
 
   return smoke;

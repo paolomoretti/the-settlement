@@ -493,7 +493,8 @@
     "chimneySmoke": {
       "offsetX": 7,
       "offsetY": 10,
-      "density": 10
+      "density": 10,
+      "shade": 5
     },
     "buildCost": { "wood_plank": 4 },
     "buildTime": 40,
@@ -553,7 +554,8 @@
     "chimneySmoke": {
       "offsetX": 7,
       "offsetY": 10,
-      "density": 10
+      "density": 10,
+      "shade": 5
     },
     "animation": {
       "type": "gather",
@@ -586,7 +588,8 @@
     "chimneySmoke": {
       "offsetX": 7,
       "offsetY": 10,
-      "density": 10
+      "density": 10,
+      "shade": 4
     },
     "buildCost": { "wood_plank": 4 },
     "buildTime": 40,
@@ -674,7 +677,8 @@
     "chimneySmoke": {
       "offsetX": 2,
       "offsetY": -50,
-      "density": 1
+      "density": 1,
+      "shade": 4
     },
     "visual": { "buildingHeight": 70, "color": "#d2691e", "spriteScale": 1.4, "offsetX": -1 },
     "buildCost": { "wood_plank": 2, "stone": 2 },
@@ -719,7 +723,8 @@
     "chimneySmoke": {
       "offsetX": 20,
       "offsetY": -22,
-      "density": 5
+      "density": 5,
+      "shade": 2
     },
     "storage": { "capacity": 10 },
     "population": { "requires": 1 },

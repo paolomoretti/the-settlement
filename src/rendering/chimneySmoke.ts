@@ -1,5 +1,15 @@
 /**
  * Lightweight retro chimney smoke for Canvas 2D (building-local coordinates).
+ *
+ * Shade scale 1–5:
+ *   1 = white / steam
+ *   2 = light grey
+ *   3 = medium grey  (default — matches the old fixed colour)
+ *   4 = dark grey
+ *   5 = near-black / sooty coal smoke
+ *
+ * Each emitted particle also receives a random ±22 brightness offset so
+ * the smoke column looks textured rather than uniformly flat.
  */
 
 export interface ChimneySmokeOptions {
@@ -7,6 +17,10 @@ export interface ChimneySmokeOptions {
   y: number;
   density?: number;
   duration?: number;
+  /**
+   * Smoke colour shade, 1 (white/steam) → 5 (black/sooty). Default 3.
+   */
+  shade?: number;
 }
 
 export interface ChimneySmoke {
@@ -16,6 +30,8 @@ export interface ChimneySmoke {
   duration: number;
   elapsed: number;
   emitting: boolean;
+  /** Colour shade 1–5 (1 = white, 5 = black). Can be changed at runtime. */
+  shade: number;
   update(dt: number): void;
   draw(ctx: CanvasRenderingContext2D): void;
   stop(): void;
@@ -23,6 +39,7 @@ export interface ChimneySmoke {
   isFinished(): boolean;
   setPosition(x: number, y: number): void;
   setDensity(density: number): void;
+  setShade(shade: number): void;
 }
 
 interface SmokeParticle {
@@ -36,6 +53,11 @@ interface SmokeParticle {
   endSize: number;
   size: number;
   alpha: number;
+  /**
+   * Per-particle base grey value (0–255), derived from the emitter shade plus
+   * a random ±22 brightness jitter baked in at emit time.
+   */
+  baseGray: number;
 }
 
 const rand = (min: number, max: number): number => min + Math.random() * (max - min);
@@ -43,6 +65,15 @@ const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 const clamp = (v: number, a: number, b: number): number => Math.max(a, Math.min(b, v));
 const easeOut = (t: number): number => 1 - (1 - t) * (1 - t);
 const easeIn = (t: number): number => t * t;
+
+/**
+ * Convert shade (1–5) to a base grey luminance value (0–255).
+ * Shade 3 → ~120, matching the old hardcoded colour.
+ */
+function shadeToGray(shade: number): number {
+  // shade 1 → 210 (near white), shade 5 → 25 (near black)
+  return Math.round(lerp(210, 25, clamp((shade - 1) / 4, 0, 1)));
+}
 
 export function createChimneySmoke(options: ChimneySmokeOptions): ChimneySmoke {
   const particles: SmokeParticle[] = [];
@@ -55,6 +86,7 @@ export function createChimneySmoke(options: ChimneySmokeOptions): ChimneySmoke {
     duration: options.duration ?? Infinity,
     elapsed: 0,
     emitting: true,
+    shade: clamp(options.shade ?? 3, 1, 5),
 
     start() {
       this.emitting = true;
@@ -127,6 +159,10 @@ export function createChimneySmoke(options: ChimneySmokeOptions): ChimneySmoke {
     setDensity(density: number) {
       this.density = density;
     },
+
+    setShade(shade: number) {
+      this.shade = clamp(shade, 1, 5);
+    },
   };
 
   function emitCluster(emitter: ChimneySmoke, maxParticles: number): void {
@@ -138,6 +174,9 @@ export function createChimneySmoke(options: ChimneySmokeOptions): ChimneySmoke {
     if (particles.length >= maxParticles) return;
 
     const densityScale = clamp(emitter.density, 0.35, 3);
+    // Bake per-particle brightness jitter: ±22 from the shade base so each
+    // puff is slightly lighter or darker, breaking up visual uniformity.
+    const baseGray = clamp(shadeToGray(emitter.shade) + rand(-22, 22), 5, 250);
 
     particles.push({
       x: emitter.x + rand(-2, 2),
@@ -150,6 +189,7 @@ export function createChimneySmoke(options: ChimneySmokeOptions): ChimneySmoke {
       endSize: rand(17, 26) * Math.min(1.2, densityScale),
       size: 5,
       alpha: 0,
+      baseGray,
     });
   }
 
@@ -160,11 +200,14 @@ function drawLoFiSmokePuff(ctx: CanvasRenderingContext2D, p: SmokeParticle): voi
   const x = Math.round(p.x);
   const y = Math.round(p.y);
   const s = Math.round(p.size);
+  const g = Math.round(p.baseGray);
+  // Highlight sub-puff is up to 30 units brighter, capped at 250.
+  const gh = Math.min(250, g + 30);
 
   ctx.save();
 
   ctx.globalAlpha = p.alpha * 0.62;
-  ctx.fillStyle = 'rgb(120,120,120)';
+  ctx.fillStyle = `rgb(${g},${g},${g})`;
   ctx.beginPath();
   ctx.arc(x, y, s, 0, Math.PI * 2);
   ctx.fill();
@@ -175,7 +218,7 @@ function drawLoFiSmokePuff(ctx: CanvasRenderingContext2D, p: SmokeParticle): voi
   ctx.fill();
 
   ctx.globalAlpha = p.alpha * 0.24;
-  ctx.fillStyle = 'rgb(150,150,150)';
+  ctx.fillStyle = `rgb(${gh},${gh},${gh})`;
   ctx.beginPath();
   ctx.arc(x - s * 0.3, y - s * 0.2, s * 0.4, 0, Math.PI * 2);
   ctx.fill();

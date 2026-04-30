@@ -370,7 +370,7 @@
     "production": {
       "outputs": { "flour": 1 },
       "inputs": { "grain": 1 },
-      "productionTime": 20,
+      "productionTime": 120,
       "continuous": true
     },
     "storage": { "capacity": 10 },
@@ -718,7 +718,7 @@
     },
     "chimneySmoke": {
       "offsetX": 20,
-      "offsetY": 9,
+      "offsetY": -22,
       "density": 5
     },
     "storage": { "capacity": 10 },

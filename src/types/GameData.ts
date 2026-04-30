@@ -235,6 +235,15 @@ export interface ChimneySmokeConfig {
   /** Emission strength 0–3 (default 1). */
   density?: number;
   /**
+   * Smoke colour shade, 1–5 (default 3).
+   *   1 = white / steam
+   *   2 = light grey
+   *   3 = medium grey  (default)
+   *   4 = dark grey
+   *   5 = near-black / sooty coal
+   */
+  shade?: number;
+  /**
    * Emitter lifetime in seconds (default: unlimited).
    * In-game, emission is still gated by production (`producing`); omit for smoke only while the furnace runs.
    */

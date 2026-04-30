@@ -377,11 +377,13 @@ export class RenderSystem extends System {
           y: cfg.offsetY,
           density: cfg.density ?? 1,
           duration: cfg.duration ?? Infinity,
+          shade: cfg.shade,
         });
         this.chimneySmokes.set(entity.id, smoke);
       } else {
         smoke.setPosition(cfg.offsetX, cfg.offsetY);
         if (cfg.density !== undefined) smoke.setDensity(cfg.density);
+        if (cfg.shade !== undefined) smoke.setShade(cfg.shade);
       }
 
       const isBuildReady =

@@ -522,6 +522,19 @@ export class SurveyCoordinator {
     eventBus.emit('survey:session_updated');
   }
 
+  /**
+   * Surveyor worker IDs that are actively digging (phase === 'sequential').
+   * Use this for ambient sound — excludes travel and return legs.
+   */
+  getWorkingSurveyorWorkerIds(): number[] {
+    const out: number[] = [];
+    for (const s of this.active) {
+      if (s.workerEntityId == null) continue;
+      if (s.phase === 'sequential') out.push(s.workerEntityId);
+    }
+    return out;
+  }
+
   /** Surveyor worker entities that should paint above survey UI (labels, bar, highlights). */
   getActiveSurveyorWorkerIds(): number[] {
     const out: number[] = [];

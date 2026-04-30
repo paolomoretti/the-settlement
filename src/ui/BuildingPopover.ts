@@ -601,7 +601,22 @@ export class BuildingPopover {
 
       const label = document.createElement('span');
       label.className = 'popover-worker-name';
-      label.textContent = `Rank ${rank}`;
+      label.style.display = 'inline-flex';
+      label.style.alignItems = 'center';
+      label.style.gap = '7px';
+
+      const faceCanvas = document.createElement('canvas');
+      paintMilitaryHeadOnCanvas(faceCanvas, rank, WORKER_DEFS.military.variants[0]);
+      // Render at 35×35 internally but display smaller to suit the row height.
+      faceCanvas.style.width = '28px';
+      faceCanvas.style.height = '28px';
+      faceCanvas.style.borderRadius = '3px';
+      faceCanvas.style.flexShrink = '0';
+      label.appendChild(faceCanvas);
+
+      const rankText = document.createElement('span');
+      rankText.textContent = `Rank ${rank}`;
+      label.appendChild(rankText);
 
       const controls = document.createElement('span');
       controls.style.display = 'inline-flex';
@@ -613,8 +628,9 @@ export class BuildingPopover {
       minus.textContent = '-';
       const count = document.createElement('span');
       count.className = 'production-priority-quantity';
-      count.style.minWidth = '52px';
+      count.style.minWidth = '44px';
       count.style.marginRight = '0';
+      count.style.textAlign = 'center';
       const plus = document.createElement('button');
       plus.className = 'production-priority-step';
       plus.textContent = '+';

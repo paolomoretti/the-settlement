@@ -231,6 +231,18 @@ export class GameWorkerRegistry {
     return this.militaryDispatchWorkers.size;
   }
 
+  /**
+   * Returns a snapshot map of animation worker entity ID → building entity ID for all active
+   * animation workers. Used by Game to poll for building-assigned worker ambient sounds.
+   */
+  getAnimationWorkerBuildingMap(): ReadonlyMap<number, number> {
+    const result = new Map<number, number>();
+    for (const [workerId, state] of this.animationWorkers) {
+      result.set(workerId, state.buildingEntityId);
+    }
+    return result;
+  }
+
   /** In-transit required-tool specialists per tool id. */
   getToolDispatchCounts(): Record<string, number> {
     const counts: Record<string, number> = {};

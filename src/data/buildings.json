@@ -490,6 +490,11 @@
       "offsetX": -6,
       "offsetY": 4
     },
+    "chimneySmoke": {
+      "offsetX": 7,
+      "offsetY": 10,
+      "density": 10
+    },
     "buildCost": { "wood_plank": 4 },
     "buildTime": 40,
     "requiresRoad": true,
@@ -544,6 +549,12 @@
     },
     "storage": { "capacity": 10 },
     "population": { "requires": 1 },
+
+    "chimneySmoke": {
+      "offsetX": 7,
+      "offsetY": 10,
+      "density": 10
+    },
     "animation": {
       "type": "gather",
       "gatherMode": "mine_site",
@@ -571,6 +582,11 @@
       "spriteScale": 1.5,
       "offsetX": -6,
       "offsetY": 4
+    },
+    "chimneySmoke": {
+      "offsetX": 7,
+      "offsetY": 10,
+      "density": 10
     },
     "buildCost": { "wood_plank": 4 },
     "buildTime": 40,
@@ -612,6 +628,11 @@
       "spriteScale": 1.5,
       "offsetX": -6,
       "offsetY": 4
+    },
+    "chimneySmoke": {
+      "offsetX": 7,
+      "offsetY": 10,
+      "density": 10
     },
     "buildCost": { "wood_plank": 4 },
     "buildTime": 40,
@@ -694,6 +715,11 @@
       "inputs": { "coal": 1, "gold_ore": 1 },
       "productionTime": 30,
       "continuous": true
+    },
+    "chimneySmoke": {
+      "offsetX": 20,
+      "offsetY": 9,
+      "density": 5
     },
     "storage": { "capacity": 10 },
     "population": { "requires": 1 },

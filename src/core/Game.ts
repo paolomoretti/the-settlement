@@ -55,6 +55,7 @@ import {
   type EnemyVillageBuildingPlan,
 } from '@/world/EnemyVillageGenerator';
 import { setSimulationNowMs } from './simulationClock';
+import { WORKER_AMBIENT_SOUNDS } from '@/config/gameConfig';
 
 const DEMOLITION_FIRE_DURATION_MS = 30_000;
 const DEMOLITION_SCORCH_DURATION_MS = 60_000;
@@ -186,6 +187,7 @@ export class Game {
   private nextBattleClashAt = 0;
   private nextForestAmbientAt = 0;
   private nextHammerSoundAt = 0;
+  private readonly nextWorkerSoundAt = new Map<string, number>();
   private pendingWellDemolitions = new Map<number, number>();
 
   private readonly frameHooks: Array<() => void> = [];
@@ -308,6 +310,12 @@ export class Game {
     audioManager.loadSound('forest_1', '/audio/forest_1.mp3', 0.35);
     audioManager.loadSound('forest_2', '/audio/forest_2.mp3', 0.35);
     audioManager.loadSound('hammer', '/audio/hammer.mp3', 0.45);
+    audioManager.loadSound('surveyor', '/audio/surveyor.mp3', 0.6);
+    for (const def of dataManager.getAllBuildings()) {
+      if (def.ambientSound) {
+        audioManager.loadDynamicSound('building_worker_' + def.id, def.ambientSound.src);
+      }
+    }
 
     // Setup event listeners
     this.setupEventListeners();
@@ -3635,6 +3643,7 @@ export class Game {
     this.updateEnemyAttacks();
     this.updateForestAmbient();
     this.updateHammerSound();
+    this.updateWorkerAmbientSounds();
     this.pruneAllMilitaryGarrisons();
 
     /** After movement so walkers that finish a path this frame see `isMoving === false` at goal tile. */
@@ -5135,6 +5144,52 @@ export class Game {
     this.nextHammerSoundAt = now + 9_500 + Math.random() * 1_000;
   }
 
+  private updateWorkerAmbientSounds(): void {
+    if (!document.hasFocus()) return;
+    const now = Date.now(); // wall-clock — unaffected by fast-forward
+
+    // ── Surveyor section ─────────────────────────────────────────────────────
+    const surveyorConfig = WORKER_AMBIENT_SOUNDS['surveyor'];
+    if (surveyorConfig) {
+      const surveyorIds = this.surveys.getWorkingSurveyorWorkerIds();
+      if (surveyorIds.length > 0) {
+        const nextAt = this.nextWorkerSoundAt.get('surveyor') ?? 0;
+        if (now >= nextAt) {
+          const isVisible = surveyorIds.some(id => {
+            const entity = this.entities.find(e => e.id === id && e.active);
+            if (!entity) return false;
+            const pos = entity.getComponent(Position);
+            return pos != null && this.isOnScreen(pos.x, pos.y);
+          });
+          if (isVisible) {
+            audioManager.playSound('surveyor');
+            this.nextWorkerSoundAt.set('surveyor', now + surveyorConfig.intervalSec * 1_000);
+          }
+        }
+      }
+    }
+
+    // ── Building animation workers section ───────────────────────────────────
+    const animMap = this.workers.getAnimationWorkerBuildingMap();
+    for (const [workerId, buildingEntityId] of animMap) {
+      const buildingEntity = this.entities.find(e => e.id === buildingEntityId && e.active);
+      if (!buildingEntity) continue;
+      const building = buildingEntity.getComponent(Building);
+      if (!building) continue;
+      const def = dataManager.getBuilding(building.buildingType);
+      if (!def?.ambientSound) continue;
+      const key = `building_worker_${building.buildingType}`;
+      const nextAt = this.nextWorkerSoundAt.get(key) ?? 0;
+      if (now < nextAt) continue;
+      const workerEntity = this.entities.find(e => e.id === workerId && e.active);
+      if (!workerEntity) continue;
+      const pos = workerEntity.getComponent(Position);
+      if (!pos || !this.isOnScreen(pos.x, pos.y)) continue;
+      audioManager.playDynamicSound(key);
+      this.nextWorkerSoundAt.set(key, now + def.ambientSound.intervalSec * 1_000);
+    }
+  }
+
   private isAttackVisibleToPlayer(attack: ActiveEnemyAttack): boolean {
     const points: Array<{ x: number; y: number }> = [];
     if (attack.currentAttackerId != null) {
@@ -6184,6 +6239,7 @@ export class Game {
     this.nextBattleClashAt = 0;
     this.nextForestAmbientAt = 0;
     this.nextHammerSoundAt = 0;
+    this.nextWorkerSoundAt.clear();
     this.pendingWellDemolitions.clear();
     this.syncDemolitionSitesToRender();
 
@@ -6233,6 +6289,7 @@ export class Game {
       this.nextBattleClashAt = 0;
       this.nextForestAmbientAt = 0;
       this.nextHammerSoundAt = 0;
+      this.nextWorkerSoundAt.clear();
       this.pendingWellDemolitions.clear();
       this.syncDemolitionSitesToRender();
 

@@ -22,10 +22,13 @@ export type SoundEvent =
   | 'chop_wood'
   | 'hammer'
   | 'ambient_birds'
-  | 'ui_click';
+  | 'ui_click'
+  | 'surveyor';
 
 export class AudioManager {
   private sounds: Map<SoundEvent, Howl> = new Map();
+  /** Keyed by arbitrary string (e.g. 'building_worker_lumberjack') for building-worker ambient sounds. */
+  private dynamicSounds: Map<string, Howl> = new Map();
   private musicTrack?: Howl;
   private enabled: boolean = true;
   private volume: number = 0.7;
@@ -57,6 +60,30 @@ export class AudioManager {
     } else {
       // Placeholder: log that sound would play
       console.log(`[Audio] Would play: ${event}`);
+    }
+  }
+
+  // Load a dynamic (non-SoundEvent) sound by string key
+  loadDynamicSound(key: string, path: string, volume = 0.5): void {
+    if (!this.dynamicSounds.has(key)) {
+      this.dynamicSounds.set(
+        key,
+        new Howl({
+          src: [path],
+          volume,
+        })
+      );
+    }
+  }
+
+  // Play a dynamic sound by string key
+  playDynamicSound(key: string): void {
+    if (!this.enabled) return;
+    const sound = this.dynamicSounds.get(key);
+    if (sound) {
+      sound.play();
+    } else {
+      console.log(`[Audio] Would play dynamic: ${key}`);
     }
   }
 

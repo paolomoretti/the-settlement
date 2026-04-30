@@ -11,10 +11,12 @@ How road segments are computed and workers are assigned to them. Settlers II sty
 A **segment** is a continuous stretch of road tiles between two **nodes**. A node is any road tile that is:
 
 - A **dead end** — has 0 or 1 cardinal road neighbors
-- A **junction** — has 3+ cardinal road neighbors
-- **Building-adjacent** — cardinally adjacent to an occupied building footprint tile. The formal entrance tile is occupied + `hasRoad`, but side roads touching any footprint edge can also seed routes.
+- A **junction** — has 3+ cardinal road neighbors (T or X intersection)
+- **Entrance-adjacent** — cardinally adjacent to a building **entrance tile** (occupied + `hasRoad`). Plain footprint tiles that are only occupied (no `hasRoad`) are **invisible** to node detection, so roads running alongside the _side_ of a large building stay as corridor tiles and do **not** spawn extra workers.
 
-Tiles with exactly 2 cardinal road neighbors and no adjacent buildings are **corridor tiles** — they're interior to a segment, not boundaries.
+Curves and L-turns (2 road neighbors, no adjacent entrance) are always **corridor tiles** — they do not create a new segment boundary.
+
+Tiles with exactly 2 cardinal road neighbors and no adjacent entrance tile are **corridor tiles** — they're interior to a segment, not boundaries.
 
 ### Example
 

@@ -1,4 +1,4 @@
-import type { GameConfig } from '@/types/GameData';
+import type { GameConfig, WorkerAmbientSoundConfig } from '@/types/GameData';
 
 /**
  * Central gameplay tuning values.
@@ -6,6 +6,14 @@ import type { GameConfig } from '@/types/GameData';
  * Keep values here when they are global balance knobs rather than content data.
  * Content definitions such as individual buildings/resources still live in JSON.
  */
+/**
+ * Per-worker-role ambient sounds played periodically while the worker is active and visible on screen.
+ * Keys match the role identifiers used in `updateWorkerAmbientSounds` (e.g. 'surveyor').
+ */
+export const WORKER_AMBIENT_SOUNDS: Record<string, WorkerAmbientSoundConfig> = {
+  surveyor: { src: '/audio/surveyor.mp3', intervalSec: 15 },
+};
+
 export const GAME_CONFIG = {
   starting: {
     baseCamp: {

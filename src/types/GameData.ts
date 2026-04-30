@@ -209,6 +209,14 @@ export type AnimationConfig =
       digAtSiteSec: number;
     };
 
+/** Ambient sound emitted periodically while a worker from this building is active and on-screen. */
+export interface WorkerAmbientSoundConfig {
+  /** Path to the audio file (e.g. '/audio/surveyor.mp3'). */
+  src: string;
+  /** Minimum seconds between plays of this sound. */
+  intervalSec: number;
+}
+
 /** Optional chimney smoke (offsets in building-local sprite space; see RenderSystem building anchor). */
 export interface ChimneySmokeConfig {
   /** Optional schedule that overrides production-based gating. */
@@ -305,6 +313,12 @@ export interface BuildingDefinition {
 
   /** Retro chimney smoke while `Production.status === 'producing'` (when building has Production). */
   chimneySmoke?: ChimneySmokeConfig;
+
+  /**
+   * Ambient sound played periodically while a building-assigned animation worker is active and visible.
+   * Leave undefined for buildings with no bespoke worker sound.
+   */
+  ambientSound?: WorkerAmbientSoundConfig;
 }
 
 // ============================================================================

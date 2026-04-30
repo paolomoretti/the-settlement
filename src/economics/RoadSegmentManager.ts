@@ -144,7 +144,14 @@ export class RoadSegmentManager {
     ];
     for (const [dx, dy] of dirs) {
       const tile = tileMap.getTile(x + dx, y + dy);
-      if (tile && tile.isOccupied()) {
+      // Only count building *entrance* tiles (occupied + hasRoad) as building nodes.
+      // Plain footprint tiles (occupied, no road) must NOT make adjacent road tiles into
+      // building nodes — otherwise a road running alongside the side of a 2×2+ building
+      // creates one extra segment per footprint tile it passes, spawning extra workers on
+      // what should be a single unbroken corridor.
+      // Entrance tiles are the sole access point: they are tagged hasRoad=true in
+      // occupyBuildingTiles (and oneByOneTaggedForTransport for 1×1 buildings).
+      if (tile && tile.isOccupied() && tile.hasRoad) {
         return tile.occupiedBy;
       }
     }
@@ -171,10 +178,10 @@ export class RoadSegmentManager {
         entityId: adjacentBuildingId,
       };
     }
-    // Same as the 2-neighbor case: intersections next to a building footprint must
-    // keep entityId so transport can seed computeRoutesToBuilding; otherwise
-    // construction materials never get a direction map and sit at base camp forever
-    // while the builder still arrives via off-road A*.
+    // Junctions next to a building *entrance* must keep entityId so transport can seed
+    // computeRoutesToBuilding; otherwise construction materials never get a direction map
+    // and sit at base camp forever while the builder arrives via off-road A*.
+    // (adjacentBuildingId is already entrance-only from isAdjacentToBuilding above.)
     if (neighbors.length >= 3) {
       return { x, y, type: 'junction', entityId: adjacentBuildingId };
     }

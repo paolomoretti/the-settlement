@@ -882,20 +882,6 @@
     "plotType": "large"
   },
 
-  "catapult": {
-    "id": "catapult",
-    "name": "Catapult",
-    "description": "Siege weapon that hurls stones at enemy buildings.",
-    "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 55, "color": "#8b7355" },
-    "buildCost": { "wood_plank": 4, "stone": 3 },
-    "buildTime": 40,
-    "requiresRoad": true,
-    "category": "military",
-    "tier": 3,
-    "plotType": "medium"
-  },
-
   "lookout_tower": {
     "id": "lookout_tower",
     "name": "Lookout Tower",

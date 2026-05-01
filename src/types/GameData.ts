@@ -111,7 +111,6 @@ export type BuildingType =
   | 'guardhouse'
   | 'watchtower'
   | 'fortress'
-  | 'catapult'
   | 'lookout_tower'
 
   // Transport
@@ -173,7 +172,13 @@ export type AnimationConfig =
       workerSpeed: number;
       /** Lumberjack-style single chop vs quarry-style timed dig + partial tile depletion. */
       /** `mine_site`: walk to a dig tile in front of the mine, pickaxe at ground, return with ore (no terrain change). */
-      gatherMode?: 'tree' | 'rock_depletion' | 'water_depletion' | 'mine_site' | 'wild_hunt' | 'forest_forage';
+      gatherMode?:
+        | 'tree'
+        | 'rock_depletion'
+        | 'water_depletion'
+        | 'mine_site'
+        | 'wild_hunt'
+        | 'forest_forage';
       /** With `walkLeadSec` + `digAtSiteSec`: worker departs late in the cycle (like forester). */
       walkLeadSec?: number;
       digAtSiteSec?: number;

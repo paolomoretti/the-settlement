@@ -35,4 +35,4 @@
 - Preview band: `TERRITORY_PREVIEW_BAND_CELLS` in `TerritoryCoordinator.ts`.
 - Pole spacing: `CORDON_POLE_STRIDE_CELLS`.
 - Military claim priority: `MILITARY_CLAIM_STRENGTH_BONUS`.
-- Per-building vision: `territoryVisionRadius` in `buildings.json` (catapult and other non-expanders omit the field).
+- Per-building vision: `territoryVisionRadius` in `buildings.json` (non-expander buildings omit the field).

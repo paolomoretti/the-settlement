@@ -10,7 +10,7 @@ This document defines how **staffed buildings** get a **map worker**: a peasant 
 | `population.requires` + `requiredTool`                                                                   | **No extra map worker** — the delivered tool specialist is the building worker. They enter the building, are tracked on the building, and return to HQ if the building is demolished.           |
 | `population.requires` + timed `production` + **no** `animation` in JSON + **no** `requiredTool`          | **Yes** — runtime synthesizes **`interior_operator`**, except buildings deferred until custom outdoor animation exists (today: `hunter`, `farm`, `pig_farm`; see `resolveStaffingAnimation()`). |
 | `population.requires` + explicit `animation`                                                             | **Yes** — behaviour is whatever that block specifies, except `requiredTool` + `interior_operator` still uses only the tool specialist.                                                          |
-| `population.requires` but **no** `production` timer (e.g. donkey breeder, shipyard, lookout as of today) | **No** automatic interior worker; add `animation` later or extend systems when those buildings get timed work.                                                                                  |
+| `population.requires` but **no** `production` timer (e.g. donkey breeder, lookout as of today) | **No** automatic interior worker; add `animation` later or extend systems when those buildings get timed work.                                                                                  |
 
 Residential and pure storage/military buildings without `population.requires` do not use this staffing pipeline.
 

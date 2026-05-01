@@ -115,8 +115,6 @@ export type BuildingType =
 
   // Transport
   | 'donkey_breeder'
-  | 'shipyard'
-  | 'harbor'
 
   // Infrastructure
   | 'road';

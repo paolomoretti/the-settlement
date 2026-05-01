@@ -1,6 +1,6 @@
 # Gameplay Balance Assessment
 
-This assessment reviews the current new-game economy, military expansion loop, weapon production chain, mineral model, and enemy engagement path. It intentionally excludes shipyard and harbor gameplay.
+This assessment reviews the current new-game economy, military expansion loop, weapon production chain, mineral model, and enemy engagement path.
 
 ## Executive verdict
 

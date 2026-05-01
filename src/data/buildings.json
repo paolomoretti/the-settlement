@@ -920,36 +920,5 @@
     "category": "infrastructure",
     "tier": 2,
     "plotType": "medium"
-  },
-
-  "shipyard": {
-    "id": "shipyard",
-    "name": "Shipyard",
-    "description": "Builds boats and ships from boards.",
-    "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 60, "color": "#5b4a3f" },
-    "buildCost": { "wood_plank": 2, "stone": 3 },
-    "buildTime": 35,
-    "requiresRoad": true,
-    "requiredTool": "hammer",
-    "population": { "requires": 1 },
-    "category": "infrastructure",
-    "tier": 3,
-    "plotType": "medium"
-  },
-
-  "harbor": {
-    "id": "harbor",
-    "name": "Harbor",
-    "description": "Provides storage and ship access for overseas expeditions.",
-    "size": { "width": 3, "height": 3 },
-    "visual": { "buildingHeight": 80, "color": "#4a7a8c" },
-    "buildCost": { "wood_plank": 4, "stone": 6 },
-    "buildTime": 50,
-    "requiresRoad": true,
-    "storage": { "capacity": 400 },
-    "category": "infrastructure",
-    "tier": 3,
-    "plotType": "large"
   }
 }

@@ -3,7 +3,9 @@
  */
 
 import { Game } from '@/core/Game';
+import { eventBus } from '@/core/EventBus';
 import { dataManager } from '@/data/DataManager';
+import { themeManager } from '@/data/ThemeManager';
 import { BuildingDefinition, BuildingType } from '@/types/GameData';
 import '@fortawesome/fontawesome-free/css/fontawesome.min.css';
 import '@fortawesome/fontawesome-free/css/solid.min.css';
@@ -91,6 +93,9 @@ export class BuildingMenu {
     // Close button
     const closeBtn = document.getElementById('btn-close-building-menu');
     closeBtn?.addEventListener('click', () => this.close());
+
+    // Listen for theme changes to refresh names
+    eventBus.on('refresh:building_menu', () => this.refresh());
   }
 
   open(): void {
@@ -216,7 +221,8 @@ export class BuildingMenu {
     }
 
     // Building preview (sprite if available, colored square fallback)
-    const spriteSrc = `/assets/buildings/${building.id}.png`;
+    const baseSrc = `/assets/buildings/${building.id}.png`;
+    const spriteSrc = themeManager.transformSpritePath(baseSrc);
 
     const preview = document.createElement('div');
     preview.className = 'building-preview';
@@ -383,7 +389,8 @@ export class BuildingMenu {
     const img = document.createElement('img');
     const fallbackSrc = `/assets/resources/${resourceId}.png`;
     const primarySrc = resource?.icon || fallbackSrc;
-    img.src = primarySrc;
+    // Apply theme transformation to resource icon
+    img.src = themeManager.transformSpritePath(primarySrc);
     img.className = 'building-resource-icon';
     const fallback = document.createElement('span');
     fallback.className = 'building-resource-fallback';
@@ -393,8 +400,9 @@ export class BuildingMenu {
       fallback.hidden = true;
     };
     img.onerror = () => {
-      if (img.src !== new URL(fallbackSrc, window.location.origin).href) {
-        img.src = fallbackSrc;
+      const themedFallback = themeManager.transformSpritePath(fallbackSrc);
+      if (img.src !== new URL(themedFallback, window.location.origin).href) {
+        img.src = themedFallback;
         return;
       }
       img.remove();

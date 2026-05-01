@@ -6,6 +6,7 @@ import { Storage } from '@/components/Storage';
 import { Position } from '@/components/Position';
 import { Entity } from '@/core/Entity';
 import { dataManager } from '@/data/DataManager';
+import { themeManager } from '@/data/ThemeManager';
 import { eventBus } from '@/core/EventBus';
 import { BuildingType, BuildingDefinition } from '@/types/GameData';
 import type { AttackRankSelection } from '@/core/Game';
@@ -167,15 +168,18 @@ export class BuildingPopover {
     const resource = dataManager.getResource(resourceId as any);
     const fallbackSrc = `/assets/resources/${resourceId}.png`;
     const primarySrc = resource?.icon || fallbackSrc;
+    // Apply theme transformations
+    const themedPrimarySrc = themeManager.transformSpritePath(primarySrc);
+    const themedFallbackSrc = themeManager.transformSpritePath(fallbackSrc);
     const fallbackAttr =
-      primarySrc === fallbackSrc ? '' : ` data-fallback="${this.escapeHtml(fallbackSrc)}"`;
+      themedPrimarySrc === themedFallbackSrc ? '' : ` data-fallback="${this.escapeHtml(themedFallbackSrc)}"`;
     const fallback = this.escapeHtml(
       this.getResourceName(resourceId).slice(0, 1).toUpperCase() || '?'
     );
     return (
       `<span class="popover-resource-icon ${className}">` +
       `<span class="popover-resource-icon-fallback">${fallback}</span>` +
-      `<img src="${this.escapeHtml(primarySrc)}" alt="" decoding="async"${fallbackAttr} onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;delete this.dataset.fallback;}else{this.remove();}">` +
+      `<img src="${this.escapeHtml(themedPrimarySrc)}" alt="" decoding="async"${fallbackAttr} onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;delete this.dataset.fallback;}else{this.remove();}">` +
       `</span>`
     );
   }

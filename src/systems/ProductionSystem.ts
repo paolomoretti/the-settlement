@@ -206,6 +206,9 @@ export class ProductionSystem extends System {
       const wildHuntGather =
         buildingDef?.animation?.type === 'gather' &&
         buildingDef.animation.gatherMode === 'wild_hunt';
+      const forestForageGather =
+        buildingDef?.animation?.type === 'gather' &&
+        buildingDef.animation.gatherMode === 'forest_forage';
 
       // Check buffer/storage space for outputs (skip if cycle already in progress)
       if (production.timer === 0) {
@@ -372,6 +375,36 @@ export class ProductionSystem extends System {
         }
       }
 
+      // Forest forage: check for nearby trees (never runs out as long as trees exist)
+      if (forestForageGather && pos && building.animationWorkerId == null) {
+        const now = getSimulationNowMs();
+        if (now - building.lastHuntRabbitProbeAt >= 500) {
+          building.lastHuntRabbitProbeAt = now;
+          const entrance = building.getEntranceOffset();
+          const entranceX = entrance ? pos.x + entrance.dx : pos.x;
+          const entranceY = entrance ? pos.y + entrance.dy : pos.y;
+          const gatherAnim =
+            buildingDef.animation?.type === 'gather' ? buildingDef.animation : null;
+          const animSearch = gatherAnim?.searchRadius ?? 16;
+          const gatherRadius = buildingDef.production?.maxGatherRadius ?? animSearch;
+
+          // Check for forest/grass tiles with trees nearby
+          const tileMap = this.getTileMap();
+          let foundForest = false;
+          for (let dy = -gatherRadius; dy <= gatherRadius && !foundForest; dy++) {
+            for (let dx = -gatherRadius; dx <= gatherRadius && !foundForest; dx++) {
+              const checkX = entranceX + dx;
+              const checkY = entranceY + dy;
+              const tile = tileMap.getTile(checkX, checkY);
+              if (tile && (tile.terrain === 'forest' || tile.terrain === 'grass')) {
+                foundForest = true;
+              }
+            }
+          }
+          building.outOfMapResources = !foundForest;
+        }
+      }
+
       if (production.status !== 'producing') {
         if (!(building.buildingType === 'well' && wellAquiferDry)) {
           building.outOfMapResources = false;
@@ -392,7 +425,7 @@ export class ProductionSystem extends System {
         building.buildingType === 'forester' && building.animationWorkerId != null;
       const fieldGatherPausing =
         building.animationWorkerId != null &&
-        (resourceDepletionGather || mineSiteGather || wildHuntGather);
+        (resourceDepletionGather || mineSiteGather || wildHuntGather || forestForageGather);
       if (
         !foresterPlanting &&
         !fieldGatherPausing &&
@@ -406,6 +439,7 @@ export class ProductionSystem extends System {
         !resourceDepletionGather &&
         !mineSiteGather &&
         !wildHuntGather &&
+        !forestForageGather &&
         production.timer >= production.productionTime
       ) {
         production.timer -= production.productionTime;

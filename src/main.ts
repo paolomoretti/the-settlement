@@ -1,6 +1,7 @@
 import { Game } from './core/Game';
 import { eventBus } from './core/EventBus';
 import { dataManager } from '@/data/DataManager';
+import { themeManager } from '@/data/ThemeManager';
 import { BuildingMenu } from '@/ui/BuildingMenu';
 import { BuildingPopover } from '@/ui/BuildingPopover';
 import { GamePopover } from '@/ui/GamePopover';
@@ -35,6 +36,7 @@ type GameOptions = {
   navigator: boolean;
   soundEffects: boolean;
   roadRenderingMode: RoadRenderingMode;
+  veganMode: boolean;
 };
 
 function normalizeRoadRenderingMode(value: unknown): RoadRenderingMode {
@@ -49,6 +51,7 @@ function loadOptions(): GameOptions {
     navigator: true,
     soundEffects: true,
     roadRenderingMode: 'vector',
+    veganMode: false,
   };
   try {
     const raw = localStorage.getItem(OPTIONS_KEY);
@@ -624,6 +627,7 @@ function setupOptionsPanel(game: Game): void {
   const buildingLabelsToggle = document.getElementById('opt-building-labels') as HTMLInputElement;
   const navigatorToggle = document.getElementById('opt-navigator') as HTMLInputElement;
   const soundEffectsToggle = document.getElementById('opt-sound-effects') as HTMLInputElement;
+  const veganModeToggle = document.getElementById('opt-vegan-mode') as HTMLInputElement;
   const roadRenderingButtons = Array.from(
     document.querySelectorAll<HTMLButtonElement>('[data-road-rendering]')
   );
@@ -642,6 +646,7 @@ function setupOptionsPanel(game: Game): void {
   buildingLabelsToggle.checked = opts.buildingLabels;
   navigatorToggle.checked = opts.navigator;
   soundEffectsToggle.checked = opts.soundEffects;
+  veganModeToggle.checked = opts.veganMode;
   roadRenderingMode = opts.roadRenderingMode;
   setRoadRenderingMode(roadRenderingMode);
   syncRoadRenderingButtons();
@@ -659,6 +664,7 @@ function setupOptionsPanel(game: Game): void {
       navigator: navigatorToggle.checked,
       soundEffects: soundEffectsToggle.checked,
       roadRenderingMode,
+      veganMode: veganModeToggle.checked,
     });
 
   overlay.addEventListener('click', e => {
@@ -708,6 +714,26 @@ function setupOptionsPanel(game: Game): void {
     persistAll();
   });
 
+  veganModeToggle.addEventListener('change', () => {
+    themeManager.setActiveTheme(veganModeToggle.checked ? 'vegan' : null);
+    dataManager.invalidateThemedCaches();
+
+    // Clear and reload sprites with new theme
+    game.renderSystem.clearSpriteCache();
+
+    // Refresh building menu if open to show updated names
+    if (document.getElementById('building-menu-overlay')?.classList.contains('is-open')) {
+      eventBus.emit('refresh:building_menu');
+    }
+
+    // Refresh inventory panel if open to show updated icons and names
+    if (document.getElementById('inventory-overlay')?.classList.contains('is-open')) {
+      showInventoryPanel(game);
+    }
+
+    persistAll();
+  });
+
   for (const btn of roadRenderingButtons) {
     btn.addEventListener('click', () => {
       roadRenderingMode = normalizeRoadRenderingMode(btn.dataset.roadRendering);
@@ -722,8 +748,11 @@ function makeResourceIconHtml(resourceId: string, className = 'resource-icon'): 
   const resource = dataManager.getResource(resourceId as any);
   const src = resource?.icon || `/assets/resources/${resourceId}.png`;
   const fallback = `/assets/resources/${resourceId}.png`;
-  const fallbackAttr = src === fallback ? '' : ` data-fallback="${fallback}"`;
-  return `<img src="${src}" class="${className}"${fallbackAttr} onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;delete this.dataset.fallback;}else{this.style.display='none'}">`;
+  // Apply theme transformation to both src and fallback
+  const themedSrc = themeManager.transformSpritePath(src);
+  const themedFallback = themeManager.transformSpritePath(fallback);
+  const fallbackAttr = themedSrc === themedFallback ? '' : ` data-fallback="${themedFallback}"`;
+  return `<img src="${themedSrc}" class="${className}"${fallbackAttr} onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;delete this.dataset.fallback;}else{this.style.display='none'}">`;
 }
 
 function updateProductionPriorityList(game: Game): void {
@@ -999,8 +1028,9 @@ function showInventoryPanel(game: Game): void {
       const count = game.inventory[resource.id] || 0;
       const item = document.createElement('div');
       item.className = 'inventory-item' + (count === 0 ? ' inventory-item--zero' : '');
+      const iconPath = themeManager.transformSpritePath(`/assets/resources/${resource.id}.png`);
       item.innerHTML = `
-          <span class="inventory-item-name"><img src="/assets/resources/${resource.id}.png" class="resource-icon" onerror="this.style.display='none'">${resource.name}</span>
+          <span class="inventory-item-name"><img src="${iconPath}" class="resource-icon" onerror="this.style.display='none'">${resource.name}</span>
           <span class="inventory-item-count">${count}</span>
         `;
       inventoryList.appendChild(item);

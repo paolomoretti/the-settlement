@@ -47,6 +47,8 @@ export class Building extends Component {
   public militaryGarrison: (MilitaryGarrisonSlot | null)[] | null = null;
   /** Once a soldier first enters a military post, its territory remains established even if soldiers march out. */
   public militaryTerritoryEstablished: boolean = false;
+  /** True for a captured enemy headquarters that has been converted into a secondary player base. */
+  public isAuxiliaryHQ: boolean = false;
 
   constructor(
     public buildingType: BuildingType,

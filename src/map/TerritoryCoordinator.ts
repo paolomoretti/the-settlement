@@ -21,6 +21,12 @@ export const TERRITORY_PREVIEW_BAND_CELLS = 5;
 export const CORDON_POLE_STRIDE_CELLS = 2;
 const ENEMY_MILITARY_TERRITORY_RADIUS = 5;
 const MILITARY_CLAIM_STRENGTH_BONUS = 20;
+/** HQ (main or auxiliary) gets an extra strength bonus so its territory resists military encroachment. */
+const HQ_TERRITORY_STRENGTH_BONUS = 30;
+/** Minimum guaranteed territory radius around any player military building with established presence. */
+const MILITARY_CORE_RADIUS = 3;
+/** Overwhelming strength for the core guarantee disk — beats any competing HQ or military claim. */
+const MILITARY_CORE_STRENGTH = 500;
 
 export function territoryKey(x: number, y: number): string {
   return `${x},${y}`;
@@ -30,7 +36,8 @@ export function chebyshevDist(ax: number, ay: number, bx: number, by: number): n
   return Math.max(Math.abs(ax - bx), Math.abs(ay - by));
 }
 
-type DiskSource = { cx: number; cy: number; r: number; kind: 'hq' | 'military' };
+/** Optional per-source bonus override; if absent, the kind-based constant is used. */
+type DiskSource = { cx: number; cy: number; r: number; kind: 'hq' | 'military'; bonus?: number };
 
 export type TerritoryLayer = {
   unionU: ReadonlySet<string>;
@@ -104,6 +111,18 @@ export class TerritoryCoordinator {
         const cy = pos.y + Math.floor(b.height / 2);
         const r = factionId === PLAYER_FACTION ? tr : Math.min(tr, ENEMY_MILITARY_TERRITORY_RADIUS);
         this.addSource(factionId, { cx, cy, r, kind: 'military' });
+        // Player military posts get a minimum guaranteed territory radius that
+        // overrides any competing HQ or military claim, ensuring at least
+        // MILITARY_CORE_RADIUS cells of player land around every conquered fort.
+        if (factionId === PLAYER_FACTION) {
+          this.addSource(factionId, {
+            cx,
+            cy,
+            r: MILITARY_CORE_RADIUS,
+            kind: 'military',
+            bonus: MILITARY_CORE_STRENGTH,
+          });
+        }
       }
     }
 
@@ -139,7 +158,15 @@ export class TerritoryCoordinator {
   private getSourceStrengthAt(x: number, y: number, source: DiskSource): number | null {
     const dist = chebyshevDist(x, y, source.cx, source.cy);
     if (dist > source.r) return null;
-    return source.r - dist + (source.kind === 'military' ? MILITARY_CLAIM_STRENGTH_BONUS : 0);
+    const bonus =
+      source.bonus !== undefined
+        ? source.bonus
+        : source.kind === 'military'
+          ? MILITARY_CLAIM_STRENGTH_BONUS
+          : source.kind === 'hq'
+            ? HQ_TERRITORY_STRENGTH_BONUS
+            : 0;
+    return source.r - dist + bonus;
   }
 
   private computeExclusiveOwnership(): Map<string, CellClaim[]> {

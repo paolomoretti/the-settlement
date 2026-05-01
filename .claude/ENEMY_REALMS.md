@@ -39,7 +39,23 @@ The second pass repairs ordinary road disconnections. It finds enemy buildings t
 
 ## Defeat and attacks
 
-Enemy realm defeat is now driven by territory pressure and the attack loop in [`MILITARY_ATTACKS.md`](MILITARY_ATTACKS.md). Enemy military buildings and enemy HQ can be attacked directly; capturing the HQ burns non-military enemy buildings, while surviving enemy military buildings keep ownership and territory until separately conquered. Separately, when player territory expands over enemy civilian buildings, `Game.applyPlayerTerritoryPressureAftermath()` burns those non-military buildings and drops their goods for pickup. The same territory aftermath is symmetric: if an enemy raid captures a player military post and enemy territory expands over player civilian buildings, those player buildings burn as well.
+Enemy realm defeat is now driven by territory pressure and the attack loop in [`MILITARY_ATTACKS.md`](MILITARY_ATTACKS.md). Enemy military buildings and enemy HQ can be attacked directly; capturing the HQ converts it to an **Auxiliary Headquarters** (see below), while surviving enemy military buildings keep ownership and territory until separately conquered. Separately, when player territory expands over enemy civilian buildings, `Game.applyPlayerTerritoryPressureAftermath()` burns those non-military buildings and drops their goods for pickup. The same territory aftermath is symmetric: if an enemy raid captures a player military post and enemy territory expands over player civilian buildings, those player buildings burn as well.
+
+## HQ territory strength
+
+All headquarters — player or enemy — receive a `HQ_TERRITORY_STRENGTH_BONUS = 30` in `TerritoryCoordinator` on top of the base radius claim. This makes an HQ's immediate territory much harder to override with military buildings alone: a player military post (strength `radius − dist + 20`) cannot push back an HQ's core cells (strength `radius − dist + 30`) unless the military post is placed significantly closer to that cell than the HQ center. The only reliable way to absorb an enemy HQ's territory is to physically attack and conquer it.
+
+## Auxiliary Headquarters
+
+When the player captures an enemy `base_camp` (HQ), instead of simply absorbing it, it becomes an **Auxiliary HQ** (`building.isAuxiliaryHQ = true`):
+
+- **Faction** changes to `player`; the enemy realm loses its HQ and any remaining buildings burn via `burnEnemyRealmAfterHqCapture`.
+- **Storage** is retained intact (all goods the enemy stockpiled become player goods). The `isHeadquarters` flag is cleared so the auxiliary HQ is NOT the primary dispatch source — `ResourceManager.findHeadquarters()` still returns the original base camp.
+- **Territory**: because the building is still a `base_camp` and now player-owned, `TerritoryCoordinator` adds it as a second `kind: 'hq'` disk for the player faction with the full +30 bonus, giving the captured location strong territorial coverage.
+- **Dispatch source**: `findBestDispatchHqForBuilding()` picks the nearest player-owned `base_camp` (main or auxiliary) by Manhattan distance when dispatching construction materials and production inputs. Buildings closer to the auxiliary HQ will pull resources from it rather than from the main base.
+- **Selectable**: clicking the auxiliary HQ opens a different popover titled **"Auxiliary Headquarters"** that shows only the inventory (no actions, no delete button). A gold waving banner (`renderAuxiliaryHQBanner`) appears above the building to distinguish it visually from the main HQ.
+- **Cannot be demolished**: the `def.isHeadquarters` flag in `buildings.json` prevents the erase tool from deleting it.
+- **Save / load**: the `isAuxiliaryHQ` flag is persisted in building save data. On load, auxiliary HQ entities do **not** set `this.baseCampEntity` so the main HQ pointer is preserved.
 
 Activated enemy realms with aggressiveness `> 0` run a throttled border-pressure loop in `Game.updateEnemyBorderPressure()`. When an enemy faction's exclusive territory shares a cardinal boundary with player territory, that realm:
 

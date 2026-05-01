@@ -4100,6 +4100,8 @@ export class RenderSystem extends System {
       }
       if (!isPlayerOwned(entity)) {
         this.renderEnemyBuildingEntranceFlag(building, getEntityFaction(entity));
+      } else if (building.isAuxiliaryHQ) {
+        this.renderAuxiliaryHQBanner(building);
       }
 
       const chimneyCfg = dataManager.getBuilding(building.buildingType)?.chimneySmoke;
@@ -4268,7 +4270,81 @@ export class RenderSystem extends System {
     this.ctx.restore();
   }
 
-  /** Orange X above roof when lumberjack / quarry / fisher cannot reach any map source, or a well’s aquifer is dry. */
+  /**
+   * Small gold banner on a captured auxiliary HQ to distinguish it from the main base camp.
+   * Uses the same pole-and-flag pattern as enemy flags but with warm gold colours.
+   */
+  private renderAuxiliaryHQBanner(building: Building): void {
+    const entrance = building.getEntranceOffset();
+    if (!entrance) return;
+
+    const tileW = this.iso.tileWidth;
+    const tileH = this.iso.tileHeight;
+    const entranceCenterX = (entrance.dx * tileW) / 2 - (entrance.dy * tileW) / 2;
+    const entranceCenterY = (entrance.dx * tileH) / 2 + (entrance.dy * tileH) / 2 + tileH / 2;
+
+    // Place flag near the entrance (slightly left of the enemy flag position)
+    const footX = entranceCenterX - tileW / 4;
+    const footY = entranceCenterY - tileH / 4;
+    const s = 0.9;
+    const poleH = Math.max(20, Math.min(32, building.buildingHeight * 0.5));
+    const topY = footY - poleH;
+    const t = performance.now() * 0.0035 + building.width * 2.1 + building.height * 3.3;
+    const wave = Math.sin(t) * 2.0 * s;
+
+    this.ctx.save();
+    this.ctx.lineCap = 'round';
+
+    // Shadow
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+    this.ctx.beginPath();
+    this.ctx.ellipse(footX, footY + 1.4 * s, 4.2 * s, 2 * s, 0, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Pole
+    this.ctx.strokeStyle = 'rgba(80, 55, 20, 0.96)';
+    this.ctx.lineWidth = 3.5 * s;
+    this.ctx.beginPath();
+    this.ctx.moveTo(footX, footY);
+    this.ctx.lineTo(footX, topY);
+    this.ctx.stroke();
+
+    // Pole highlight
+    this.ctx.strokeStyle = 'rgba(180, 140, 60, 0.7)';
+    this.ctx.lineWidth = 1.2 * s;
+    this.ctx.beginPath();
+    this.ctx.moveTo(footX - 0.8 * s, footY - 1 * s);
+    this.ctx.lineTo(footX - 0.8 * s, topY + 1 * s);
+    this.ctx.stroke();
+
+    // Gold banner
+    this.ctx.fillStyle = 'rgba(218, 175, 40, 0.93)';
+    this.ctx.strokeStyle = 'rgba(140, 100, 20, 0.85)';
+    this.ctx.lineWidth = 1.1 * s;
+    this.ctx.beginPath();
+    this.ctx.moveTo(footX + 1.5 * s, topY + 3 * s);
+    this.ctx.quadraticCurveTo(footX + 13 * s, topY + 1 * s + wave, footX + 22 * s, topY + 6 * s);
+    this.ctx.quadraticCurveTo(
+      footX + 13 * s,
+      topY + 10 * s - wave * 0.45,
+      footX + 1.5 * s,
+      topY + 12 * s
+    );
+    this.ctx.closePath();
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Star symbol on banner (small cross/star to distinguish from enemy flags)
+    const starX = footX + 13 * s;
+    const starY = topY + 7 * s + wave * 0.25;
+    this.ctx.fillStyle = 'rgba(90, 60, 10, 0.85)';
+    this.ctx.fillRect(starX - 1.2 * s, starY - 3.5 * s, 2.4 * s, 7 * s);
+    this.ctx.fillRect(starX - 3.5 * s, starY - 1.2 * s, 7 * s, 2.4 * s);
+
+    this.ctx.restore();
+  }
+
+  /** Orange X above roof when lumberjack / quarry / fisher cannot reach any map source, or a well's aquifer is dry. */
   private renderMapResourcesExhaustedMarker(building: Building): void {
     const tileW = this.iso.tileWidth;
     const tileH = this.iso.tileHeight;

@@ -8,7 +8,7 @@ import { Entity } from '@/core/Entity';
 import { dataManager } from '@/data/DataManager';
 import { themeManager } from '@/data/ThemeManager';
 import { eventBus } from '@/core/EventBus';
-import { BuildingType, BuildingDefinition } from '@/types/GameData';
+import { BuildingType, BuildingDefinition, ResourceType } from '@/types/GameData';
 import type { AttackRankSelection } from '@/core/Game';
 import { paintMilitaryHeadOnCanvas } from '@/rendering/WorkerSpritePainter';
 import { WORKER_DEFS } from '@/components/Worker';
@@ -33,6 +33,11 @@ export class BuildingPopover {
   private staffingStatusEl: HTMLElement | null = null;
   private productionTimeSec: number = 0;
   private _militaryPanelKey: string | null = null;
+  // Auxiliary HQ two-tab display
+  private auxHqResourcesContainer: HTMLElement | null = null;
+  private auxHqWorkersContainer: HTMLElement | null = null;
+  private auxHqResourcesKey: string | null = null;
+  private auxHqWorkersKey: string | null = null;
 
   constructor(game: Game) {
     this.game = game;
@@ -60,6 +65,10 @@ export class BuildingPopover {
       this.militaryPanelEl = null;
       this.staffingStatusEl = null;
       this._militaryPanelKey = null;
+      this.auxHqResourcesContainer = null;
+      this.auxHqWorkersContainer = null;
+      this.auxHqResourcesKey = null;
+      this.auxHqWorkersKey = null;
     };
   }
 
@@ -79,23 +88,32 @@ export class BuildingPopover {
     const def = dataManager.getBuilding(building.buildingType as BuildingType);
     this.productionTimeSec = def?.production?.productionTime || 0;
     const isEnemyAttackTarget = this.game.isEnemyAttackTarget(entity);
+    const isAuxiliaryHQ = building.isAuxiliaryHQ;
     const content = isEnemyAttackTarget
       ? this.buildEnemyAttackContent(entity, building)
-      : this.buildContent(building, def);
+      : isAuxiliaryHQ
+        ? this.buildAuxiliaryHQContent(def)
+        : this.buildContent(building, def);
     const name = isEnemyAttackTarget
       ? `Enemy ${def?.name || building.buildingType}`
-      : def?.name || building.buildingType;
+      : isAuxiliaryHQ
+        ? 'Auxiliary Headquarters'
+        : def?.name || building.buildingType;
 
     const getAnchor = () => {
       this.popover.setTemporaryHidden(this.game.isDraggingEntity);
-      this.updateProgressBar();
-      this.updateCurrentOutputDisplay();
-      this.updateBufferDisplay();
-      this.updateStorageDisplay();
-      this.updateRequirements();
-      this.updateStaffingStatus();
-      this.updateGatherWarning();
-      this.updateMilitaryPanel();
+      if (isAuxiliaryHQ) {
+        this.updateAuxHqDisplay();
+      } else {
+        this.updateProgressBar();
+        this.updateCurrentOutputDisplay();
+        this.updateBufferDisplay();
+        this.updateStorageDisplay();
+        this.updateRequirements();
+        this.updateStaffingStatus();
+        this.updateGatherWarning();
+        this.updateMilitaryPanel();
+      }
 
       const p = entity.getComponent(Position);
       if (!p) return { x: 0, y: 0 };
@@ -682,6 +700,200 @@ export class BuildingPopover {
     update();
 
     return el;
+  }
+
+  /**
+   * Two-tab panel (Resources / Specialists) for a captured enemy headquarters.
+   * Mirrors the look of the "I" inventory overlay but scoped to this building's storage.
+   * No actions, no delete button.
+   */
+  private buildAuxiliaryHQContent(def?: BuildingDefinition): HTMLElement {
+    void def;
+    const el = document.createElement('div');
+
+    const desc = document.createElement('div');
+    desc.className = 'popover-desc';
+    desc.textContent =
+      'Captured headquarters. Acts as secondary storage and worker dispatch point. Cannot be demolished.';
+    el.appendChild(desc);
+
+    const statusRow = document.createElement('div');
+    statusRow.className = 'popover-row';
+    statusRow.innerHTML =
+      '<span class="popover-label">Status:</span> ' +
+      '<span style="color:#c8a83a;font-style:italic">Auxiliary Base</span>';
+    el.appendChild(statusRow);
+
+    // Tab bar
+    const tabBar = document.createElement('div');
+    tabBar.style.cssText =
+      'display:flex;gap:4px;margin:8px 0 2px;border-bottom:1px solid rgba(255,255,255,0.12);padding-bottom:4px;';
+
+    const makeTab = (label: string, active: boolean): HTMLButtonElement => {
+      const btn = document.createElement('button');
+      btn.textContent = label;
+      btn.style.cssText =
+        `flex:1;background:${active ? 'rgba(255,255,255,0.13)' : 'rgba(255,255,255,0.04)'};` +
+        `border:1px solid ${active ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.08)'};` +
+        `border-radius:4px 4px 0 0;color:${active ? '#eee' : '#999'};font-size:11px;padding:4px 6px;cursor:pointer;`;
+      return btn;
+    };
+
+    const tabResources = makeTab('Resources', true);
+    const tabWorkers = makeTab('Specialists', false);
+    tabBar.appendChild(tabResources);
+    tabBar.appendChild(tabWorkers);
+    el.appendChild(tabBar);
+
+    // Resources pane
+    const resourcesPane = document.createElement('div');
+    resourcesPane.style.cssText = 'padding-top:4px;max-height:220px;overflow-y:auto;';
+    this.auxHqResourcesContainer = resourcesPane;
+    el.appendChild(resourcesPane);
+
+    // Workers/Specialists pane
+    const workersPane = document.createElement('div');
+    workersPane.style.cssText = 'display:none;padding-top:4px;max-height:220px;overflow-y:auto;';
+    this.auxHqWorkersContainer = workersPane;
+    el.appendChild(workersPane);
+
+    // Tab switching logic
+    const setTab = (tab: 'resources' | 'workers'): void => {
+      const isRes = tab === 'resources';
+      resourcesPane.style.display = isRes ? '' : 'none';
+      workersPane.style.display = isRes ? 'none' : '';
+      tabResources.style.background = isRes ? 'rgba(255,255,255,0.13)' : 'rgba(255,255,255,0.04)';
+      tabResources.style.borderColor = isRes ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.08)';
+      tabResources.style.color = isRes ? '#eee' : '#999';
+      tabWorkers.style.background = isRes ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.13)';
+      tabWorkers.style.borderColor = isRes ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.22)';
+      tabWorkers.style.color = isRes ? '#999' : '#eee';
+    };
+
+    tabResources.addEventListener('click', e => {
+      e.stopPropagation();
+      setTab('resources');
+    });
+    tabWorkers.addEventListener('click', e => {
+      e.stopPropagation();
+      setTab('workers');
+    });
+
+    return el;
+  }
+
+  /** Live-update the auxiliary HQ two-tab display from the building's current storage. */
+  private updateAuxHqDisplay(): void {
+    if (!this.currentEntity) return;
+    const storage = this.currentEntity.getComponent(Storage);
+    if (!storage) return;
+
+    const RESOURCE_CATEGORIES = ['raw', 'refined', 'food', 'tool', 'weapon'] as const;
+    const TOOL_LABELS: Record<string, string> = {
+      axe: 'Woodcutter',
+      saw: 'Sawyer',
+      pickaxe: 'Miner',
+      shovel: 'Digger',
+      fishing_rod: 'Fisher',
+      scythe: 'Farmer',
+      hammer: 'Builder',
+      rolling_pin: 'Baker',
+      crucible: 'Smelter',
+      tongs: 'Blacksmith',
+      cleaver: 'Butcher',
+      bow: 'Hunter',
+    };
+
+    // --- Resources pane ---
+    if (this.auxHqResourcesContainer) {
+      const items: { id: string; name: string; count: number }[] = [];
+      for (const category of RESOURCE_CATEGORIES) {
+        for (const res of dataManager.getResourcesByCategory(category)) {
+          if (res.virtualOutput) continue;
+          items.push({ id: res.id, name: res.name, count: storage.getAmount(res.id) });
+        }
+      }
+
+      const key = items.map(i => `${i.id}:${i.count}`).join(',');
+      if (key !== this.auxHqResourcesKey) {
+        this.auxHqResourcesKey = key;
+        this.auxHqResourcesContainer.innerHTML = '';
+        const totalItems = items.reduce((s, i) => s + i.count, 0);
+        const meta = document.createElement('div');
+        meta.style.cssText = 'font-size:10px;color:#888;margin-bottom:4px;';
+        meta.textContent = `Stored: ${totalItems} / ${storage.capacity}`;
+        this.auxHqResourcesContainer.appendChild(meta);
+        for (const item of items) {
+          const row = document.createElement('div');
+          row.className = 'inventory-item' + (item.count === 0 ? ' inventory-item--zero' : '');
+          row.innerHTML =
+            `<span class="inventory-item-name">` +
+            `<img src="/assets/resources/${item.id}.png" class="resource-icon"` +
+            ` onerror="this.style.display='none'">${this.escapeHtml(item.name)}</span>` +
+            `<span class="inventory-item-count">${item.count}</span>`;
+          this.auxHqResourcesContainer.appendChild(row);
+        }
+      }
+    }
+
+    // --- Specialists pane ---
+    if (this.auxHqWorkersContainer) {
+      const specialistItems: { id: string; label: string; count: number }[] = [];
+      for (const [tool, label] of Object.entries(TOOL_LABELS)) {
+        const count = storage.getAmount(tool as ResourceType);
+        specialistItems.push({
+          id: tool,
+          label: `${label} (${dataManager.getResource(tool as ResourceType)?.name ?? tool})`,
+          count,
+        });
+      }
+      const swords = storage.getAmount('sword' as ResourceType);
+      const shields = storage.getAmount('shield' as ResourceType);
+      const militaryPotential = Math.min(swords, shields);
+
+      const key =
+        specialistItems.map(i => `${i.id}:${i.count}`).join(',') + `:mil:${militaryPotential}`;
+      if (key !== this.auxHqWorkersKey) {
+        this.auxHqWorkersKey = key;
+        this.auxHqWorkersContainer.innerHTML = '';
+
+        const note = document.createElement('div');
+        note.style.cssText = 'font-size:10px;color:#888;margin-bottom:6px;';
+        note.textContent = 'Specialists and troops that can be dispatched from this base.';
+        this.auxHqWorkersContainer.appendChild(note);
+
+        let anyShown = false;
+        for (const item of specialistItems) {
+          if (item.count === 0) continue;
+          anyShown = true;
+          const row = document.createElement('div');
+          row.className = 'worker-summary-item';
+          row.innerHTML =
+            `<span class="worker-summary-name">` +
+            `<img src="/assets/resources/${item.id}.png" class="resource-icon worker-summary-icon"` +
+            ` onerror="this.style.display='none'">${this.escapeHtml(item.label)}</span>` +
+            `<span class="worker-summary-count">${item.count}</span>`;
+          this.auxHqWorkersContainer.appendChild(row);
+        }
+        if (militaryPotential > 0) {
+          anyShown = true;
+          const row = document.createElement('div');
+          row.className = 'worker-summary-item';
+          row.innerHTML =
+            `<span class="worker-summary-name">` +
+            `<img src="/assets/resources/sword.png" class="resource-icon worker-summary-icon"` +
+            ` onerror="this.style.display='none'">Soldier potential</span>` +
+            `<span class="worker-summary-count">${militaryPotential}</span>`;
+          this.auxHqWorkersContainer.appendChild(row);
+        }
+        if (!anyShown) {
+          const empty = document.createElement('div');
+          empty.style.cssText = 'color:#888;font-size:11px;padding:4px 0;';
+          empty.textContent = 'No specialists in this base.';
+          this.auxHqWorkersContainer.appendChild(empty);
+        }
+      }
+    }
   }
 
   private buildContent(building: Building, def?: BuildingDefinition): HTMLElement {

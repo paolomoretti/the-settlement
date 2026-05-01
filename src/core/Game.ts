@@ -2304,6 +2304,83 @@ export class Game {
   }
 
   /**
+   * Get the road junction tile adjacent to an auxiliary HQ's entrance (any adjacent road tile).
+   * Used so auxiliary HQs can spawn junction items just like the main base camp.
+   */
+  private getAuxHqSpawnTile(hqEntity: Entity): { x: number; y: number } | null {
+    const pos = hqEntity.getComponent(Position);
+    const building = hqEntity.getComponent(Building);
+    if (!pos || !building) return null;
+    const entrance = building.getEntranceOffset();
+    if (!entrance) return null;
+    const ex = pos.x + entrance.dx;
+    const ey = pos.y + entrance.dy;
+    const cardinals: [number, number][] = [
+      [0, 1],
+      [0, -1],
+      [1, 0],
+      [-1, 0],
+    ];
+    for (const [dx, dy] of cardinals) {
+      const nx = ex + dx;
+      const ny = ey + dy;
+      if (!this.tileMap.isInBounds(nx, ny)) continue;
+      const tile = this.tileMap.getTile(nx, ny);
+      if (tile?.hasRoad) return { x: nx, y: ny };
+    }
+    // Fallback: entrance cell itself
+    return { x: ex, y: ey };
+  }
+
+  /**
+   * Find the best HQ entity (main or captured auxiliary) to dispatch resources for a given building.
+   * Picks the player-owned base_camp that is closest (Manhattan distance) to the target and
+   * has a reachable spawn tile.  Falls back to the main HQ when no auxiliary is closer.
+   */
+  private findBestDispatchHqForBuilding(
+    targetEntity: Entity
+  ): { hqEntity: Entity; spawnTile: { x: number; y: number } } | null {
+    const targetPos = targetEntity.getComponent(Position);
+    const targetBuilding = targetEntity.getComponent(Building);
+    if (!targetPos || !targetBuilding) return null;
+
+    const targetCx = targetPos.x + targetBuilding.width / 2;
+    const targetCy = targetPos.y + targetBuilding.height / 2;
+
+    let bestHq: Entity | null = null;
+    let bestSpawnTile: { x: number; y: number } | null = null;
+    let bestDist = Infinity;
+
+    for (const e of this.entities) {
+      if (!e.active) continue;
+      if (!isPlayerOwned(e)) continue;
+      const b = e.getComponent(Building);
+      if (!b || b.buildingType !== 'base_camp' || !b.isComplete()) continue;
+      const ePos = e.getComponent(Position);
+      if (!ePos) continue;
+      const eCx = ePos.x + b.width / 2;
+      const eCy = ePos.y + b.height / 2;
+      const dist = Math.abs(eCx - targetCx) + Math.abs(eCy - targetCy);
+      if (dist >= bestDist) continue;
+      const spawnTile =
+        e === this.baseCampEntity ? this.workers.getBaseCampSpawnTile() : this.getAuxHqSpawnTile(e);
+      if (!spawnTile) continue;
+      bestDist = dist;
+      bestHq = e;
+      bestSpawnTile = spawnTile;
+    }
+
+    if (bestHq && bestSpawnTile) return { hqEntity: bestHq, spawnTile: bestSpawnTile };
+
+    // Fallback: main HQ
+    if (this.baseCampEntity) {
+      const spawnTile = this.workers.getBaseCampSpawnTile();
+      if (spawnTile) return { hqEntity: this.baseCampEntity, spawnTile };
+    }
+    return null;
+  }
+
+  /**
    * Replenishes lost junction items and fills gaps when HQ inventory cannot pay again.
    * Build cost is deducted once at place time; `materialsSent` is how many were queued for physical
    * delivery. If items disappear from the spawn tile / route, `storage` may be empty — we must still
@@ -2315,10 +2392,10 @@ export class Game {
     if (!force && now - this.lastMaterialCheckTime < 2000) return;
     this.lastMaterialCheckTime = now;
 
-    const storage = this.baseCampEntity.getComponent(Storage);
-    if (!storage) return;
-    const spawnTile = this.workers.getBaseCampSpawnTile();
-    if (!spawnTile) return;
+    // Fallback references (used if no dispatch HQ is found for a building)
+    const fallbackStorage = this.baseCampEntity.getComponent(Storage);
+    const fallbackSpawnTile = this.workers.getBaseCampSpawnTile();
+    if (!fallbackStorage || !fallbackSpawnTile) return;
 
     for (const entity of this.sortEntitiesByBuildingPriority(this.entities)) {
       if (!entity.active) continue;
@@ -2326,6 +2403,11 @@ export class Game {
       if (!building || building.state !== 'awaiting_materials') continue;
       if (!building.constructionMaterials) continue;
       if (!building.isActive) continue;
+
+      // Use nearest HQ (main or auxiliary) as the dispatch source for this building
+      const dispatch = this.findBestDispatchHqForBuilding(entity);
+      const storage = dispatch?.hqEntity.getComponent(Storage) ?? fallbackStorage;
+      const spawnTile = dispatch?.spawnTile ?? fallbackSpawnTile;
 
       for (const [res, needed] of Object.entries(building.constructionMaterials)) {
         const delivered = building.materialsDelivered[res] || 0;
@@ -2622,25 +2704,27 @@ export class Game {
     }
   }
 
-  /** Pull HQ inventory onto the base-camp spawn junction for production buildings with local input storage. */
+  /** Pull HQ inventory onto the nearest-HQ spawn junction for production buildings with local input storage. */
   private tryDispatchHqProductionInputsForBuilding(entity: Entity): void {
     if (!this.baseCampEntity) return;
     const building = entity.getComponent(Building);
     const production = entity.getComponent(Production);
     const storage = entity.getComponent(Storage);
-    const hqStorage = this.baseCampEntity.getComponent(Storage);
     if (
       !building?.isComplete() ||
       !building.isActive ||
       !production?.hasInputs() ||
-      !storage?.isProductionStorage ||
-      !hqStorage
+      !storage?.isProductionStorage
     ) {
       return;
     }
 
-    const spawnTile = this.workers.getBaseCampSpawnTile();
-    if (!spawnTile) return;
+    // Use nearest HQ (main or auxiliary) as the dispatch source
+    const dispatch = this.findBestDispatchHqForBuilding(entity);
+    if (!dispatch) return;
+    const hqStorage = dispatch.hqEntity.getComponent(Storage);
+    if (!hqStorage) return;
+    const spawnTile = dispatch.spawnTile;
 
     const inputTypes = production.getAllInputResourceTypes();
     if (inputTypes.length === 0) return;
@@ -5368,6 +5452,11 @@ export class Game {
     if (building.buildingType === 'base_camp') {
       setEntityFaction(target, attack.attackerFactionId);
       if (attack.attackerFactionId === PLAYER_FACTION) {
+        // Convert the captured HQ into an auxiliary base instead of destroying it.
+        // Clear isHeadquarters so it doesn't interfere with main-HQ dispatch logic.
+        building.isAuxiliaryHQ = true;
+        const capturedStorage = target.getComponent(Storage);
+        if (capturedStorage) capturedStorage.isHeadquarters = false;
         this.burnEnemyRealmAfterHqCapture(attack.targetFactionId);
       }
       this.startAttackReturn(
@@ -5383,13 +5472,16 @@ export class Game {
       );
       this.showAttackResultToast(
         attack.attackerFactionId === PLAYER_FACTION
-          ? 'Enemy headquarters captured.'
+          ? 'Enemy headquarters captured! Converted to auxiliary base.'
           : 'Headquarters captured by enemy.',
         attack
       );
     } else {
       setEntityFaction(target, attack.attackerFactionId);
-      building.militaryTerritoryEstablished = false;
+      // Player captures: immediately establish territory (soldiers are en route; the building
+      // is physically taken and should claim its 3-cell core right away).
+      // Enemy captures: leave false until their soldiers walk in (unchanged behaviour).
+      building.militaryTerritoryEstablished = attack.attackerFactionId === PLAYER_FACTION;
       this.startAttackReturn(
         attack,
         this.getCapturedMilitaryReturnAssignments(target, attack, survivingAttackers)
@@ -6152,6 +6244,9 @@ export class Game {
         if (building?.militaryTerritoryEstablished) {
           data.militaryTerritoryEstablished = true;
         }
+        if (building?.isAuxiliaryHQ) {
+          data.isAuxiliaryHQ = true;
+        }
 
         if (production) {
           data.production = production.serialize();
@@ -6338,12 +6433,23 @@ export class Game {
           : PLAYER_FACTION;
         setEntityFaction(entity, savedFaction);
 
-        if (buildingData.type === 'base_camp' && savedFaction === PLAYER_FACTION) {
+        if (
+          buildingData.type === 'base_camp' &&
+          savedFaction === PLAYER_FACTION &&
+          !buildingData.isAuxiliaryHQ
+        ) {
           this.baseCampEntity = entity;
         }
 
         const building = entity.getComponent(Building);
         if (building) {
+          // Restore auxiliary HQ flag and clear isHeadquarters on storage
+          if (buildingData.isAuxiliaryHQ) {
+            building.isAuxiliaryHQ = true;
+            const auxStorage = entity.getComponent(Storage);
+            if (auxStorage) auxStorage.isHeadquarters = false;
+          }
+
           if (buildingData.state === 'awaiting_materials') {
             building.state = 'awaiting_materials';
             building.buildTimeSec = buildingData.buildTimeSec;

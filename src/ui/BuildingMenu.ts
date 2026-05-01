@@ -6,6 +6,7 @@ import { Game } from '@/core/Game';
 import { eventBus } from '@/core/EventBus';
 import { dataManager } from '@/data/DataManager';
 import { themeManager } from '@/data/ThemeManager';
+import { BUILDING_FINAL_SPRITES } from '@/catalog/buildingSprites';
 import { BuildingDefinition, BuildingType } from '@/types/GameData';
 import '@fortawesome/fontawesome-free/css/fontawesome.min.css';
 import '@fortawesome/fontawesome-free/css/solid.min.css';
@@ -220,8 +221,9 @@ export class BuildingMenu {
       card.classList.add('unaffordable');
     }
 
-    // Building preview (sprite if available, colored square fallback)
-    const baseSrc = `/assets/buildings/${building.id}.png`;
+    // Building preview (sprite if available, colored square fallback).
+    // Use the catalog lookup so aliases like storehouse → warehouse.png resolve correctly.
+    const baseSrc = BUILDING_FINAL_SPRITES[building.id] ?? `/assets/buildings/${building.id}.png`;
     const spriteSrc = themeManager.transformSpritePath(baseSrc);
 
     const preview = document.createElement('div');

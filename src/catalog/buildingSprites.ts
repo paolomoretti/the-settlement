@@ -34,6 +34,7 @@ export const BUILDING_FINAL_SPRITES: Record<string, string> = {
   watchtower: '/assets/buildings/watchtower.png',
   armory: '/assets/buildings/armory.png',
   donkey_breeder: '/assets/buildings/donkey_breeder.png',
+  lookout_tower: '/assets/buildings/lookout_tower.png',
 };
 
 /**
@@ -162,6 +163,11 @@ export const BUILDING_CONSTRUCTION_SPRITES: Record<string, string[]> = {
     '/assets/buildings/donkey_breeder_build_0.png',
     '/assets/buildings/donkey_breeder_build_1.png',
     '/assets/buildings/donkey_breeder_build_2.png',
+  ],
+  lookout_tower: [
+    '/assets/buildings/lookout_tower_build_0.png',
+    '/assets/buildings/lookout_tower_build_1.png',
+    '/assets/buildings/lookout_tower_build_2.png',
   ],
 };
 

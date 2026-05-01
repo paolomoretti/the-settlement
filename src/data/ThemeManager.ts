@@ -147,7 +147,8 @@ export class ThemeManager {
     // /assets/buildings/{buildingId}.png
     // /assets/buildings/{buildingId}_build_N.png
     // /assets/buildings/{buildingId}_prod_N.png
-    const buildingMatch = originalPath.match(/\/assets\/buildings\/([^/_]+)((?:_build_\d+|_prod_\d+)?)\.png$/);
+    // Building IDs can contain underscores (e.g., pig_farm), so match everything before _build or _prod
+    const buildingMatch = originalPath.match(/\/assets\/buildings\/(.+?)((?:_build_\d+|_prod_\d+)?)\.png$/);
     if (buildingMatch) {
       const buildingId = buildingMatch[1] as BuildingType;
       const suffix = buildingMatch[2]; // e.g., "_build_0" or ""

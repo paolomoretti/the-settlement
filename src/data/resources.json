@@ -134,7 +134,7 @@
     "category": "food",
     "description": "Soybeans from soy farms",
     "stackSize": 100,
-    "icon": "/assets/ui/icons/soy.png"
+    "icon": "/assets/resources/soy.png"
   },
   "tofu": {
     "id": "tofu",
@@ -142,7 +142,7 @@
     "category": "food",
     "description": "Processed soy protein",
     "stackSize": 100,
-    "icon": "/assets/ui/icons/tofu.png"
+    "icon": "/assets/resources/tofu.png"
   },
   "beer": {
     "id": "beer",

@@ -726,6 +726,11 @@ function setupOptionsPanel(game: Game): void {
       eventBus.emit('refresh:building_menu');
     }
 
+    // Refresh inventory panel if open to show updated icons and names
+    if (document.getElementById('inventory-overlay')?.classList.contains('is-open')) {
+      showInventoryPanel(game);
+    }
+
     persistAll();
   });
 
@@ -743,8 +748,11 @@ function makeResourceIconHtml(resourceId: string, className = 'resource-icon'): 
   const resource = dataManager.getResource(resourceId as any);
   const src = resource?.icon || `/assets/resources/${resourceId}.png`;
   const fallback = `/assets/resources/${resourceId}.png`;
-  const fallbackAttr = src === fallback ? '' : ` data-fallback="${fallback}"`;
-  return `<img src="${src}" class="${className}"${fallbackAttr} onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;delete this.dataset.fallback;}else{this.style.display='none'}">`;
+  // Apply theme transformation to both src and fallback
+  const themedSrc = themeManager.transformSpritePath(src);
+  const themedFallback = themeManager.transformSpritePath(fallback);
+  const fallbackAttr = themedSrc === themedFallback ? '' : ` data-fallback="${themedFallback}"`;
+  return `<img src="${themedSrc}" class="${className}"${fallbackAttr} onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;delete this.dataset.fallback;}else{this.style.display='none'}">`;
 }
 
 function updateProductionPriorityList(game: Game): void {
@@ -1020,8 +1028,9 @@ function showInventoryPanel(game: Game): void {
       const count = game.inventory[resource.id] || 0;
       const item = document.createElement('div');
       item.className = 'inventory-item' + (count === 0 ? ' inventory-item--zero' : '');
+      const iconPath = themeManager.transformSpritePath(`/assets/resources/${resource.id}.png`);
       item.innerHTML = `
-          <span class="inventory-item-name"><img src="/assets/resources/${resource.id}.png" class="resource-icon" onerror="this.style.display='none'">${resource.name}</span>
+          <span class="inventory-item-name"><img src="${iconPath}" class="resource-icon" onerror="this.style.display='none'">${resource.name}</span>
           <span class="inventory-item-count">${count}</span>
         `;
       inventoryList.appendChild(item);

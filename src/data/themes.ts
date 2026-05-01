@@ -24,6 +24,16 @@ export interface BuildingThemeOverride {
     inputs?: Partial<Record<ResourceType, number>>;
     outputs?: Partial<Record<ResourceType, number>>;
   };
+  /** Override animation configuration (for gather behavior) */
+  animation?: {
+    gatherMode?: string;
+    targetTerrain?: string[];
+    searchRadius?: number;
+  };
+  /** Override required tool (set to undefined to remove tool requirement) */
+  requiredTool?: ResourceType | null;
+  /** Override plot type preference (where building likes to be placed) */
+  plotType?: 'small' | 'medium' | 'large' | 'mine';
 }
 
 /** Complete theme override configuration */
@@ -59,10 +69,16 @@ export const VeganTheme: ThemeOverrides = {
     },
     hunter: {
       name: 'Gatherer',
-      description: 'Forages mushrooms from the forest.',
+      description: 'Forages mushrooms from the forest. Works best near trees.',
       spriteBaseName: 'gatherer',
+      requiredTool: null, // No tool needed - just picks mushrooms by hand
       production: {
         outputs: { ham: 1 }, // Still uses 'ham' internally, displays as 'mushrooms'
+      },
+      animation: {
+        gatherMode: 'forest_forage', // Never runs out, as long as trees exist
+        targetTerrain: ['grass', 'forest'], // Search for forest areas
+        searchRadius: 16, // Keep same search radius
       },
     },
     pig_farm: {

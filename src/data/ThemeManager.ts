@@ -124,12 +124,36 @@ export class ThemeManager {
       ...(override.description && { description: override.description }),
     };
 
+    // Apply requiredTool override (null removes the tool requirement)
+    if ('requiredTool' in override) {
+      if (override.requiredTool === null) {
+        delete patched.requiredTool;
+      } else if (override.requiredTool) {
+        patched.requiredTool = override.requiredTool;
+      }
+    }
+
+    // Apply plotType override if present
+    if (override.plotType) {
+      patched.plotType = override.plotType;
+    }
+
     // Apply production overrides if present
     if (override.production && base.production) {
       patched.production = {
         ...base.production,
         ...(override.production.inputs && { inputs: override.production.inputs }),
         ...(override.production.outputs && { outputs: override.production.outputs }),
+      };
+    }
+
+    // Apply animation overrides if present
+    if (override.animation && base.animation && base.animation.type === 'gather') {
+      patched.animation = {
+        ...base.animation,
+        ...(override.animation.gatherMode && { gatherMode: override.animation.gatherMode as any }),
+        ...(override.animation.targetTerrain && { targetTerrain: override.animation.targetTerrain }),
+        ...(override.animation.searchRadius !== undefined && { searchRadius: override.animation.searchRadius }),
       };
     }
 

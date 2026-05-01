@@ -128,6 +128,22 @@
     "stackSize": 100,
     "icon": "/assets/ui/icons/ham.png"
   },
+  "soy": {
+    "id": "soy",
+    "name": "Soy",
+    "category": "food",
+    "description": "Soybeans from soy farms",
+    "stackSize": 100,
+    "icon": "/assets/ui/icons/soy.png"
+  },
+  "tofu": {
+    "id": "tofu",
+    "name": "Tofu",
+    "category": "food",
+    "description": "Processed soy protein",
+    "stackSize": 100,
+    "icon": "/assets/ui/icons/tofu.png"
+  },
   "beer": {
     "id": "beer",
     "name": "Beer",

@@ -14,6 +14,7 @@ import {
 import resourcesData from './resources.json';
 import buildingsData from './buildings.json';
 import { GAME_CONFIG } from '@/config/gameConfig';
+import { themeManager } from './ThemeManager';
 
 export class DataManager {
   private static instance: DataManager;
@@ -21,6 +22,10 @@ export class DataManager {
   private resources: Map<ResourceType, ResourceDefinition> = new Map();
   private buildings: Map<BuildingType, BuildingDefinition> = new Map();
   private gameConfig!: GameConfig;
+
+  // Theme-patched definition caches
+  private themedResources: Map<ResourceType, ResourceDefinition> = new Map();
+  private themedBuildings: Map<BuildingType, BuildingDefinition> = new Map();
 
   private constructor() {
     this.loadData();
@@ -57,11 +62,28 @@ export class DataManager {
   // ========================================================================
 
   getResource(id: ResourceType): ResourceDefinition | undefined {
+    // If theme is active, check themed cache first
+    if (themeManager.isActive()) {
+      const cached = this.themedResources.get(id);
+      if (cached) return cached;
+
+      // Patch base definition and cache result
+      const base = this.resources.get(id);
+      if (base) {
+        const patched = themeManager.patchResourceDefinition(base);
+        this.themedResources.set(id, patched);
+        return patched;
+      }
+      return undefined;
+    }
+
+    // No theme active, return base definition
     return this.resources.get(id);
   }
 
   getAllResources(): ResourceDefinition[] {
-    return Array.from(this.resources.values());
+    const ids = Array.from(this.resources.keys());
+    return ids.map(id => this.getResource(id)).filter((r): r is ResourceDefinition => r !== undefined);
   }
 
   getResourcesByCategory(
@@ -75,11 +97,28 @@ export class DataManager {
   // ========================================================================
 
   getBuilding(id: BuildingType): BuildingDefinition | undefined {
+    // If theme is active, check themed cache first
+    if (themeManager.isActive()) {
+      const cached = this.themedBuildings.get(id);
+      if (cached) return cached;
+
+      // Patch base definition and cache result
+      const base = this.buildings.get(id);
+      if (base) {
+        const patched = themeManager.patchBuildingDefinition(base);
+        this.themedBuildings.set(id, patched);
+        return patched;
+      }
+      return undefined;
+    }
+
+    // No theme active, return base definition
     return this.buildings.get(id);
   }
 
   getAllBuildings(): BuildingDefinition[] {
-    return Array.from(this.buildings.values());
+    const ids = Array.from(this.buildings.keys());
+    return ids.map(id => this.getBuilding(id)).filter((b): b is BuildingDefinition => b !== undefined);
   }
 
   getBuildingsByCategory(
@@ -219,6 +258,16 @@ export class DataManager {
     return buildings.reduce((total, building) => {
       return total + (building.population?.provides || 0);
     }, 0);
+  }
+
+  // ========================================================================
+  // THEME SUPPORT
+  // ========================================================================
+
+  /** Clear cached themed definitions (call when theme changes) */
+  invalidateThemedCaches(): void {
+    this.themedResources.clear();
+    this.themedBuildings.clear();
   }
 }
 

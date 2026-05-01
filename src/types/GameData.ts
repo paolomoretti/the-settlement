@@ -30,6 +30,8 @@ export type ResourceType =
   | 'fish'
   | 'meat'
   | 'ham'
+  | 'soy'
+  | 'tofu'
   | 'beer'
   | 'donkey'
 

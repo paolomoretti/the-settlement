@@ -1,6 +1,7 @@
 import { Game } from './core/Game';
 import { eventBus } from './core/EventBus';
 import { dataManager } from '@/data/DataManager';
+import { themeManager } from '@/data/ThemeManager';
 import { BuildingMenu } from '@/ui/BuildingMenu';
 import { BuildingPopover } from '@/ui/BuildingPopover';
 import { GamePopover } from '@/ui/GamePopover';
@@ -35,6 +36,7 @@ type GameOptions = {
   navigator: boolean;
   soundEffects: boolean;
   roadRenderingMode: RoadRenderingMode;
+  veganMode: boolean;
 };
 
 function normalizeRoadRenderingMode(value: unknown): RoadRenderingMode {
@@ -49,6 +51,7 @@ function loadOptions(): GameOptions {
     navigator: true,
     soundEffects: true,
     roadRenderingMode: 'vector',
+    veganMode: false,
   };
   try {
     const raw = localStorage.getItem(OPTIONS_KEY);
@@ -624,6 +627,7 @@ function setupOptionsPanel(game: Game): void {
   const buildingLabelsToggle = document.getElementById('opt-building-labels') as HTMLInputElement;
   const navigatorToggle = document.getElementById('opt-navigator') as HTMLInputElement;
   const soundEffectsToggle = document.getElementById('opt-sound-effects') as HTMLInputElement;
+  const veganModeToggle = document.getElementById('opt-vegan-mode') as HTMLInputElement;
   const roadRenderingButtons = Array.from(
     document.querySelectorAll<HTMLButtonElement>('[data-road-rendering]')
   );
@@ -642,6 +646,7 @@ function setupOptionsPanel(game: Game): void {
   buildingLabelsToggle.checked = opts.buildingLabels;
   navigatorToggle.checked = opts.navigator;
   soundEffectsToggle.checked = opts.soundEffects;
+  veganModeToggle.checked = opts.veganMode;
   roadRenderingMode = opts.roadRenderingMode;
   setRoadRenderingMode(roadRenderingMode);
   syncRoadRenderingButtons();
@@ -659,6 +664,7 @@ function setupOptionsPanel(game: Game): void {
       navigator: navigatorToggle.checked,
       soundEffects: soundEffectsToggle.checked,
       roadRenderingMode,
+      veganMode: veganModeToggle.checked,
     });
 
   overlay.addEventListener('click', e => {
@@ -705,6 +711,18 @@ function setupOptionsPanel(game: Game): void {
 
   soundEffectsToggle.addEventListener('change', () => {
     audioManager.toggle();
+    persistAll();
+  });
+
+  veganModeToggle.addEventListener('change', () => {
+    themeManager.setActiveTheme(veganModeToggle.checked ? 'vegan' : null);
+    dataManager.invalidateThemedCaches();
+
+    // Refresh building menu if open to show updated names
+    if (document.getElementById('building-menu-overlay')?.classList.contains('is-open')) {
+      eventBus.emit('refresh:building_menu');
+    }
+
     persistAll();
   });
 

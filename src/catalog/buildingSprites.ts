@@ -181,6 +181,11 @@ export const BUILDING_PRODUCTION_SPRITES: Record<string, string[]> = {
     '/assets/buildings/farm_prod_2.png',
     '/assets/buildings/farm_prod_3.png',
   ],
+  pig_farm: [
+    '/assets/buildings/pig_farm_prod_0.png',
+    '/assets/buildings/pig_farm_prod_1.png',
+    '/assets/buildings/pig_farm_prod_2.png',
+  ],
 };
 
 /**

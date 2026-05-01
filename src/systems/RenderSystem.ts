@@ -15,6 +15,7 @@ import { Isometric } from '@/utils/Isometric';
 import { Tile } from '@/map/Tile';
 import { Production } from '@/components/Production';
 import { dataManager } from '@/data/DataManager';
+import { themeManager } from '@/data/ThemeManager';
 import { BuildingType, ResourceType } from '@/types/GameData';
 import { TerrainTextures } from '@/rendering/TerrainTextures';
 import { transportManager } from '@/economics/TransportManager';
@@ -258,19 +259,23 @@ export class RenderSystem extends System {
 
   private preloadSprites(paths: string[]): void {
     for (const path of paths) {
+      // Apply theme transformation before caching
+      const themedPath = themeManager.transformSpritePath(path);
       const img = new Image();
-      img.src = path;
-      this.spriteCache.set(path, img);
+      img.src = themedPath;
+      this.spriteCache.set(themedPath, img);
     }
   }
 
   private loadSprite(path: string): HTMLImageElement | null {
-    const cached = this.spriteCache.get(path);
+    // Apply theme transformation before cache lookup
+    const themedPath = themeManager.transformSpritePath(path);
+    const cached = this.spriteCache.get(themedPath);
     if (cached) return cached.complete && cached.naturalWidth > 0 ? cached : null;
 
     const img = new Image();
-    img.src = path;
-    this.spriteCache.set(path, img);
+    img.src = themedPath;
+    this.spriteCache.set(themedPath, img);
     return null;
   }
 

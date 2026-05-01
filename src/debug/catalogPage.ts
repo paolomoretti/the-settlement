@@ -17,6 +17,7 @@ import {
   WORKER_BODY_RESOURCE_SPRITE_PATHS,
 } from '@/rendering/WorkerSpritePainter';
 import { economySection, scheduleEconomyMermaid } from '@/debug/economySection';
+import { createChimneySmoke, type ChimneySmoke } from '@/rendering/chimneySmoke';
 
 const root = document.getElementById('catalog-root');
 if (!root) throw new Error('#catalog-root missing');
@@ -24,6 +25,10 @@ if (!root) throw new Error('#catalog-root missing');
 const PREVIEW_MS_HOLD_COMPLETE = 2800;
 const PREVIEW_MS_BUILD_STEP = 2000;
 const PREVIEW_MS_PROD_STEP = 1200;
+
+const ISO_TILE_W = 64;
+const ISO_TILE_H = 32;
+const SMOKE_CH = 250;
 
 const spriteCache = new Map<string, HTMLImageElement>();
 
@@ -95,14 +100,6 @@ function makeBuildTimeline(
   };
 
   if (buildStages?.length) {
-    if (finalPath) add(finalPath, 'Completed', PREVIEW_MS_HOLD_COMPLETE);
-    for (let i = buildStages.length - 1; i >= 0; i--) {
-      add(
-        buildStages[i]!,
-        `Deconstruct — stage ${i + 1} of ${buildStages.length}`,
-        PREVIEW_MS_BUILD_STEP
-      );
-    }
     for (let i = 0; i < buildStages.length; i++) {
       add(
         buildStages[i]!,
@@ -164,10 +161,26 @@ interface BuildingAnimColumn {
   ch: number;
 }
 
+interface SmokeAnimColumn {
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+  smoke: ChimneySmoke;
+  finalPath: string | undefined;
+  smokeOffsetX: number;
+  smokeOffsetY: number;
+  tileW: number;
+  tileH: number;
+  spriteScale: number;
+  cw: number;
+  ch: number;
+}
+
 interface BuildingPreviewRow {
   timeOffset: number;
+  final: BuildingAnimColumn;
   build: BuildingAnimColumn;
   prod: BuildingAnimColumn | null;
+  smoke: SmokeAnimColumn | null;
 }
 
 function tickAnimColumn(localMs: number, col: BuildingAnimColumn): void {
@@ -182,6 +195,46 @@ function tickAnimColumn(localMs: number, col: BuildingAnimColumn): void {
   const w = img.naturalWidth * scale;
   const h = img.naturalHeight * scale;
   col.ctx.drawImage(img, (col.cw - w) / 2, (col.ch - h) / 2, w, h);
+}
+
+function tickSmokeColumn(dt: number, col: SmokeAnimColumn): void {
+  col.ctx.fillStyle = '#f0f0f0';
+  col.ctx.fillRect(0, 0, col.cw, col.ch);
+
+  const img = col.finalPath ? loadSprite(col.finalPath) : null;
+  if (img) {
+    const debugScale = Math.min(
+      (col.cw * 0.88) / img.naturalWidth,
+      (col.ch * 0.62) / img.naturalHeight
+    );
+    const debugDrawW = img.naturalWidth * debugScale;
+    const debugDrawH = img.naturalHeight * debugScale;
+    const BOTTOM_MARGIN = 8;
+    col.ctx.drawImage(
+      img,
+      (col.cw - debugDrawW) / 2,
+      col.ch - BOTTOM_MARGIN - debugDrawH,
+      debugDrawW,
+      debugDrawH
+    );
+
+    const footprintW = ((col.tileW + col.tileH) * ISO_TILE_W) / 2;
+    const gameScaleEff = (footprintW / img.naturalWidth) * col.spriteScale;
+    const scaleRatio = debugScale / gameScaleEff;
+    const centerX = ((col.tileW - col.tileH) * ISO_TILE_W) / 4;
+    const frontY = ((col.tileW + col.tileH) * ISO_TILE_H) / 2;
+
+    const buildOriginX = col.cw / 2 - centerX * scaleRatio;
+    const buildOriginY = col.ch - BOTTOM_MARGIN - frontY * scaleRatio;
+
+    col.smoke.setPosition(
+      buildOriginX + col.smokeOffsetX * scaleRatio,
+      buildOriginY + col.smokeOffsetY * scaleRatio
+    );
+  }
+
+  col.smoke.update(dt);
+  col.smoke.draw(col.ctx);
 }
 
 function resourceLabel(id: string): string {
@@ -328,6 +381,130 @@ function buildingDetailsPanel(def: BuildingDefinition): HTMLElement {
   return panel;
 }
 
+/** Appends a smoke canvas to `colSmoke` and returns the live column object. */
+function mountSmokeCanvas(
+  colSmoke: HTMLElement,
+  finalPath: string | undefined,
+  def: BuildingDefinition,
+  cfg: { offsetX: number; offsetY: number; density: number; shade: number }
+): SmokeAnimColumn {
+  const canvasWrap = el('div', 'row-canvas-wrap');
+  const canvas = document.createElement('canvas');
+  // CW / SMOKE_CH are module-level constants defined inside buildingSection;
+  // use the same literal values here so the column matches.
+  const CW = 360;
+  canvas.width = CW;
+  canvas.height = SMOKE_CH;
+  const ctx = canvas.getContext('2d')!;
+  canvasWrap.appendChild(canvas);
+  colSmoke.appendChild(canvasWrap);
+
+  const smoke = createChimneySmoke({
+    x: CW / 2,
+    y: SMOKE_CH / 2,
+    density: cfg.density,
+    shade: cfg.shade,
+  });
+
+  return {
+    canvas,
+    ctx,
+    smoke,
+    finalPath,
+    smokeOffsetX: cfg.offsetX,
+    smokeOffsetY: cfg.offsetY,
+    tileW: def.size.width,
+    tileH: def.size.height,
+    spriteScale: def.visual.spriteScale ?? 1,
+    cw: CW,
+    ch: SMOKE_CH,
+  };
+}
+
+/**
+ * Appends an "Edit config" button + collapsible JSON editor panel to `colSmoke`.
+ * Edits apply live to the running smoke preview; "Copy JSON" puts the object
+ * on the clipboard so you can paste it into buildings.json.
+ */
+function attachSmokeEditor(
+  colSmoke: HTMLElement,
+  col: SmokeAnimColumn,
+  autoOpen: boolean = false
+): void {
+  const editBtn = el('button', 'smoke-edit-btn', '✏ Edit config');
+
+  const editorPanel = el('div', 'smoke-editor');
+  const textarea = document.createElement('textarea');
+  textarea.className = 'smoke-json-textarea';
+  textarea.rows = 8;
+  const errorEl = el('div', 'smoke-json-error');
+  const actionsRow = el('div', 'smoke-editor-actions');
+  const copyBtn = el('button', 'smoke-copy-btn', '📋 Copy JSON');
+  actionsRow.appendChild(copyBtn);
+  editorPanel.appendChild(textarea);
+  editorPanel.appendChild(errorEl);
+  editorPanel.appendChild(actionsRow);
+
+  function serializeCfg(): string {
+    return JSON.stringify(
+      {
+        offsetX: col.smokeOffsetX,
+        offsetY: col.smokeOffsetY,
+        density: Math.round(col.smoke.density * 100) / 100,
+        shade: col.smoke.shade,
+      },
+      null,
+      2
+    );
+  }
+
+  function openEditor(): void {
+    textarea.value = serializeCfg();
+    errorEl.textContent = '';
+    editorPanel.classList.add('open');
+    editBtn.textContent = '✕ Close';
+  }
+
+  editBtn.addEventListener('click', () => {
+    if (editorPanel.classList.contains('open')) {
+      editorPanel.classList.remove('open');
+      editBtn.textContent = '✏ Edit config';
+    } else {
+      openEditor();
+    }
+  });
+
+  textarea.addEventListener('input', () => {
+    try {
+      const parsed: unknown = JSON.parse(textarea.value);
+      if (typeof parsed !== 'object' || parsed === null) throw new Error('Expected a JSON object');
+      const p = parsed as Record<string, unknown>;
+      if (typeof p.offsetX === 'number') col.smokeOffsetX = p.offsetX;
+      if (typeof p.offsetY === 'number') col.smokeOffsetY = p.offsetY;
+      if (typeof p.density === 'number') col.smoke.setDensity(p.density);
+      if (typeof p.shade === 'number') col.smoke.setShade(p.shade);
+      errorEl.textContent = '';
+    } catch (e) {
+      errorEl.textContent = String(e);
+    }
+  });
+
+  copyBtn.addEventListener('click', () => {
+    const json = serializeCfg();
+    navigator.clipboard.writeText(json).then(() => {
+      copyBtn.textContent = '✓ Copied!';
+      setTimeout(() => {
+        copyBtn.textContent = '📋 Copy JSON';
+      }, 2000);
+    });
+  });
+
+  colSmoke.appendChild(editBtn);
+  colSmoke.appendChild(editorPanel);
+
+  if (autoOpen) openEditor();
+}
+
 function buildingSection(): HTMLElement {
   const wrap = el('div');
   wrap.id = 'section-buildings';
@@ -360,23 +537,24 @@ function buildingSection(): HTMLElement {
 
     const colFinal = el('div', 'col-final');
     colFinal.appendChild(el('div', 'col-heading', 'Completed'));
-    const finalWrap = el('div', 'col-final-img-wrap');
     const finalPath = BUILDING_FINAL_SPRITES[id];
-    if (finalPath) {
-      const img = document.createElement('img');
-      img.alt = '';
-      img.src = finalPath;
-      finalWrap.appendChild(img);
-    } else {
-      finalWrap.appendChild(
-        el(
-          'div',
-          'col-placeholder',
-          'No completed sprite in catalogue (build column still cycles if stages exist).'
-        )
-      );
-    }
-    colFinal.appendChild(finalWrap);
+    const finalCanvasWrap = el('div', 'row-canvas-wrap');
+    const finalCanvas = document.createElement('canvas');
+    finalCanvas.width = CW;
+    finalCanvas.height = CH;
+    const finalCtx = finalCanvas.getContext('2d')!;
+    finalCanvasWrap.appendChild(finalCanvas);
+    colFinal.appendChild(finalCanvasWrap);
+    const finalColumn: BuildingAnimColumn = {
+      canvas: finalCanvas,
+      ctx: finalCtx,
+      captionEl: el('div'),
+      timeline: finalPath
+        ? [{ path: finalPath, caption: 'Completed', durationMs: 999_999_999 }]
+        : [{ path: '', caption: 'No completed sprite', durationMs: 999_999_999 }],
+      cw: CW,
+      ch: CH,
+    };
 
     const colBuild = el('div', 'col-build');
     colBuild.appendChild(el('div', 'col-heading', 'Construction'));
@@ -422,60 +600,94 @@ function buildingSection(): HTMLElement {
       );
     }
 
+    const smokeCfg = def.chimneySmoke;
+    const colSmoke = el('div', 'col-smoke');
+    colSmoke.appendChild(el('div', 'col-heading', 'Chimney Smoke'));
+
+    const buildStages = BUILDING_CONSTRUCTION_SPRITES[id];
+    const buildTimeline = makeBuildTimeline(finalPath, buildStages);
+    const noSprites = !finalPath && !buildStages?.length && !prodSprites?.length;
+
+    // Build the mutable row first so the "Add Smoke" closure can update row.smoke.
+    const row: BuildingPreviewRow = {
+      timeOffset: noSprites ? bi * 220 : bi * 240,
+      final: finalColumn,
+      build: {
+        canvas: buildCanvas,
+        ctx: buildCtx,
+        captionEl: buildCaptionEl,
+        timeline: noSprites
+          ? [
+              {
+                path: '',
+                caption: 'No catalogue sprites — game uses placeholder block.',
+                durationMs: 10_000,
+              },
+            ]
+          : buildTimeline,
+        cw: CW,
+        ch: CH,
+      },
+      prod: prodColumn,
+      smoke: null,
+    };
+
+    if (smokeCfg) {
+      // Building already has a chimneySmoke entry — mount canvas + live editor.
+      const smokeCol = mountSmokeCanvas(colSmoke, finalPath, def, {
+        offsetX: smokeCfg.offsetX,
+        offsetY: smokeCfg.offsetY,
+        density: smokeCfg.density ?? 1,
+        shade: smokeCfg.shade ?? 3,
+      });
+      row.smoke = smokeCol;
+      attachSmokeEditor(colSmoke, smokeCol);
+    } else {
+      // No smoke yet — show a placeholder with an "Add Smoke" button.
+      const noCfg = el('div', 'smoke-no-cfg');
+      noCfg.appendChild(el('span', '', 'No chimneySmoke config in buildings.json.'));
+      const addBtn = el('button', 'smoke-add-btn', '+ Add Smoke');
+      noCfg.appendChild(addBtn);
+      colSmoke.appendChild(noCfg);
+
+      addBtn.addEventListener('click', () => {
+        noCfg.remove();
+        const smokeCol = mountSmokeCanvas(colSmoke, finalPath, def, {
+          offsetX: 0,
+          offsetY: -30,
+          density: 1,
+          shade: 3,
+        });
+        row.smoke = smokeCol;
+        // Auto-open the editor so the user can start tweaking immediately.
+        attachSmokeEditor(colSmoke, smokeCol, true);
+      });
+    }
+
     const colData = buildingDetailsPanel(def);
 
     cols.appendChild(colFinal);
     cols.appendChild(colBuild);
     cols.appendChild(colProd);
+    cols.appendChild(colSmoke);
     cols.appendChild(colData);
     block.appendChild(cols);
     wrap.appendChild(block);
 
-    const buildStages = BUILDING_CONSTRUCTION_SPRITES[id];
-    const buildTimeline = makeBuildTimeline(finalPath, buildStages);
-
-    if (!finalPath && !buildStages?.length && !prodSprites?.length) {
-      previews.push({
-        timeOffset: bi * 220,
-        build: {
-          canvas: buildCanvas,
-          ctx: buildCtx,
-          captionEl: buildCaptionEl,
-          timeline: [
-            {
-              path: '',
-              caption: 'No catalogue sprites — game uses placeholder block.',
-              durationMs: 10_000,
-            },
-          ],
-          cw: CW,
-          ch: CH,
-        },
-        prod: prodColumn,
-      });
-      continue;
-    }
-
-    previews.push({
-      timeOffset: bi * 240,
-      build: {
-        canvas: buildCanvas,
-        ctx: buildCtx,
-        captionEl: buildCaptionEl,
-        timeline: buildTimeline,
-        cw: CW,
-        ch: CH,
-      },
-      prod: prodColumn,
-    });
+    previews.push(row);
   }
 
+  let prevNow = performance.now();
   const t0 = performance.now();
   function tick(now: number): void {
+    const dt = Math.min((now - prevNow) / 1000, 0.1);
+    prevNow = now;
     const t = now - t0;
     for (const row of previews) {
+      tickAnimColumn(t + row.timeOffset, row.final);
       tickAnimColumn(t + row.timeOffset, row.build);
       if (row.prod) tickAnimColumn(t + row.timeOffset, row.prod);
+      if (row.smoke) tickSmokeColumn(dt, row.smoke);
     }
     requestAnimationFrame(tick);
   }

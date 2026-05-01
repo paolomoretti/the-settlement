@@ -134,17 +134,13 @@
       }
       .catalog-building-cols {
         display: grid;
-        grid-template-columns:
-          minmax(140px, 190px)
-          minmax(220px, 320px)
-          minmax(220px, 320px)
-          minmax(260px, 1fr);
+        grid-template-columns: repeat(4, minmax(150px, 220px)) minmax(220px, 1fr);
         gap: 20px 20px;
         align-items: start;
       }
-      @media (max-width: 1100px) {
+      @media (max-width: 1300px) {
         .catalog-building-cols {
-          grid-template-columns: 1fr 1fr;
+          grid-template-columns: repeat(2, 1fr);
         }
       }
       @media (max-width: 640px) {
@@ -160,23 +156,109 @@
         letter-spacing: 0.04em;
         margin-bottom: 8px;
       }
-      .col-final-img-wrap {
+      .col-smoke {
         display: flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 160px;
-        background: #f4f4f4;
-        border-radius: 6px;
-        padding: 10px;
+        flex-direction: column;
+        gap: 0;
       }
-      .col-final-img-wrap img {
+      .col-smoke .row-canvas-wrap {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background: #f0f0f0;
+        border-radius: 6px;
+      }
+      .col-smoke .row-canvas-wrap canvas {
+        display: block;
         max-width: 100%;
-        max-height: 200px;
-        width: auto;
-        height: auto;
-        object-fit: contain;
         image-rendering: pixelated;
         image-rendering: crisp-edges;
+      }
+      /* ── Smoke editor UI ─────────────────────────────────────────── */
+      .smoke-edit-btn,
+      .smoke-add-btn {
+        align-self: flex-start;
+        margin-top: 8px;
+        padding: 4px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 5px;
+        cursor: pointer;
+        border: 1px solid #2d6a2d;
+        background: #f4faf4;
+        color: #1a4d1a;
+        line-height: 1.4;
+      }
+      .smoke-edit-btn:hover,
+      .smoke-add-btn:hover {
+        background: #e0f0e0;
+      }
+      .smoke-editor {
+        display: none;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .smoke-editor.open {
+        display: flex;
+      }
+      .smoke-json-textarea {
+        font-family: ui-monospace, 'Cascadia Code', 'Fira Code', Consolas, monospace;
+        font-size: 12px;
+        line-height: 1.55;
+        padding: 10px 12px;
+        background: #111b11;
+        color: #a8d8a8;
+        border: 1px solid #3a5a3a;
+        border-radius: 6px;
+        resize: vertical;
+        min-height: 130px;
+        width: 100%;
+        box-sizing: border-box;
+        tab-size: 2;
+      }
+      .smoke-json-textarea:focus {
+        outline: none;
+        border-color: #5aaa5a;
+        box-shadow: 0 0 0 2px rgba(90, 170, 90, 0.18);
+      }
+      .smoke-json-error {
+        font-size: 11px;
+        color: #d04040;
+        min-height: 1.2em;
+        line-height: 1.3;
+        font-family: ui-monospace, Consolas, monospace;
+      }
+      .smoke-editor-actions {
+        display: flex;
+        gap: 8px;
+      }
+      .smoke-copy-btn {
+        flex: 1;
+        padding: 5px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 5px;
+        cursor: pointer;
+        border: 1px solid #2d6a2d;
+        background: #f4faf4;
+        color: #1a4d1a;
+      }
+      .smoke-copy-btn:hover {
+        background: #e0f0e0;
+      }
+      .smoke-no-cfg {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+        min-height: 120px;
+        padding: 14px 12px;
+        font-size: 13px;
+        color: #666;
+        background: #fafafa;
+        border-radius: 6px;
+        border: 1px dashed #ccc;
       }
       .col-placeholder {
         font-size: 14px;
@@ -185,12 +267,14 @@
         padding: 16px 8px;
       }
       .col-build,
+      .col-final,
       .col-production {
         display: flex;
         flex-direction: column;
         gap: 8px;
       }
       .col-build .row-canvas-wrap,
+      .col-final .row-canvas-wrap,
       .col-production .row-canvas-wrap {
         display: flex;
         justify-content: center;
@@ -200,6 +284,7 @@
         border-radius: 6px;
       }
       .col-build .row-canvas-wrap canvas,
+      .col-final .row-canvas-wrap canvas,
       .col-production .row-canvas-wrap canvas {
         display: block;
         max-width: 100%;

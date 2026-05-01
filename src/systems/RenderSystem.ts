@@ -279,6 +279,13 @@ export class RenderSystem extends System {
     return null;
   }
 
+  /** Clear sprite cache (useful when theme changes to force reload of themed sprites) */
+  public clearSpriteCache(): void {
+    this.spriteCache.clear();
+    // Reload all catalogued building sprites with current theme
+    this.preloadSprites(collectAllCataloguedBuildingSpritePaths());
+  }
+
   private setupMinimapInteraction(): void {
     let dragging = false;
 

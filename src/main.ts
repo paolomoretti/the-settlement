@@ -718,6 +718,9 @@ function setupOptionsPanel(game: Game): void {
     themeManager.setActiveTheme(veganModeToggle.checked ? 'vegan' : null);
     dataManager.invalidateThemedCaches();
 
+    // Clear and reload sprites with new theme
+    game.renderSystem.clearSpriteCache();
+
     // Refresh building menu if open to show updated names
     if (document.getElementById('building-menu-overlay')?.classList.contains('is-open')) {
       eventBus.emit('refresh:building_menu');

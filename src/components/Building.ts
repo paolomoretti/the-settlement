@@ -117,6 +117,18 @@ export class Building extends Component {
     return true;
   }
 
+  /**
+   * True when HQ has started dispatching goods toward this site (or no materials
+   * are required). Used to send the builder in parallel with the first materials
+   * rather than waiting for full delivery.
+   */
+  hasMaterialsBeenDispatched(): boolean {
+    if (!this.constructionMaterials || Object.keys(this.constructionMaterials).length === 0) {
+      return true; // no build cost — builder can go immediately
+    }
+    return Object.values(this.materialsSent).some(v => v > 0);
+  }
+
   areMaterialsDelivered(): boolean {
     if (!this.constructionMaterials) return true;
     for (const [res, required] of Object.entries(this.constructionMaterials)) {

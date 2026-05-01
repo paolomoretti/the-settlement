@@ -586,10 +586,13 @@ export class GameWorkerRegistry {
         continue;
       }
 
+      // Dispatch the builder as soon as HQ starts sending materials (or when
+      // no materials are required). Construction still cannot begin until both
+      // the builder *and* all materials have arrived — see canStartConstruction().
       if (
         building.builderEntityId === null &&
         building.isActive &&
-        building.areMaterialsDelivered()
+        building.hasMaterialsBeenDispatched()
       ) {
         if (!this.tryReassignBuilderToSite(entity, constructionSites)) {
           this.spawnBuilder(entity);

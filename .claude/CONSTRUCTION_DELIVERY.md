@@ -27,10 +27,12 @@ When a building is placed, it immediately becomes a construction site even if he
    → Each material arrival calls building.deliverMaterial()
    → Tracked in building.materialsDelivered
 
-3. When ALL materials are delivered:
-   → Builder worker spawned at base camp, walks to site
+3. As soon as HQ dispatches the first material (building.hasMaterialsBeenDispatched()):
+   → Builder worker is ALSO spawned at base camp and walks to site in parallel
+   → Builder may arrive before all materials; it waits on-site until ready
+   → For buildings with no build cost the builder is sent immediately
 
-4. When builder arrived at site:
+4. When BOTH builder has arrived AND all materials are delivered (canStartConstruction()):
    → building.beginConstruction() starts the build timer
    → State transitions to 'under_construction'
 

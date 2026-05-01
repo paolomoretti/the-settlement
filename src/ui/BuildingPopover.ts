@@ -190,7 +190,9 @@ export class BuildingPopover {
     const themedPrimarySrc = themeManager.transformSpritePath(primarySrc);
     const themedFallbackSrc = themeManager.transformSpritePath(fallbackSrc);
     const fallbackAttr =
-      themedPrimarySrc === themedFallbackSrc ? '' : ` data-fallback="${this.escapeHtml(themedFallbackSrc)}"`;
+      themedPrimarySrc === themedFallbackSrc
+        ? ''
+        : ` data-fallback="${this.escapeHtml(themedFallbackSrc)}"`;
     const fallback = this.escapeHtml(
       this.getResourceName(resourceId).slice(0, 1).toUpperCase() || '?'
     );
@@ -1054,7 +1056,8 @@ export class BuildingPopover {
     deleteBtn.textContent = 'Delete Building';
     deleteBtn.addEventListener('click', e => {
       e.stopPropagation();
-      eventBus.emit('delete:selected');
+      const buildingName = def?.name || building.buildingType;
+      eventBus.emit('confirm:delete_building', { buildingName });
     });
     el.appendChild(deleteBtn);
 

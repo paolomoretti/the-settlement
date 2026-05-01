@@ -9,6 +9,7 @@ import { CanvasHoverTooltip } from '@/ui/CanvasHoverTooltip';
 import { Position } from '@/components/Position';
 import { setupKeyboardShortcuts } from '@/input/KeyboardShortcuts';
 import { showToast, setupToastListener } from '@/ui/Toast';
+import { ConfirmDeleteDialog } from '@/ui/ConfirmDeleteDialog';
 import { audioManager } from '@/audio/AudioManager';
 import { anySaveSlotsExist, GameSaveSession } from '@/save/GameSaveSession';
 import { setRoadRenderingMode, type RoadRenderingMode } from '@/debug/debugFlags';
@@ -18,6 +19,7 @@ import 'tippy.js/dist/tippy.css';
 let game: Game | null = null;
 let buildingMenu: BuildingMenu | null = null;
 let buildingPopover: BuildingPopover | null = null;
+let confirmDeleteDialog: ConfirmDeleteDialog | null = null;
 let cellSurveyPopover: GamePopover | null = null;
 let canvasHoverTooltip: CanvasHoverTooltip | null = null;
 let roadWorkerPopover: GamePopover | null = null;
@@ -388,6 +390,19 @@ function setupGameUI(game: Game): void {
   setupOptionsPanel(game);
 
   buildingPopover = new BuildingPopover(game);
+  confirmDeleteDialog = new ConfirmDeleteDialog();
+
+  eventBus.on('confirm:delete_building', (data: { buildingName: string }) => {
+    confirmDeleteDialog!.show(data.buildingName, () => {
+      eventBus.emit('delete:selected');
+    });
+  });
+
+  eventBus.on('confirm:erase_building', (data: { x: number; y: number; buildingName: string }) => {
+    confirmDeleteDialog!.show(data.buildingName, () => {
+      eventBus.emit('erase:building_confirmed', { x: data.x, y: data.y });
+    });
+  });
 
   cellSurveyPopover = new GamePopover(document.getElementById('ui-overlay')!);
   cellSurveyPopover.onClose = () => {

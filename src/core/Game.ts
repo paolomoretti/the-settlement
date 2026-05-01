@@ -491,6 +491,9 @@ export class Game {
       this.roadDragMode = null;
     });
     eventBus.on('erase:tile', (data: { x: number; y: number }) => this.eraseAt(data.x, data.y));
+    eventBus.on('erase:building_confirmed', (data: { x: number; y: number }) =>
+      this.eraseAtBuildingConfirmed(data.x, data.y)
+    );
 
     // Generic building handler for all building types (derived from data)
     for (const building of dataManager.getAllBuildings()) {
@@ -1075,9 +1078,9 @@ export class Game {
       const def = building ? dataManager.getBuilding(building.buildingType) : null;
       if (def?.isHeadquarters) return;
 
-      this.destroyBuildingEntity(buildingEntity, 'erase_demolition');
-      this.renderSystem.spawnEraseSmoke(x, y);
-      eventBus.emit('erase:done');
+      // Ask for confirmation before demolishing — the dialog will emit 'erase:building_confirmed'
+      const buildingName = def?.name || building?.buildingType || 'Building';
+      eventBus.emit('confirm:erase_building', { x, y, buildingName });
       return;
     }
 
@@ -1103,6 +1106,22 @@ export class Game {
       this.renderSystem.spawnEraseSmoke(x, y);
       eventBus.emit('erase:done');
     }
+  }
+
+  /**
+   * Called after the player confirms deletion from the erase tool confirmation dialog.
+   * Re-validates the building is still there (player can't have moved away in the brief delay).
+   */
+  private eraseAtBuildingConfirmed(x: number, y: number): void {
+    const buildingEntity = this.findBuildingEntityAt(x, y);
+    if (!buildingEntity || !isPlayerOwned(buildingEntity)) return;
+    const building = buildingEntity.getComponent(Building);
+    const def = building ? dataManager.getBuilding(building.buildingType) : null;
+    if (def?.isHeadquarters) return;
+
+    this.destroyBuildingEntity(buildingEntity, 'erase_demolition');
+    this.renderSystem.spawnEraseSmoke(x, y);
+    eventBus.emit('erase:done');
   }
 
   /** Shared demolition path for Delete key and erase tool. */

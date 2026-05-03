@@ -794,7 +794,13 @@
     "name": "Armory",
     "description": "Forges swords and shields from coal and iron bars.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 65, "color": "#556b2f" },
+    "visual": {
+      "buildingHeight": 65,
+      "color": "#556b2f",
+      "spriteScale": 1.3,
+      "offsetX": 0,
+      "offsetY": 0
+    },
     "buildCost": { "wood_plank": 2, "stone": 2 },
     "buildTime": 35,
     "requiresRoad": true,
@@ -887,7 +893,13 @@
     "name": "Lookout Tower",
     "description": "Extends visible territory. Staffed by a scout.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 90, "color": "#a0522d" },
+    "visual": {
+      "buildingHeight": 90,
+      "color": "#a0522d",
+      "spriteScale": 1.55,
+      "offsetX": 0,
+      "offsetY": -6
+    },
     "buildCost": { "wood_plank": 4 },
     "buildTime": 30,
     "requiresRoad": true,

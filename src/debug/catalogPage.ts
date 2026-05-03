@@ -14,6 +14,7 @@ import type { BuildingDefinition, ResourceType } from '@/types/GameData';
 import {
   paintWorkerSpriteBody,
   paintWorkerFloorNap,
+  paintDonkeySprite,
   WORKER_BODY_RESOURCE_SPRITE_PATHS,
 } from '@/rendering/WorkerSpritePainter';
 import { economySection, scheduleEconomyMermaid } from '@/debug/economySection';
@@ -29,6 +30,7 @@ const PREVIEW_MS_PROD_STEP = 1200;
 const ISO_TILE_W = 64;
 const ISO_TILE_H = 32;
 const SMOKE_CH = 250;
+const GRID_CH = 260;
 
 const spriteCache = new Map<string, HTMLImageElement>();
 
@@ -175,12 +177,26 @@ interface SmokeAnimColumn {
   ch: number;
 }
 
+interface GridPreviewColumn {
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+  finalPath: string | undefined;
+  spriteScale: number;
+  offsetX: number;
+  offsetY: number;
+  buildingW: number;
+  buildingD: number;
+  cw: number;
+  ch: number;
+}
+
 interface BuildingPreviewRow {
   timeOffset: number;
   final: BuildingAnimColumn;
   build: BuildingAnimColumn;
   prod: BuildingAnimColumn | null;
   smoke: SmokeAnimColumn | null;
+  gridPreview: GridPreviewColumn | null;
 }
 
 function tickAnimColumn(localMs: number, col: BuildingAnimColumn): void {
@@ -235,6 +251,88 @@ function tickSmokeColumn(dt: number, col: SmokeAnimColumn): void {
 
   col.smoke.update(dt);
   col.smoke.draw(col.ctx);
+}
+
+function tickGridPreview(col: GridPreviewColumn): void {
+  const { ctx, cw, ch } = col;
+  const W = col.buildingW;
+  const D = col.buildingD;
+
+  // Zoom so the footprint occupies ~72% of canvas width, and leaves ~42% of canvas height
+  // above the top-corner for the sprite art.
+  const footprintPxW = ((W + D) * ISO_TILE_W) / 2;
+  const footprintPxH = ((W + D) * ISO_TILE_H) / 2;
+  const zoom = Math.min(
+    (cw * 0.72) / Math.max(footprintPxW, 1),
+    (ch * 0.4) / Math.max(footprintPxH, 1)
+  );
+
+  // centerX = horizontal center of the isometric diamond
+  // frontY  = y of the front (bottom) corner of the diamond
+  const centerX = ((W - D) * ISO_TILE_W) / 4;
+  const frontY = ((W + D) * ISO_TILE_H) / 2;
+
+  // Place so the footprint front sits at 82% of canvas height,
+  // leaving 42% (= ch*0.82 - ch*0.40 = ch*0.42) above for the sprite.
+  const canvasTopX = cw / 2 - centerX * zoom;
+  const canvasTopY = ch * 0.82 - frontY * zoom;
+
+  // Background
+  ctx.fillStyle = '#dce8dc';
+  ctx.fillRect(0, 0, cw, ch);
+
+  // Draw isometric tile grid (W columns × D rows)
+  for (let r = 0; r < D; r++) {
+    for (let c = 0; c < W; c++) {
+      // Top-vertex of each tile diamond in local game-pixel coords:
+      //   x = (c - r) * tileW / 2,   y = (c + r) * tileH / 2
+      const tx = canvasTopX + ((c - r) * ISO_TILE_W * zoom) / 2;
+      const ty = canvasTopY + ((c + r) * ISO_TILE_H * zoom) / 2;
+      const hw = (ISO_TILE_W * zoom) / 2;
+      const hh = (ISO_TILE_H * zoom) / 2;
+
+      ctx.beginPath();
+      ctx.moveTo(tx, ty); // top vertex
+      ctx.lineTo(tx + hw, ty + hh); // right vertex
+      ctx.lineTo(tx, ty + hh * 2); // bottom vertex
+      ctx.lineTo(tx - hw, ty + hh); // left vertex
+      ctx.closePath();
+
+      ctx.fillStyle = (c + r) % 2 === 0 ? '#c4d8b8' : '#b4c8a8';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(60, 110, 60, 0.55)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+
+  // Draw building sprite on top of the grid.
+  // Replicates the exact game formula from RenderSystem.renderBuildingSprite.
+  const img = col.finalPath ? loadSprite(col.finalPath) : null;
+  if (img && img.naturalWidth > 0) {
+    const footW = ((W + D) * ISO_TILE_W) / 2; // game footprint width (px)
+    const baseScale = footW / img.naturalWidth; // sprite→footprint ratio
+    const drawW = img.naturalWidth * baseScale * col.spriteScale;
+    const drawH = img.naturalHeight * baseScale * col.spriteScale;
+
+    // offsetX / offsetY shift the top-corner origin (matching the game's ctx.translate)
+    const originX = canvasTopX + col.offsetX * zoom;
+    const originY = canvasTopY + col.offsetY * zoom;
+
+    ctx.drawImage(
+      img,
+      originX + centerX * zoom - (drawW * zoom) / 2,
+      originY + frontY * zoom - drawH * zoom,
+      drawW * zoom,
+      drawH * zoom
+    );
+  } else if (!col.finalPath) {
+    ctx.fillStyle = '#778877';
+    ctx.font = '13px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('No sprite', cw / 2, ch / 2);
+    ctx.textAlign = 'left';
+  }
 }
 
 function resourceLabel(id: string): string {
@@ -505,6 +603,131 @@ function attachSmokeEditor(
   if (autoOpen) openEditor();
 }
 
+/** Creates the grid preview canvas inside `colGrid` and returns the live column object. */
+function mountGridPreviewCanvas(
+  colGrid: HTMLElement,
+  finalPath: string | undefined,
+  def: BuildingDefinition,
+  cfg: { spriteScale: number; offsetX: number; offsetY: number }
+): GridPreviewColumn {
+  const canvasWrap = el('div', 'row-canvas-wrap');
+  const canvas = document.createElement('canvas');
+  const GCW = 360;
+  canvas.width = GCW;
+  canvas.height = GRID_CH;
+  const ctx = canvas.getContext('2d')!;
+  canvasWrap.appendChild(canvas);
+  colGrid.appendChild(canvasWrap);
+
+  return {
+    canvas,
+    ctx,
+    finalPath,
+    spriteScale: cfg.spriteScale,
+    offsetX: cfg.offsetX,
+    offsetY: cfg.offsetY,
+    buildingW: def.size.width,
+    buildingD: def.size.height,
+    cw: GCW,
+    ch: GRID_CH,
+  };
+}
+
+/**
+ * Appends an "⋞ Edit visual" button + collapsible editor panel to `colGrid`.
+ * Three number inputs control spriteScale / offsetX / offsetY live;
+ * "⎘ Copy JSON" puts the snippet on the clipboard to paste into buildings.json.
+ */
+function attachGridEditor(
+  colGrid: HTMLElement,
+  col: GridPreviewColumn,
+  autoOpen: boolean = false
+): void {
+  const editBtn = el('button', 'grid-edit-btn', '⋞ Edit visual');
+
+  const editorPanel = el('div', 'grid-editor');
+  const fieldsWrap = el('div', 'grid-editor-fields');
+
+  function makeField(
+    labelText: string,
+    value: number,
+    step: number,
+    min?: number
+  ): HTMLInputElement {
+    const fieldRow = el('div', 'grid-editor-field');
+    const label = el('label', '', labelText);
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.value = String(value);
+    input.step = String(step);
+    if (min !== undefined) input.min = String(min);
+    fieldRow.appendChild(label);
+    fieldRow.appendChild(input);
+    fieldsWrap.appendChild(fieldRow);
+    return input;
+  }
+
+  const scaleInput = makeField('spriteScale', col.spriteScale, 0.05, 0.05);
+  const offsetXInput = makeField('offsetX', col.offsetX, 1);
+  const offsetYInput = makeField('offsetY', col.offsetY, 1);
+
+  scaleInput.addEventListener('input', () => {
+    const v = parseFloat(scaleInput.value);
+    if (!isNaN(v) && v > 0) col.spriteScale = v;
+  });
+  offsetXInput.addEventListener('input', () => {
+    const v = parseFloat(offsetXInput.value);
+    if (!isNaN(v)) col.offsetX = v;
+  });
+  offsetYInput.addEventListener('input', () => {
+    const v = parseFloat(offsetYInput.value);
+    if (!isNaN(v)) col.offsetY = v;
+  });
+
+  const actionsRow = el('div', 'smoke-editor-actions');
+  const copyBtn = el('button', 'grid-copy-btn', '📋 Copy JSON');
+  actionsRow.appendChild(copyBtn);
+
+  editorPanel.appendChild(fieldsWrap);
+  editorPanel.appendChild(actionsRow);
+
+  copyBtn.addEventListener('click', () => {
+    const snippet = JSON.stringify(
+      {
+        spriteScale: Math.round(col.spriteScale * 1000) / 1000,
+        offsetX: col.offsetX,
+        offsetY: col.offsetY,
+      },
+      null,
+      2
+    );
+    navigator.clipboard.writeText(snippet).then(() => {
+      copyBtn.textContent = '✓ Copied!';
+      setTimeout(() => {
+        copyBtn.textContent = '📋 Copy JSON';
+      }, 2000);
+    });
+  });
+
+  editBtn.addEventListener('click', () => {
+    if (editorPanel.classList.contains('open')) {
+      editorPanel.classList.remove('open');
+      editBtn.textContent = '⋞ Edit visual';
+    } else {
+      editorPanel.classList.add('open');
+      editBtn.textContent = '✕ Close';
+    }
+  });
+
+  colGrid.appendChild(editBtn);
+  colGrid.appendChild(editorPanel);
+
+  if (autoOpen) {
+    editorPanel.classList.add('open');
+    editBtn.textContent = '✕ Close';
+  }
+}
+
 function buildingSection(): HTMLElement {
   const wrap = el('div');
   wrap.id = 'section-buildings';
@@ -532,8 +755,6 @@ function buildingSection(): HTMLElement {
     head.appendChild(el('div', 'name', def.name));
     head.appendChild(el('div', 'id', id));
     block.appendChild(head);
-
-    const cols = el('div', 'catalog-building-cols');
 
     const colFinal = el('div', 'col-final');
     colFinal.appendChild(el('div', 'col-heading', 'Completed'));
@@ -630,6 +851,7 @@ function buildingSection(): HTMLElement {
       },
       prod: prodColumn,
       smoke: null,
+      gridPreview: null,
     };
 
     if (smokeCfg) {
@@ -664,14 +886,32 @@ function buildingSection(): HTMLElement {
       });
     }
 
+    // Grid preview column — shows sprite on top of the isometric tile grid
+    const colGrid = el('div', 'col-grid-preview');
+    colGrid.appendChild(el('div', 'col-heading', 'Grid Preview'));
+    const gridCol = mountGridPreviewCanvas(colGrid, finalPath, def, {
+      spriteScale: def.visual.spriteScale ?? 1,
+      offsetX: def.visual.offsetX ?? 0,
+      offsetY: def.visual.offsetY ?? 0,
+    });
+    attachGridEditor(colGrid, gridCol);
+    row.gridPreview = gridCol;
+
     const colData = buildingDetailsPanel(def);
 
-    cols.appendChild(colFinal);
-    cols.appendChild(colBuild);
-    cols.appendChild(colProd);
-    cols.appendChild(colSmoke);
-    cols.appendChild(colData);
-    block.appendChild(cols);
+    // Row 1 — all visual columns side by side
+    const visualRow = el('div', 'catalog-building-visual-row');
+    visualRow.appendChild(colFinal);
+    visualRow.appendChild(colBuild);
+    visualRow.appendChild(colProd);
+    visualRow.appendChild(colSmoke);
+    visualRow.appendChild(colGrid);
+    block.appendChild(visualRow);
+
+    // Row 2 — details panel spanning full width (multi-column via CSS grid)
+    const detailsRow = el('div', 'catalog-building-details-row');
+    detailsRow.appendChild(colData);
+    block.appendChild(detailsRow);
     wrap.appendChild(block);
 
     previews.push(row);
@@ -688,6 +928,7 @@ function buildingSection(): HTMLElement {
       tickAnimColumn(t + row.timeOffset, row.build);
       if (row.prod) tickAnimColumn(t + row.timeOffset, row.prod);
       if (row.smoke) tickSmokeColumn(dt, row.smoke);
+      if (row.gridPreview) tickGridPreview(row.gridPreview);
     }
     requestAnimationFrame(tick);
   }
@@ -740,7 +981,13 @@ function basePatch(
 
 type WorkerPreviewEntry =
   | { kind: 'normal'; worker: Worker; patch: (now: number) => ReturnType<typeof basePatch> }
-  | { kind: 'nap'; worker: Worker };
+  | { kind: 'nap'; worker: Worker }
+  | {
+      kind: 'donkey';
+      patch: (now: number) => ReturnType<typeof basePatch>;
+      carriedItems: Array<{ resourceType: string }>;
+    }
+  | { kind: 'duel'; workerA: Worker; workerB: Worker; s: number };
 
 function workerSection(): HTMLElement {
   const wrap = el('div');
@@ -957,6 +1204,27 @@ function workerSection(): HTMLElement {
       }),
   });
 
+  // — Donkey carrier —
+  addCard('donkey-idle', 'Donkey — idle', {
+    kind: 'donkey',
+    patch: now => basePatch(now, { facing: 0 }),
+    carriedItems: [],
+  });
+  addCard('donkey-walk', 'Donkey — walking', {
+    kind: 'donkey',
+    patch: now => basePatch(now, { isMoving: true, facing: 0 }),
+    carriedItems: [],
+  });
+  addCard('donkey-loaded', 'Donkey — loaded + walking', {
+    kind: 'donkey',
+    patch: now => basePatch(now, { isMoving: true, facing: 0 }),
+    carriedItems: [
+      { resourceType: 'wood_log' },
+      { resourceType: 'wood_plank' },
+      { resourceType: 'stone' },
+    ],
+  });
+
   const soldierR1 = new Worker('Soldier R1', 'military');
   soldierR1.applyMilitaryAppearance(1);
   addCard('military-rank-1', 'Military rank 1 (sword + shield)', {
@@ -981,6 +1249,26 @@ function workerSection(): HTMLElement {
     patch: now => basePatch(now, { facing: 0, anim: 'none' }),
   });
 
+  // — Military fighting (duel) —
+  // Each card shows a player soldier (left) vs a red-tinted enemy (right) mid-duel.
+  // The sword-swing + body-bob animation is driven entirely by `now` inside paintMilitaryWarrior
+  // when visualActivity === 'combat_duel', so no extra frame logic is needed here.
+  for (let rank = 1; rank <= 3; rank++) {
+    const r = rank as 1 | 2 | 3;
+    const wa = new Worker(`Duel A R${rank}`, 'military');
+    wa.applyMilitaryAppearance(r);
+    wa.visualActivity = 'combat_duel';
+    const wb = new Worker(`Duel B R${rank}`, 'military');
+    wb.applyMilitaryAppearance(r);
+    wb.visualActivity = 'combat_duel';
+    addCard(`military-duel-rank-${rank}`, `Military R${rank} — fighting`, {
+      kind: 'duel',
+      workerA: wa,
+      workerB: wb,
+      s: 3.15,
+    });
+  }
+
   wrap.appendChild(buildSectionToc('Jump to worker preview', workerToc));
   wrap.appendChild(intro);
   wrap.appendChild(grid);
@@ -993,6 +1281,54 @@ function workerSection(): HTMLElement {
       if (!canvas) continue;
       const ctx = canvas.getContext('2d')!;
       ctx.clearRect(0, 0, W, H);
+
+      if (entry.kind === 'donkey') {
+        const o = entry.patch(now);
+        ctx.save();
+        ctx.translate(W / 2, H - 20);
+        paintDonkeySprite(ctx, loadSprite, o.s, o.facing, o.isMoving, o.frame, entry.carriedItems);
+        ctx.restore();
+        continue;
+      }
+
+      if (entry.kind === 'duel') {
+        // Two soldiers facing each other; sword-wobble is sin(now/145) inside the painter.
+        const duelFrame = Math.floor(now / 120) % 4;
+        const paintDuelSoldier = (worker: Worker, facing: number, enemyTint: boolean) => {
+          paintWorkerSpriteBody(ctx, loadSprite, {
+            worker,
+            s: entry.s,
+            facing,
+            isMoving: true,
+            frame: duelFrame,
+            now,
+            anim: 'none',
+            animT: 0,
+            isCarrying: false,
+            isHammerConstruct: false,
+            isPlantDigging: false,
+            isFisherFishing: false,
+            isStoneGathering: false,
+            isSideCarryTool: false,
+            isOverheadCarry: false,
+            armAnim: 'none',
+            drawRoundFootShadow: true,
+            napPillowArms: false,
+            enemyTint,
+          });
+        };
+        // Player: left side, faces right (facing=0)
+        ctx.save();
+        ctx.translate(W / 2 - 26, H - 20);
+        paintDuelSoldier(entry.workerA, 0, false);
+        ctx.restore();
+        // Enemy: right side, faces left (facing=1 = mirrored)
+        ctx.save();
+        ctx.translate(W / 2 + 26, H - 20);
+        paintDuelSoldier(entry.workerB, 1, true);
+        ctx.restore();
+        continue;
+      }
 
       if (entry.kind === 'nap') {
         ctx.save();

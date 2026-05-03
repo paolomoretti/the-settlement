@@ -1,6 +1,13 @@
 import { computePosition, autoPlacement, shift, offset } from '@floating-ui/dom';
 
-export type AnchorFn = () => { x: number; y: number };
+/**
+ * Return value for the anchor function.
+ * When `width` and `height` are provided they describe the bounding rect of the
+ * referenced object (top-left origin).  floating-ui will place the popover
+ * fully outside that rect.  When omitted the anchor collapses to a zero-size
+ * point, preserving legacy behaviour for road-worker / survey popovers.
+ */
+export type AnchorFn = () => { x: number; y: number; width?: number; height?: number };
 
 export class GamePopover {
   private el: HTMLElement;
@@ -123,25 +130,35 @@ export class GamePopover {
 
   private reposition(): void {
     if (!this.anchorFn) return;
-    const { x, y } = this.anchorFn();
+    const anchor = this.anchorFn();
+
+    // When the caller provides a bounding rect (width + height > 0), use it so
+    // that floating-ui measures free space outside the entire reference area.
+    // Otherwise fall back to a zero-size point anchor (legacy behaviour).
+    const hasRect = (anchor.width ?? 0) > 0 && (anchor.height ?? 0) > 0;
+    const left = anchor.x;
+    const top = anchor.y;
+    const width = anchor.width ?? 0;
+    const height = anchor.height ?? 0;
 
     const virtualEl = {
       getBoundingClientRect: () => ({
-        x,
-        y,
-        width: 0,
-        height: 0,
-        top: y,
-        left: x,
-        right: x,
-        bottom: y,
+        x: left,
+        y: top,
+        width,
+        height,
+        top,
+        left,
+        right: left + width,
+        bottom: top + height,
       }),
     };
 
     computePosition(virtualEl, this.el, {
       placement: 'top',
       middleware: [
-        offset(40),
+        // Smaller gap when we have a real rect; larger for legacy point anchors.
+        offset(hasRect ? 10 : 40),
         autoPlacement({ allowedPlacements: ['top', 'bottom', 'left', 'right'] }),
         shift({ padding: 12 }),
       ],

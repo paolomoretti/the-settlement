@@ -132,21 +132,17 @@
         color: #555;
         margin-top: 4px;
       }
-      .catalog-building-cols {
+      /* ── Two-row building layout ──────────────────────────────────── */
+      .catalog-building-visual-row {
         display: grid;
-        grid-template-columns: repeat(4, minmax(150px, 220px)) minmax(220px, 1fr);
-        gap: 20px 20px;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 16px;
         align-items: start;
+        margin-bottom: 18px;
       }
-      @media (max-width: 1300px) {
-        .catalog-building-cols {
-          grid-template-columns: repeat(2, 1fr);
-        }
-      }
-      @media (max-width: 640px) {
-        .catalog-building-cols {
-          grid-template-columns: 1fr;
-        }
+      .catalog-building-details-row {
+        border-top: 1px solid #e0e0e0;
+        padding-top: 14px;
       }
       .col-heading {
         font-size: 13px;
@@ -156,23 +152,109 @@
         letter-spacing: 0.04em;
         margin-bottom: 8px;
       }
-      .col-smoke {
+      .col-smoke,
+      .col-grid-preview {
         display: flex;
         flex-direction: column;
         gap: 0;
       }
-      .col-smoke .row-canvas-wrap {
+      .col-smoke .row-canvas-wrap,
+      .col-grid-preview .row-canvas-wrap {
         display: flex;
         justify-content: center;
         align-items: center;
+        width: 100%;
         background: #f0f0f0;
         border-radius: 6px;
       }
-      .col-smoke .row-canvas-wrap canvas {
+      .col-smoke .row-canvas-wrap canvas,
+      .col-grid-preview .row-canvas-wrap canvas {
         display: block;
-        max-width: 100%;
+        width: 100%;
+        height: auto;
         image-rendering: pixelated;
         image-rendering: crisp-edges;
+      }
+      .col-grid-preview .row-canvas-wrap {
+        background: #dce8dc;
+      }
+      /* ── Grid preview editor UI ─────────────────────────────────── */
+      .grid-edit-btn {
+        align-self: flex-start;
+        margin-top: 8px;
+        padding: 4px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 5px;
+        cursor: pointer;
+        border: 1px solid #2d6a2d;
+        background: #f4faf4;
+        color: #1a4d1a;
+        line-height: 1.4;
+      }
+      .grid-edit-btn:hover {
+        background: #e0f0e0;
+      }
+      .grid-editor {
+        display: none;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .grid-editor.open {
+        display: flex;
+      }
+      .grid-editor-fields {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        padding: 10px 12px;
+        background: #111b11;
+        border: 1px solid #3a5a3a;
+        border-radius: 6px;
+      }
+      .grid-editor-field {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .grid-editor-field label {
+        font-size: 12px;
+        font-weight: 600;
+        color: #a8d8a8;
+        width: 82px;
+        flex-shrink: 0;
+        font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+      }
+      .grid-editor-field input[type='number'] {
+        width: 76px;
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 12px;
+        padding: 3px 6px;
+        background: #1e2e1e;
+        color: #a8d8a8;
+        border: 1px solid #3a5a3a;
+        border-radius: 4px;
+        -moz-appearance: textfield;
+        appearance: textfield;
+      }
+      .grid-editor-field input[type='number']:focus {
+        outline: none;
+        border-color: #5aaa5a;
+      }
+      .grid-copy-btn {
+        flex: 1;
+        padding: 5px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 5px;
+        cursor: pointer;
+        border: 1px solid #2d6a2d;
+        background: #f4faf4;
+        color: #1a4d1a;
+      }
+      .grid-copy-btn:hover {
+        background: #e0f0e0;
       }
       /* ── Smoke editor UI ─────────────────────────────────────────── */
       .smoke-edit-btn,
@@ -279,6 +361,7 @@
         display: flex;
         justify-content: center;
         align-items: center;
+        width: 100%;
         min-height: 160px;
         background: #f0f0f0;
         border-radius: 6px;
@@ -287,7 +370,8 @@
       .col-final .row-canvas-wrap canvas,
       .col-production .row-canvas-wrap canvas {
         display: block;
-        max-width: 100%;
+        width: 100%;
+        height: auto;
         image-rendering: pixelated;
         image-rendering: crisp-edges;
       }
@@ -315,6 +399,10 @@
         font-size: 14px;
         line-height: 1.5;
         color: #222;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 0 28px;
+        align-items: start;
       }
       .details-block {
         margin-bottom: 14px;

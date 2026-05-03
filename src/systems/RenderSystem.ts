@@ -29,6 +29,7 @@ import {
 import {
   paintWorkerSpriteBody as paintWorkerBodyToCanvas,
   paintWorkerFloorNap,
+  paintDonkeySprite,
 } from '@/rendering/WorkerSpritePainter';
 import { RABBIT_JUMP_DURATION_MS, type WildRabbit } from '@/wildlife/WildlifeCoordinator';
 import { territoryKey } from '@/map/TerritoryCoordinator';
@@ -5250,97 +5251,15 @@ export class RenderSystem extends System {
     frame: number,
     carriedItems: Array<{ resourceType: string }>
   ): void {
-    const mirror = facing === 1 || facing === 2;
-    const showBack = facing === 2 || facing === 3;
-    const legSwing = isMoving ? (frame === 1 ? 1.6 : frame === 3 ? -1.6 : 0) : 0;
-
-    this.ctx.save();
-    if (mirror) this.ctx.scale(-1, 1);
-
-    this.ctx.globalAlpha = 0.22;
-    this.ctx.fillStyle = '#000';
-    this.ctx.beginPath();
-    this.ctx.ellipse(0, 1 * s, 9 * s, 3 * s, 0, 0, Math.PI * 2);
-    this.ctx.fill();
-    this.ctx.globalAlpha = 1;
-
-    const px = (x: number, y: number, w: number, h: number, color: string) => {
-      this.ctx.fillStyle = color;
-      this.ctx.fillRect(x * s, y * s, w * s, h * s);
-    };
-
-    const body = showBack ? '#74604b' : '#80684f';
-    const bodyDark = '#4d392b';
-    const muzzle = '#b9956d';
-    const bag = '#9b6b34';
-    const bagDark = '#5a371c';
-
-    px(-7, -9, 14, 7, body);
-    px(-6, -10, 12, 2, '#92765a');
-    px(-8, -7, 2, 4, bodyDark);
-
-    px(5, -12, 3, 5, body);
-    px(7, -15, 5, 5, body);
-    px(10, -13, 3, 2, muzzle);
-
-    px(7, -18, 1, 4, bodyDark);
-    px(10, -18, 1, 4, bodyDark);
-    if (!showBack) {
-      px(10, -13, 1, 1, '#15110c');
-    }
-
-    px(-5, -4, 2, 6 + legSwing, bodyDark);
-    px(-1, -4, 2, 6 - legSwing, bodyDark);
-    px(3, -4, 2, 6 - legSwing, bodyDark);
-    px(6, -4, 2, 6 + legSwing, bodyDark);
-    px(-5, 2 + legSwing, 3, 1, '#251a12');
-    px(-1, 2 - legSwing, 3, 1, '#251a12');
-    px(3, 2 - legSwing, 3, 1, '#251a12');
-    px(6, 2 + legSwing, 3, 1, '#251a12');
-
-    px(-5, -13, 5, 6, bag);
-    px(1, -13, 5, 6, bag);
-    px(-5, -8, 5, 1, bagDark);
-    px(1, -8, 5, 1, bagDark);
-    px(-1, -13, 2, 5, '#4a2f1a');
-
-    if (carriedItems.length > 0) {
-      this.renderDonkeyLoadIcons(carriedItems.slice(0, 5), s);
-    }
-
-    this.ctx.restore();
-  }
-
-  private renderDonkeyLoadIcons(items: Array<{ resourceType: string }>, s: number): void {
-    const iconSize = 4.6 * s * RESOURCE_ICON_DRAW_SCALE;
-    const half = iconSize / 2;
-    const positions = [
-      { x: -3.4, y: -12.1 },
-      { x: 3.2, y: -12.1 },
-      { x: -0.1, y: -14.5 },
-      { x: -5.4, y: -9.9 },
-      { x: 5.2, y: -9.9 },
-    ];
-
-    for (let i = 0; i < items.length; i++) {
-      const icon = this.loadSprite(`/assets/resources/${items[i]!.resourceType}.png`);
-      const p = positions[i]!;
-      const cx = p.x * s;
-      const cy = p.y * s;
-      this.ctx.save();
-      this.ctx.translate(cx, cy);
-      this.ctx.rotate(i % 2 === 0 ? -0.08 : 0.08);
-      if (icon) {
-        this.ctx.drawImage(icon, -half, -half, iconSize, iconSize);
-      } else {
-        this.ctx.fillStyle = '#d2a654';
-        this.ctx.fillRect(-half, -half, iconSize, iconSize);
-        this.ctx.strokeStyle = '#5a371c';
-        this.ctx.lineWidth = 0.8;
-        this.ctx.strokeRect(-half, -half, iconSize, iconSize);
-      }
-      this.ctx.restore();
-    }
+    paintDonkeySprite(
+      this.ctx,
+      path => this.loadSprite(path),
+      s,
+      facing,
+      isMoving,
+      frame,
+      carriedItems
+    );
   }
 
   private renderCircle(renderable: Renderable): void {

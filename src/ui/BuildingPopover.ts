@@ -117,11 +117,32 @@ export class BuildingPopover {
 
       const p = entity.getComponent(Position);
       if (!p) return { x: 0, y: 0 };
-      const cx = p.x + building.width / 2;
-      const cy = p.y + building.height / 2;
-      const screen = this.game.renderSystem.gridToScreen(cx, cy);
+
+      const W = building.width;
+      const H = building.height;
       const zoom = this.game.renderSystem.getZoom();
-      return { x: screen.x, y: screen.y - building.buildingHeight * zoom };
+
+      // The four extreme grid-corner points of the isometric footprint diamond.
+      // gridToScreen() returns viewport-space coordinates (accounts for camera
+      // pan + zoom), so we can pass the result straight to floating-ui.
+      const sBack = this.game.renderSystem.gridToScreen(p.x, p.y); // top vertex
+      const sRight = this.game.renderSystem.gridToScreen(p.x + W, p.y); // right vertex
+      const sFront = this.game.renderSystem.gridToScreen(p.x + W, p.y + H); // bottom vertex
+      const sLeft = this.game.renderSystem.gridToScreen(p.x, p.y + H); // left vertex
+
+      // Sprite extends above the back-corner by buildingHeight game-pixels.
+      const PAD = 12;
+      const rectLeft = sLeft.x - PAD;
+      const rectTop = sBack.y - building.buildingHeight * zoom - PAD;
+      const rectRight = sRight.x + PAD;
+      const rectBottom = sFront.y + PAD;
+
+      return {
+        x: rectLeft,
+        y: rectTop,
+        width: Math.max(1, rectRight - rectLeft),
+        height: Math.max(1, rectBottom - rectTop),
+      };
     };
 
     this.popover.show(name, content, getAnchor);

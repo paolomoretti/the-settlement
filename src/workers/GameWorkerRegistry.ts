@@ -141,6 +141,7 @@ export class GameWorkerRegistry {
   private readonly animationWorkers = new Map<number, AnimationWorkerState>();
   private readonly reservedTreeTiles = new Set<string>();
   private readonly surveyorWorkers = new Set<number>();
+  private readonly explorerWorkers = new Set<number>();
   private readonly pendingHqStreetEntries: PendingHqStreetEntry[] = [];
   private nextHqStreetDispatchAtMs = 0;
   /** Workers entering HQ, concealed briefly before removal for visual feedback (workerId → removal timestamp). */
@@ -195,6 +196,7 @@ export class GameWorkerRegistry {
       this.countPlayerWorkerIds(this.militaryDispatchWorkers.keys()) +
       this.countPlayerWorkerIds(this.animationWorkers.keys()) +
       this.countPlayerWorkerIds(this.surveyorWorkers) +
+      this.countPlayerWorkerIds(this.explorerWorkers) +
       this.countPlayerWorkerIds(this.workersEnteringHq.keys())
     );
   }
@@ -319,6 +321,14 @@ export class GameWorkerRegistry {
 
   detachSurveyorWorker(workerEntityId: number): void {
     this.surveyorWorkers.delete(workerEntityId);
+  }
+
+  attachExplorerWorker(workerEntityId: number): void {
+    this.explorerWorkers.add(workerEntityId);
+  }
+
+  detachExplorerWorker(workerEntityId: number): void {
+    this.explorerWorkers.delete(workerEntityId);
   }
 
   isRoadWorkerReturning(workerEntityId: number): boolean {
@@ -1901,6 +1911,7 @@ export class GameWorkerRegistry {
     this.animationWorkers.clear();
     this.reservedTreeTiles.clear();
     this.surveyorWorkers.clear();
+    this.explorerWorkers.clear();
     this.pendingHqStreetEntries.length = 0;
     this.nextHqStreetDispatchAtMs = 0;
   }

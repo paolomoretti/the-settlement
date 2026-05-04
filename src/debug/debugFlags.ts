@@ -17,3 +17,15 @@ export let ROAD_RENDERING_MODE: RoadRenderingMode = 'vector';
 export function setRoadRenderingMode(mode: RoadRenderingMode): void {
   ROAD_RENDERING_MODE = mode;
 }
+
+/**
+ * Toggle the V2 skeletal worker renderer.
+ * When true, all human workers use the new skeleton+actions+tools system.
+ * Donkey carriers always use the old renderer regardless of this flag.
+ * Default: false (old renderer until Phase 8 cleanup).
+ */
+export let USE_WORKER_V2 = true;
+
+export function setWorkerV2Mode(enabled: boolean): void {
+  USE_WORKER_V2 = enabled;
+}

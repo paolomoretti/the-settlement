@@ -25,7 +25,7 @@ let canvasHoverTooltip: CanvasHoverTooltip | null = null;
 let roadWorkerPopover: GamePopover | null = null;
 let roadWorkerPopoverEntityId: number | null = null;
 let unregisterHoverFrameHook: (() => void) | null = null;
-let inventoryActiveTab: 'resources' | 'workers' | 'production' | 'buildings' = 'resources';
+let inventoryActiveTab: 'resources' | 'workers' | 'production' = 'resources';
 
 const OPTIONS_KEY = 'settler_options';
 const NEW_GAME_LOADING_MESSAGE = 'Thinking about the land and placing rival villages...';
@@ -417,53 +417,87 @@ function setupGameUI(game: Game): void {
     cellSurveyPopover?.hide();
   });
 
-  eventBus.on('cell:empty_menu', (payload: { gridX: number; gridY: number; canSend: boolean }) => {
-    if (!game) return;
-    const gx = payload.gridX;
-    const gy = payload.gridY;
+  eventBus.on(
+    'cell:empty_menu',
+    (payload: { gridX: number; gridY: number; canSend: boolean; canSendExplorer: boolean }) => {
+      if (!game) return;
+      const gx = payload.gridX;
+      const gy = payload.gridY;
 
-    game.clearSurveyPending();
-    game.setSurveyMenuHighlight({ x: gx, y: gy });
-
-    const content = document.createElement('div');
-    content.style.display = 'flex';
-    content.style.flexDirection = 'column';
-    content.style.gap = '10px';
-    content.style.minWidth = '240px';
-
-    const hint = document.createElement('p');
-    hint.style.margin = '0';
-    hint.style.fontSize = '13px';
-    hint.style.lineHeight = '1.4';
-    hint.style.color = 'rgba(255,255,255,0.88)';
-    hint.textContent = payload.canSend
-      ? 'Sends a surveyor from your headquarters to read the soil for buried minerals. They plant small field signs that show the richest find on each spot for a while.'
-      : 'Another survey was done here recently, or no worker is free, or the camp needs a road link. Try again once the signs are gone and the land is free.';
-
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'dialog-btn-primary';
-    btn.textContent = 'Send Surveyor';
-    btn.disabled = !payload.canSend;
-    btn.addEventListener('click', () => {
-      cellSurveyPopover?.hide();
-      game.setSurveyMenuHighlight(null);
       game.clearSurveyPending();
-      if (game.surveys.tryDispatchSurveyor(gx, gy)) {
-        showToast('Surveyor dispatched');
-      }
-    });
+      game.setSurveyMenuHighlight({ x: gx, y: gy });
 
-    content.appendChild(hint);
-    content.appendChild(btn);
+      const content = document.createElement('div');
+      content.style.display = 'flex';
+      content.style.flexDirection = 'column';
+      content.style.gap = '10px';
+      content.style.minWidth = '240px';
 
-    cellSurveyPopover!.show('Surveyor', content, () => {
-      // Integer grid = diamond center in this iso map (+0.5,+0.5 is the bottom vertex, not the center).
-      const screen = game.renderSystem.gridToScreen(gx, gy);
-      return { x: screen.x, y: screen.y };
-    });
-    game.cellSurveyMenuOpen = true;
-  });
+      const hint = document.createElement('p');
+      hint.style.margin = '0';
+      hint.style.fontSize = '13px';
+      hint.style.lineHeight = '1.4';
+      hint.style.color = 'rgba(255,255,255,0.88)';
+      hint.textContent = payload.canSend
+        ? 'Sends a surveyor from your headquarters to read the soil for buried minerals. They plant small field signs that show the richest find on each spot for a while.'
+        : 'Another survey was done here recently, or no worker is free, or the camp needs a road link. Try again once the signs are gone and the land is free.';
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'dialog-btn-primary';
+      btn.textContent = 'Send Surveyor';
+      btn.disabled = !payload.canSend;
+      btn.addEventListener('click', () => {
+        cellSurveyPopover?.hide();
+        game.setSurveyMenuHighlight(null);
+        game.clearSurveyPending();
+        if (game.surveys.tryDispatchSurveyor(gx, gy)) {
+          showToast('Surveyor dispatched');
+        }
+      });
+
+      content.appendChild(hint);
+      content.appendChild(btn);
+
+      const divider = document.createElement('hr');
+      divider.style.cssText =
+        'border: none; border-top: 1px solid rgba(255,255,255,0.15); margin: 4px 0;';
+
+      const explorerHint = document.createElement('p');
+      explorerHint.style.margin = '0';
+      explorerHint.style.fontSize = '13px';
+      explorerHint.style.lineHeight = '1.4';
+      explorerHint.style.color = 'rgba(255,255,255,0.88)';
+      explorerHint.textContent = payload.canSendExplorer
+        ? 'Sends a scout from your headquarters to push back the fog of war. They walk outward for three minutes, pausing to scan the horizon with their hand shielding their eyes, then return home.'
+        : 'No free settler available to explore, or headquarters has no road exit.';
+
+      const explorerBtn = document.createElement('button');
+      explorerBtn.type = 'button';
+      explorerBtn.className = 'dialog-btn-primary';
+      explorerBtn.textContent = '\u{1F9ED} Send Explorer';
+      explorerBtn.disabled = !payload.canSendExplorer;
+      explorerBtn.addEventListener('click', () => {
+        cellSurveyPopover?.hide();
+        game.setSurveyMenuHighlight(null);
+        game.clearSurveyPending();
+        if (game.tryDispatchExplorer(gx, gy)) {
+          showToast('Explorer dispatched');
+        }
+      });
+
+      content.appendChild(divider);
+      content.appendChild(explorerHint);
+      content.appendChild(explorerBtn);
+
+      cellSurveyPopover!.show('Surveyor', content, () => {
+        // Integer grid = diamond center in this iso map (+0.5,+0.5 is the bottom vertex, not the center).
+        const screen = game.renderSystem.gridToScreen(gx, gy);
+        return { x: screen.x, y: screen.y };
+      });
+      game.cellSurveyMenuOpen = true;
+    }
+  );
 
   if (unregisterHoverFrameHook) {
     unregisterHoverFrameHook();
@@ -516,9 +550,6 @@ function setupGameUI(game: Game): void {
   });
   document.getElementById('inventory-tab-production')?.addEventListener('click', () => {
     setInventoryTab('production');
-  });
-  document.getElementById('inventory-tab-buildings')?.addEventListener('click', () => {
-    setInventoryTab('buildings');
   });
 
   const inventoryOverlay = document.getElementById('inventory-overlay');
@@ -775,6 +806,12 @@ function updateProductionPriorityList(game: Game): void {
   if (!list) return;
   list.innerHTML = '';
 
+  // Build a map of building type → total placed count for the count badge
+  const buildingCountMap = new Map<string, number>();
+  for (const row of game.getBuildingOperationalSummary()) {
+    buildingCountMap.set(row.buildingType, row.total);
+  }
+
   const configurable = dataManager
     .getAllBuildings()
     .filter(building => building.production?.outputMode === 'weighted_random');
@@ -875,10 +912,12 @@ function updateProductionPriorityList(game: Game): void {
       meter.appendChild(meterFill);
       meter.appendChild(meterLabel);
 
+      const toolCount = game.inventory[resourceId] ?? 0;
       row.innerHTML =
         `<div class="production-priority-name">` +
         `${makeResourceIconHtml(resourceId, 'resource-icon production-priority-icon')}` +
         `<span>${resource?.name || resourceId}</span>` +
+        `<span class="production-priority-count">(${toolCount})</span>` +
         `</div>`;
       row.appendChild(quantity);
       row.appendChild(minus);
@@ -975,8 +1014,12 @@ function updateProductionPriorityList(game: Game): void {
     meter.appendChild(meterFill);
     meter.appendChild(meterLabel);
 
+    const bldCount = buildingCountMap.get(building.id) ?? 0;
     row.innerHTML =
-      `<div class="production-priority-name">` + `<span>${building.name}</span>` + `</div>`;
+      `<div class="production-priority-name">` +
+      `<span>${building.name}</span>` +
+      `<span class="production-priority-count">(${bldCount})</span>` +
+      `</div>`;
     row.appendChild(quantity);
     row.appendChild(minus);
     row.appendChild(meter);
@@ -995,30 +1038,6 @@ function updateProductionPriorityList(game: Game): void {
 
   refreshBuildingPriorities();
   list.appendChild(buildingSection);
-}
-
-function updateBuildingSummaryList(game: Game): void {
-  const list = document.getElementById('building-summary-list');
-  if (!list) return;
-  list.innerHTML = '';
-
-  const note = document.createElement('div');
-  note.className = 'basecamp-tab-note';
-  note.textContent =
-    'Shown as active / built. A building is active when it is complete, connected if needed, staffed if needed, and not stopped.';
-  list.appendChild(note);
-
-  const rows = game.getBuildingOperationalSummary();
-  for (const row of rows) {
-    const item = document.createElement('div');
-    const allActive = row.active === row.total;
-    const hasAny = row.total > 0;
-    item.className = 'building-summary-item' + (allActive ? '' : ' building-summary-item--warning');
-    item.innerHTML =
-      `<span class="building-summary-name${hasAny ? '' : ' building-summary-name--zero'}">${row.name}</span>` +
-      `<span class="building-summary-count">${row.active}/${row.total}</span>`;
-    list.appendChild(item);
-  }
 }
 
 function showInventoryPanel(game: Game): void {
@@ -1077,7 +1096,6 @@ function showInventoryPanel(game: Game): void {
   }
 
   updateProductionPriorityList(game);
-  updateBuildingSummaryList(game);
 
   setInventoryTab(inventoryActiveTab);
 
@@ -1092,24 +1110,20 @@ function hideInventoryPanel(): void {
   overlay.setAttribute('aria-hidden', 'true');
 }
 
-function setInventoryTab(tab: 'resources' | 'workers' | 'production' | 'buildings'): void {
+function setInventoryTab(tab: 'resources' | 'workers' | 'production'): void {
   inventoryActiveTab = tab;
   const resBtn = document.getElementById('inventory-tab-resources');
   const workersBtn = document.getElementById('inventory-tab-workers');
   const productionBtn = document.getElementById('inventory-tab-production');
-  const buildingsBtn = document.getElementById('inventory-tab-buildings');
   const resSection = document.getElementById('inventory-section-resources');
   const workersSection = document.getElementById('inventory-section-workers');
   const productionSection = document.getElementById('inventory-section-production');
-  const buildingsSection = document.getElementById('inventory-section-buildings');
   resBtn?.classList.toggle('active', tab === 'resources');
   workersBtn?.classList.toggle('active', tab === 'workers');
   productionBtn?.classList.toggle('active', tab === 'production');
-  buildingsBtn?.classList.toggle('active', tab === 'buildings');
   resSection?.classList.toggle('active', tab === 'resources');
   workersSection?.classList.toggle('active', tab === 'workers');
   productionSection?.classList.toggle('active', tab === 'production');
-  buildingsSection?.classList.toggle('active', tab === 'buildings');
 }
 
 function updateButtonStates(activeButtonId: string | null): void {

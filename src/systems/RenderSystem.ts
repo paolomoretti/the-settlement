@@ -35,7 +35,8 @@ import { RABBIT_JUMP_DURATION_MS, type WildRabbit } from '@/wildlife/WildlifeCoo
 import { territoryKey } from '@/map/TerritoryCoordinator';
 import { createChimneySmoke, type ChimneySmoke } from '@/rendering/chimneySmoke';
 import { createLoFiFire, type LoFiFire } from '@/rendering/loFiFire';
-import { DEBUG, ROAD_RENDERING_MODE } from '@/debug/debugFlags';
+import { DEBUG, ROAD_RENDERING_MODE, USE_WORKER_V2 } from '@/debug/debugFlags';
+import { paintWorkerFromLegacy } from '@/rendering/workerV2/WorkerBodyRenderer';
 import { getEnemyFactionStyle, getEntityFaction, isPlayerOwned } from '@/components/ownerUtils';
 
 /** World-space half-plane clip for long straight iso shores (same screen row / column of tile centers). */
@@ -5243,6 +5244,22 @@ export class RenderSystem extends System {
       armAnim,
       enemyTint,
     };
+
+    // ── V2 skeletal renderer (feature flag) ─────────────────────────────────
+    if (USE_WORKER_V2) {
+      paintWorkerFromLegacy(
+        this.ctx,
+        path => this.loadSprite(path),
+        worker,
+        isMoving || isCombatDuel,
+        facing,
+        now,
+        s,
+        enemyTint
+      );
+      return;
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     if (worker.visualActivity === 'combat_fallen') {
       const fadeUntil = worker.buildIdleUntil || now;

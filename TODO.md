@@ -11,6 +11,8 @@ A running list of things to build, fix, or improve. Check items off as they land
 - [ ] Tool requirements for workers — workers need the right tool before they can staff a building
 - [ ] Metalworks tool priority system — weighted dispatch order for which tools get produced first
 - [ ] Worker job assignment UI — manually assign / reassign workers to buildings
+- [ ] Garrison cap control — in the military building detail panel, add +/− controls to set the desired garrison size per building (e.g. cap a 3-slot turret to 2 soldiers); the remaining slot stays vacant and soldiers are spread/reassigned accordingly across the player's military posts
+- [ ] Conquered enemy workers — after capturing an enemy HQ, idle enemy road/building workers should not just stand frozen on the road; they should either disperse (walk off-screen and despawn) or, ideally, walk to the nearest player HQ / auxiliary HQ and be absorbed into the player's population pool
 - [ ] Trading — exchange resources with neutral merchants or enemy factions
 - [ ] Building upgrades — e.g. Hut → House already wired, extend to other tiers
 
@@ -28,6 +30,7 @@ A running list of things to build, fix, or improve. Check items off as they land
 - [ ] Audio — sound effects and ambient tracks via Howler.js (stubs exist, need assets + wiring)
 - [ ] Weather / seasons — visual pass (snow, rain) and optional production modifiers
 - [ ] Remaining building sprites — any buildings still using placeholder colour blocks
+- [ ] Survey flag visual — the flag planted at the survey center (visible while the surveyor travels and digs) looks rough; replace it with a properly drawn isometric flag sprite that fits the medieval art style
 
 ---
 

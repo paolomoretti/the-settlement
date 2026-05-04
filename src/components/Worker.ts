@@ -34,6 +34,7 @@ export type WorkerVisualActivity =
   | 'production_mill'
   | 'production_plant'
   | 'survey_dig'
+  | 'explore_scout'
   | 'combat_duel'
   | 'combat_fallen';
 

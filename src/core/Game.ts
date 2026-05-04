@@ -46,6 +46,7 @@ import { isInsightAltHeld } from '@/input/InsightAltKey';
 import { isInsightRockTile } from '@/ui/hoverInsight/buildHoverLines';
 import { axisAlignedGridLine } from '@/utils/gridLine';
 import { SurveyCoordinator } from '@/survey/SurveyCoordinator';
+import { ExplorerCoordinator } from '@/explorer/ExplorerCoordinator';
 import { ensureWellAquiferInitialized } from '@/map/wellAquifer';
 import { WildlifeCoordinator } from '@/wildlife/WildlifeCoordinator';
 import { TerritoryCoordinator } from '@/map/TerritoryCoordinator';
@@ -161,6 +162,8 @@ export class Game {
   private workers!: GameWorkerRegistry;
   /** Geological survey: flag, surveyor, dominant-ore labels, lazy `Tile.cellMinerals`. */
   public surveys!: SurveyCoordinator;
+  /** Map exploration: dispatched from cell menu; reveals fog as they walk. */
+  public explorers!: ExplorerCoordinator;
   /** True while the grass-tile Surveyor popover is open (drives close-then-click-again UX). */
   public cellSurveyMenuOpen = false;
   /** Grass tile awaiting tap on the center “options” icon before opening the Surveyor menu. */
@@ -292,6 +295,21 @@ export class Game {
         this.workers.queueHqStreetEntry(entity, path, options),
       attachSurveyorWorker: id => this.workers.attachSurveyorWorker(id),
       detachSurveyorWorker: id => this.workers.detachSurveyorWorker(id),
+    });
+
+    this.explorers = new ExplorerCoordinator({
+      getTileMap: () => this.tileMap,
+      getPathFinder: () => this.pathFinder,
+      getEntities: () => this.entities,
+      addEntity: e => this.addEntity(e),
+      removeEntity: e => this.removeEntity(e),
+      getAvailablePopulation: () => this.getAvailablePopulation(),
+      getBaseCampSpawnTile: () => this.workers.getBaseCampSpawnTile(),
+      queueHqStreetEntry: (entity, path, options) =>
+        this.workers.queueHqStreetEntry(entity, path, options),
+      attachExplorerWorker: id => this.workers.attachExplorerWorker(id),
+      detachExplorerWorker: id => this.workers.detachExplorerWorker(id),
+      revealTiles: cells => this.revealCells(cells),
     });
 
     // Setup road segment callbacks
@@ -3738,6 +3756,7 @@ export class Game {
     this.updateEnemyRoadMaintenance();
 
     this.surveys.tick(this.simulationNowMs);
+    this.explorers.tick(this.simulationNowMs);
     this.renderSystem.setSurveyWorkerIdsOnTop(this.surveys.getActiveSurveyorWorkerIds());
     this.renderSystem.setSurveyOverlay(this.surveys.getOverlayForRender(this.simulationNowMs));
 
@@ -5897,7 +5916,15 @@ export class Game {
     }
   }
 
-  /** Highlight a grass tile while the “Send Surveyor” popover is open (canvas). */
+  canSendExplorerTo(gx: number, gy: number): boolean {
+    return this.explorers.canSendExplorerTo(gx, gy);
+  }
+
+  tryDispatchExplorer(gx: number, gy: number): boolean {
+    return this.explorers.tryDispatchExplorer(gx, gy);
+  }
+
+  /** Highlight a grass tile while the "Send Surveyor" popover is open (canvas). */
   setSurveyMenuHighlight(tile: { x: number; y: number } | null): void {
     this.renderSystem.setSurveyMenuHighlight(tile);
   }
@@ -6038,6 +6065,7 @@ export class Game {
           gridX: x,
           gridY: y,
           canSend: this.surveys.canSendSurveyorTo(x, y),
+          canSendExplorer: this.explorers.canSendExplorerTo(x, y),
         });
       } else if (eligible) {
         this.pendingSurveyGrid = { x, y };
@@ -6342,6 +6370,7 @@ export class Game {
     this.donkeysAtHq = 1;
     this.workers.resetState();
     this.surveys.reset();
+    this.explorers.reset();
     this.pendingBuildingPickups.clear();
     this.demolitionSites = [];
     this.nextDemolitionSiteId = 1;
@@ -6389,6 +6418,7 @@ export class Game {
       this.dragPreviewPosition = null;
       this.workers.resetState();
       this.surveys.reset();
+      this.explorers.reset();
       this.pendingBuildingPickups.clear();
       this.toolSpecialistsAtHq = {};
       this.militarySpecialistsAtHq = 0;

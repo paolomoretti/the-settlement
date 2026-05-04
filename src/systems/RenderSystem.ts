@@ -168,6 +168,16 @@ export class RenderSystem extends System {
   /** When set, rabbits are drawn in the depth-sorted pass (see `Game.wildlife`). */
   private getWildRabbits: (() => readonly WildRabbit[]) | null = null;
 
+  /**
+   * Per-frame depth boost for workers that are outside a building's footprint but
+   * in its "front quadrant" (wx >= bx AND wy >= by).  Without this, workers on
+   * roads adjacent to the visible right/left walls of large buildings (HQ, fortress)
+   * land in a lower depth bucket than the building and are drawn behind its sprite
+   * even though they are geometrically in front of it.  The boost is recomputed
+   * every frame just before the entity sort.
+   */
+  private _workerFrontQuadrantBoost = new Map<number, number>();
+
   // Minimap
   private minimapCanvas: HTMLCanvasElement;
   private minimapCtx: CanvasRenderingContext2D;
@@ -468,6 +478,43 @@ export class RenderSystem extends System {
         pos.y <= viewportBounds.maxY
       );
     });
+
+    // Pre-compute front-quadrant depth boosts for workers adjacent to large buildings.
+    // A worker on a road just outside the visible (right/left) wall of a building has a
+    // lower natural x+y than the building's front-corner depth key, so it falls into an
+    // earlier render bucket and ends up drawn behind the sprite.  We boost those workers'
+    // depth to match the building so they land in the same bucket and the tie-break in
+    // compareEntityDrawOrder can correctly put them on top.
+    this._workerFrontQuadrantBoost.clear();
+    for (const workerEnt of visibleEntities) {
+      if (!workerEnt.hasComponent(Worker)) continue;
+      const wpos = workerEnt.getComponent(Position);
+      if (!wpos) continue;
+      const wx = wpos.x;
+      const wy = wpos.y;
+      const fwx = Math.floor(wx);
+      const fwy = Math.floor(wy);
+      for (const bEnt of visibleEntities) {
+        const bldg = bEnt.getComponent(Building);
+        if (!bldg || bEnt.hasComponent(Worker)) continue;
+        const bpos = bEnt.getComponent(Position);
+        if (!bpos) continue;
+        const bx = bpos.x;
+        const by = bpos.y;
+        const W = bldg.width;
+        const H = bldg.height;
+        // Worker must be in the "front quadrant": not behind the building's back corner
+        if (wx < bx || wy < by) continue;
+        // Worker must be outside the building footprint
+        if (fwx < bx + W && fwy < by + H) continue;
+        // Boost worker depth to at least the building's front-corner depth
+        const bDepth = bx + by + W + H - 2;
+        const cur = this._workerFrontQuadrantBoost.get(workerEnt.id);
+        if (cur === undefined || bDepth > cur) {
+          this._workerFrontQuadrantBoost.set(workerEnt.id, bDepth);
+        }
+      }
+    }
 
     // Sort entities by isometric draw depth (float); workers tie-break on top of buildings
     const sortedEntities = visibleEntities.sort((a, b) => this.compareEntityDrawOrder(a, b));
@@ -2898,7 +2945,13 @@ export class RenderSystem extends System {
     const pos = entity.getComponent(Position);
     if (!pos) return base;
     const southCellSum = Math.floor(pos.x) + Math.floor(pos.y) + 1;
-    return Math.max(base, southCellSum);
+    let depth = Math.max(base, southCellSum);
+    // Apply front-quadrant boost: if this worker is outside a building's footprint
+    // but in its front quadrant, raise depth to match the building so the two land
+    // in the same render bucket and the tie-break puts the worker on top.
+    const boost = this._workerFrontQuadrantBoost.get(entity.id);
+    if (boost !== undefined && boost > depth) depth = boost;
+    return depth;
   }
 
   /** Primary: float depth; tie: workers render after buildings so carriers are not hidden by facades. */

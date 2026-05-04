@@ -431,9 +431,9 @@
     "visual": {
       "buildingHeight": 60,
       "color": "#8b6508",
-      "spriteScale": 1.4,
-      "offsetX": -3,
-      "offsetY": 2
+      "spriteScale": 1.15,
+      "offsetX": -2,
+      "offsetY": -1
     },
     "buildCost": { "wood_plank": 2, "stone": 2 },
     "buildTime": 30,
@@ -445,10 +445,10 @@
       "continuous": true
     },
     "chimneySmoke": {
-      "offsetX": 23,
-      "offsetY": -10,
-      "density": 1,
-      "shade": 1.5
+      "offsetX": 35,
+      "offsetY": -4,
+      "density": 2,
+      "shade": 1
     },
     "storage": { "capacity": 10 },
     "population": { "requires": 1 },
@@ -811,6 +811,13 @@
       "productionTime": 35,
       "continuous": true
     },
+    "chimneySmoke": {
+      "offsetX": 3,
+      "offsetY": -14,
+      "density": 2,
+      "shade": 4
+    },
+
     "storage": { "capacity": 10 },
     "population": { "requires": 1 },
     "category": "production",
@@ -876,7 +883,7 @@
     "id": "fortress",
     "name": "Fortress",
     "description": "Massive military stronghold garrisoning 9 soldiers.",
-    "size": { "width": 3, "height": 3 },
+    "size": { "width": 4, "height": 4 },
     "visual": { "buildingHeight": 100, "color": "#5c4033" },
     "buildCost": { "wood_plank": 4, "stone": 7 },
     "buildTime": 60,

@@ -4,7 +4,13 @@
     "name": "Headquarters",
     "description": "Your starting settlement. Stores all resources and houses your initial workers.",
     "size": { "width": 5, "height": 5 },
-    "visual": { "buildingHeight": 120, "color": "#8b1a1a", "spriteScale": 1.3 },
+    "visual": {
+      "buildingHeight": 120,
+      "color": "#8b1a1a",
+      "spriteScale": 1.25,
+      "offsetX": 0,
+      "offsetY": 22
+    },
     "buildCost": {},
     "buildTime": 0,
     "requiresRoad": false,
@@ -835,7 +841,7 @@
     "buildTime": 25,
     "requiresRoad": true,
     "storage": { "capacity": 3, "accepts": ["gold_coin"] },
-    "military": { "soldierCapacity": 2, "territoryVisionRadius": 12 },
+    "military": { "soldierCapacity": 2, "territoryVisionRadius": 8 },
     "category": "military",
     "tier": 1,
     "plotType": "small"
@@ -857,7 +863,7 @@
     "buildTime": 30,
     "requiresRoad": true,
     "storage": { "capacity": 5, "accepts": ["gold_coin"] },
-    "military": { "soldierCapacity": 3, "territoryVisionRadius": 12 },
+    "military": { "soldierCapacity": 3, "territoryVisionRadius": 10 },
     "category": "military",
     "tier": 2,
     "plotType": "medium"
@@ -884,7 +890,7 @@
     "name": "Fortress",
     "description": "Massive military stronghold garrisoning 9 soldiers.",
     "size": { "width": 4, "height": 4 },
-    "visual": { "buildingHeight": 100, "color": "#5c4033" },
+    "visual": { "buildingHeight": 100, "color": "#5c4033", "spriteScale": 1.2 },
     "buildCost": { "wood_plank": 4, "stone": 7 },
     "buildTime": 60,
     "requiresRoad": true,
@@ -898,7 +904,7 @@
   "lookout_tower": {
     "id": "lookout_tower",
     "name": "Lookout Tower",
-    "description": "Extends visible territory. Staffed by a scout.",
+    "description": "A posted scout watches from above, revealing fog of war around your borders. Does not expand territory — use military posts for that.",
     "size": { "width": 2, "height": 2 },
     "visual": {
       "buildingHeight": 90,
@@ -910,10 +916,16 @@
     "buildCost": { "wood_plank": 4 },
     "buildTime": 30,
     "requiresRoad": true,
-    "requiredTool": "bow",
     "population": { "requires": 1 },
-    "military": { "territoryVisionRadius": 12 },
-    "category": "military",
+    "fogRevealRadius": 14,
+    "animation": {
+      "type": "interior_operator",
+      "operatorRole": "lookout_scout",
+      "workerSpeed": 1.2,
+      "drawingPhaseSec": 10,
+      "walkLeadSec": 5
+    },
+    "category": "residential",
     "tier": 1,
     "plotType": "small"
   },

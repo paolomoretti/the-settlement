@@ -140,6 +140,13 @@ export class Game {
   private territory: TerritoryCoordinator;
   private territoryDirty = true;
 
+  /**
+   * Tracks the last simulation timestamp (ms) at which each Lookout Tower revealed its fog disk.
+   * Key: building entity id. Cleared on new game / load so reveals fire immediately.
+   */
+  private lookoutRevealedAt = new Map<number, number>();
+  private static readonly LOOKOUT_REVEAL_INTERVAL_MS = 5_000;
+
   // Game economy
   public inventory: Inventory = {};
   public baseCampEntity: Entity | null = null;
@@ -278,6 +285,7 @@ export class Game {
       onDonkeyReturnedToHq: () => this.onDonkeyReturnedToHq(),
       isEntitySimulationActive: entity => this.isEntitySimulationActive(entity),
       getSimulationNowMs: () => this.simulationNowMs,
+      getPlayerHqEntities: () => this.getPlayerHqEntities(),
     });
 
     this.surveys = new SurveyCoordinator({
@@ -1584,6 +1592,40 @@ export class Game {
     }
   }
 
+  /**
+   * Periodically reveal fog of war around any completed Lookout Tower that has an active
+   * interior operator. Uses `buildings.json#fogRevealRadius` as the Chebyshev radius.
+   * Does NOT expand territory — only lifts fog beyond the current borders.
+   */
+  private tickLookoutTowerFogReveal(): void {
+    const now = this.simulationNowMs;
+    for (const entity of this.entities) {
+      if (!entity.active) continue;
+      const building = entity.getComponent(Building);
+      if (!building || !building.isComplete()) continue;
+      const def = dataManager.getBuilding(building.buildingType);
+      const fogRadius = def?.fogRevealRadius;
+      if (!fogRadius) continue;
+      // Only reveal while a scout is stationed inside
+      if (building.animationWorkerId == null) continue;
+      const last = this.lookoutRevealedAt.get(entity.id) ?? 0;
+      if (now - last < Game.LOOKOUT_REVEAL_INTERVAL_MS) continue;
+      this.lookoutRevealedAt.set(entity.id, now);
+      const pos = entity.getComponent(Position);
+      if (!pos) continue;
+      const cx = Math.floor(pos.x + building.width / 2);
+      const cy = Math.floor(pos.y + building.height / 2);
+      const cells: { x: number; y: number }[] = [];
+      for (let dy = -fogRadius; dy <= fogRadius; dy++) {
+        for (let dx = -fogRadius; dx <= fogRadius; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) > fogRadius) continue;
+          cells.push({ x: cx + dx, y: cy + dy });
+        }
+      }
+      this.revealCells(cells);
+    }
+  }
+
   private revealCells(cells: { x: number; y: number }[]): void {
     const newly: { x: number; y: number }[] = [];
     for (const cell of cells) {
@@ -2344,6 +2386,15 @@ export class Game {
    * Get the road junction tile adjacent to an auxiliary HQ's entrance (any adjacent road tile).
    * Used so auxiliary HQs can spawn junction items just like the main base camp.
    */
+  /** All player-owned completed base_camp entities (main HQ + all captured auxiliary HQs). */
+  public getPlayerHqEntities(): Entity[] {
+    return this.entities.filter(e => {
+      if (!e.active || !isPlayerOwned(e)) return false;
+      const b = e.getComponent(Building);
+      return b?.buildingType === 'base_camp' && b.isComplete();
+    });
+  }
+
   private getAuxHqSpawnTile(hqEntity: Entity): { x: number; y: number } | null {
     const pos = hqEntity.getComponent(Position);
     const building = hqEntity.getComponent(Building);
@@ -3757,6 +3808,7 @@ export class Game {
 
     this.surveys.tick(this.simulationNowMs);
     this.explorers.tick(this.simulationNowMs);
+    this.tickLookoutTowerFogReveal();
     this.renderSystem.setSurveyWorkerIdsOnTop(this.surveys.getActiveSurveyorWorkerIds());
     this.renderSystem.setSurveyOverlay(this.surveys.getOverlayForRender(this.simulationNowMs));
 
@@ -6371,6 +6423,7 @@ export class Game {
     this.workers.resetState();
     this.surveys.reset();
     this.explorers.reset();
+    this.lookoutRevealedAt.clear();
     this.pendingBuildingPickups.clear();
     this.demolitionSites = [];
     this.nextDemolitionSiteId = 1;
@@ -6419,6 +6472,7 @@ export class Game {
       this.workers.resetState();
       this.surveys.reset();
       this.explorers.reset();
+      this.lookoutRevealedAt.clear();
       this.pendingBuildingPickups.clear();
       this.toolSpecialistsAtHq = {};
       this.militarySpecialistsAtHq = 0;

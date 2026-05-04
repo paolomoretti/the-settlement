@@ -170,6 +170,23 @@ export const DEFAULT_BODY_DEF: readonly BodyPartDef[] = [
         ctx.fillStyle = '#2a1f14';
         ctx.fillRect(-2.5 * s, -s, 5 * s, s);
       }
+
+      // ── Explorer binoculars ──────────────────────────────────────────────
+      // Three black rectangles: left barrel | bridge | right barrel.
+      // Coordinate reference: (0,0) = hip; shirt spans y=-5 to y=0 (pixel units).
+      // At s=2 each barrel is ~6×8 canvas px — clearly readable on the chest.
+      // Left arm occupies x ≈ -8 to -4 in torso-local canvas; right arm x ≈ +6 to +10.
+      // Binoculars span x ≈ -3.6 to +3.6, safely between both arms.
+      if (a.isExplorer && !showBack) {
+        ctx.fillStyle = '#111111';
+        // Left barrel
+        ctx.fillRect(-1.8 * s, -3.5 * s, 1.3 * s, 2.0 * s);
+        // Right barrel
+        ctx.fillRect(0.5 * s, -3.5 * s, 1.3 * s, 2.0 * s);
+        // Bridge keeping them together
+        ctx.fillRect(-0.5 * s, -2.8 * s, 1.0 * s, 0.8 * s);
+      }
+
       return true;
     },
   },

@@ -370,7 +370,7 @@ function setupGameUI(game: Game): void {
   if (fastForwardButton) {
     tippy(fastForwardButton, {
       ...iconBarTippy,
-      content: 'Fast forward (3x)',
+      content: 'Fast forward (3x) [F]',
     });
     fastForwardButton.addEventListener('click', () => {
       game.setFastForwardEnabled(!game.isFastForwardEnabled());
@@ -378,6 +378,10 @@ function setupGameUI(game: Game): void {
     });
     syncFastForwardButton();
   }
+  eventBus.on('toggle:fast_forward', () => {
+    game.setFastForwardEnabled(!game.isFastForwardEnabled());
+    syncFastForwardButton();
+  });
 
   const optionsButton = document.getElementById('btn-options');
   if (optionsButton) {
@@ -427,70 +431,99 @@ function setupGameUI(game: Game): void {
       game.clearSurveyPending();
       game.setSurveyMenuHighlight({ x: gx, y: gy });
 
+      // ── Build two specialist cards side by side ─────────────────────────
+      const makeCard = (opts: {
+        icon: string;
+        label: string;
+        description: string;
+        disabledReason: string | null; // null = enabled
+        btnText: string;
+        onClick: () => void;
+      }): HTMLElement => {
+        const disabled = opts.disabledReason !== null;
+        const card = document.createElement('div');
+        card.style.cssText = [
+          'display:flex',
+          'flex-direction:column',
+          'gap:8px',
+          'padding:10px 12px',
+          'border-radius:4px',
+          'flex:1',
+          `background:${disabled ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)'}`,
+          `border:1px solid ${disabled ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.18)'}`,
+          `opacity:${disabled ? '0.6' : '1'}`,
+        ].join(';');
+
+        const iconEl = document.createElement('div');
+        iconEl.style.cssText = 'font-size:24px; line-height:1; text-align:center';
+        iconEl.textContent = opts.icon;
+
+        const labelEl = document.createElement('div');
+        labelEl.style.cssText = 'font-size:12px; font-weight:bold; color:#fff; text-align:center';
+        labelEl.textContent = opts.label;
+
+        const descEl = document.createElement('div');
+        descEl.style.cssText = [
+          'font-size:11px',
+          'line-height:1.4',
+          'flex:1',
+          `color:${disabled ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.75)'}`,
+        ].join(';');
+        descEl.textContent = disabled ? opts.disabledReason! : opts.description;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.style.cssText = 'width:100%; margin-top:4px';
+        btn.textContent = opts.btnText;
+        btn.disabled = disabled;
+        btn.addEventListener('click', opts.onClick);
+
+        card.append(iconEl, labelEl, descEl, btn);
+        return card;
+      };
+
       const content = document.createElement('div');
-      content.style.display = 'flex';
-      content.style.flexDirection = 'column';
-      content.style.gap = '10px';
-      content.style.minWidth = '240px';
+      content.style.cssText = 'display:flex; flex-direction:row; gap:10px; min-width:320px';
 
-      const hint = document.createElement('p');
-      hint.style.margin = '0';
-      hint.style.fontSize = '13px';
-      hint.style.lineHeight = '1.4';
-      hint.style.color = 'rgba(255,255,255,0.88)';
-      hint.textContent = payload.canSend
-        ? 'Sends a surveyor from your headquarters to read the soil for buried minerals. They plant small field signs that show the richest find on each spot for a while.'
-        : 'Another survey was done here recently, or no worker is free, or the camp needs a road link. Try again once the signs are gone and the land is free.';
+      content.appendChild(
+        makeCard({
+          icon: '⛏️',
+          label: 'Surveyor',
+          description:
+            'Reads the soil for buried minerals. Plants field signs on each spot showing the richest find for a while.',
+          disabledReason: payload.canSend
+            ? null
+            : 'No free worker, or the camp needs a road link. Wait until the signs are gone.',
+          btnText: 'Send Surveyor',
+          onClick: () => {
+            cellSurveyPopover?.hide();
+            game.setSurveyMenuHighlight(null);
+            game.clearSurveyPending();
+            if (game.surveys.tryDispatchSurveyor(gx, gy)) showToast('Surveyor dispatched');
+          },
+        })
+      );
 
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'dialog-btn-primary';
-      btn.textContent = 'Send Surveyor';
-      btn.disabled = !payload.canSend;
-      btn.addEventListener('click', () => {
-        cellSurveyPopover?.hide();
-        game.setSurveyMenuHighlight(null);
-        game.clearSurveyPending();
-        if (game.surveys.tryDispatchSurveyor(gx, gy)) {
-          showToast('Surveyor dispatched');
-        }
-      });
+      content.appendChild(
+        makeCard({
+          icon: '🧭',
+          label: 'Explorer',
+          description:
+            'Pushes back the fog of war around this cell. Patrols the area for 3 minutes, stopping to scan the horizon with binoculars.',
+          disabledReason: payload.canSendExplorer
+            ? null
+            : 'No free settler available, or headquarters has no road exit.',
+          btnText: 'Send Explorer',
+          onClick: () => {
+            cellSurveyPopover?.hide();
+            game.setSurveyMenuHighlight(null);
+            game.clearSurveyPending();
+            if (game.tryDispatchExplorer(gx, gy)) showToast('Explorer dispatched');
+          },
+        })
+      );
 
-      content.appendChild(hint);
-      content.appendChild(btn);
-
-      const divider = document.createElement('hr');
-      divider.style.cssText =
-        'border: none; border-top: 1px solid rgba(255,255,255,0.15); margin: 4px 0;';
-
-      const explorerHint = document.createElement('p');
-      explorerHint.style.margin = '0';
-      explorerHint.style.fontSize = '13px';
-      explorerHint.style.lineHeight = '1.4';
-      explorerHint.style.color = 'rgba(255,255,255,0.88)';
-      explorerHint.textContent = payload.canSendExplorer
-        ? 'Sends a scout from your headquarters to push back the fog of war. They walk outward for three minutes, pausing to scan the horizon with their hand shielding their eyes, then return home.'
-        : 'No free settler available to explore, or headquarters has no road exit.';
-
-      const explorerBtn = document.createElement('button');
-      explorerBtn.type = 'button';
-      explorerBtn.className = 'dialog-btn-primary';
-      explorerBtn.textContent = '\u{1F9ED} Send Explorer';
-      explorerBtn.disabled = !payload.canSendExplorer;
-      explorerBtn.addEventListener('click', () => {
-        cellSurveyPopover?.hide();
-        game.setSurveyMenuHighlight(null);
-        game.clearSurveyPending();
-        if (game.tryDispatchExplorer(gx, gy)) {
-          showToast('Explorer dispatched');
-        }
-      });
-
-      content.appendChild(divider);
-      content.appendChild(explorerHint);
-      content.appendChild(explorerBtn);
-
-      cellSurveyPopover!.show('Surveyor', content, () => {
+      cellSurveyPopover!.show('Dispatch', content, () => {
         // Integer grid = diamond center in this iso map (+0.5,+0.5 is the bottom vertex, not the center).
         const screen = game.renderSystem.gridToScreen(gx, gy);
         return { x: screen.x, y: screen.y };

@@ -25,6 +25,8 @@ export interface WorkerAppearanceV2 {
   hatColor: string; // primary hat / helmet colour
   hatAccentColor?: string; // brim band, crown trim, visor notch, etc.
   bodyVariant: BodyVariant;
+  /** When true, draw binoculars strapped to the chest (explorer specialist). */
+  isExplorer?: boolean;
 }
 
 /** One-way migration helper from old WorkerAppearance to V2. */

@@ -318,6 +318,13 @@ export interface BuildingDefinition {
   tier: 1 | 2 | 3; // Tech tier
   plotType?: 'small' | 'medium' | 'large' | 'mine'; // Terrain placement type (future)
 
+  /**
+   * Fog-of-war reveal radius (Chebyshev cells from building center) applied continuously while
+   * a staffed operator is inside. Does NOT expand territory ownership — only lifts the fog
+   * beyond the current settlement boundary. Intended for the Lookout Tower.
+   */
+  fogRevealRadius?: number;
+
   // Military (for military buildings)
   military?: {
     soldierCapacity?: number; // Max soldiers garrisoned

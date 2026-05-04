@@ -155,10 +155,14 @@ export class Worker extends Component {
   public returnToHqAsDonkey = false;
   /** On arrival at HQ return tile, convert this worker into a ready tool specialist. */
   public returnToHqToolSpecialist: string | null = null;
+  /** Target HQ entity ID this worker is walking toward (main or auxiliary). Null = main HQ. */
+  public targetHqEntityId: number | null = null;
   /** Builder may hammer on site only after `beginConstruction()` runs. */
   public hammerConstructionEnabled = false;
   /** Builder stands and plays hammer idle until this simulation time. */
   public buildIdleUntil = 0;
+  /** When true, this worker is an explorer and renders with binoculars on the chest. */
+  public isExplorer = false;
 
   public idleAnim: IdleAnim = 'none';
   public idleAnimStart = 0;

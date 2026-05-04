@@ -1312,6 +1312,33 @@
         color: #ddd;
       }
 
+      .building-territory-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 1px 7px;
+        border-radius: 10px;
+        font-size: 10px;
+        font-weight: bold;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        background: rgba(0, 0, 0, 0.3);
+        color: #aaa;
+      }
+      /* Low / Medium / High expansion colour coding */
+      .building-territory-badge[data-level='low'] {
+        color: #e8c46a;
+        border-color: rgba(232, 196, 106, 0.4);
+      }
+      .building-territory-badge[data-level='medium'] {
+        color: #f0a040;
+        border-color: rgba(240, 160, 64, 0.4);
+      }
+      .building-territory-badge[data-level='high'] {
+        color: #e05555;
+        border-color: rgba(224, 85, 85, 0.4);
+      }
+
       .building-any-resource-group {
         display: inline-flex;
         align-items: center;

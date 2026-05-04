@@ -14,13 +14,18 @@ export interface ShortcutBinding {
 }
 
 export const SHORTCUT_BINDINGS: ShortcutBinding[] = [
-  { key: 'H', description: 'Center on base camp', category: 'navigation' },
+  {
+    key: 'H',
+    description: 'Center on base camp (press again to cycle through all HQs)',
+    category: 'navigation',
+  },
   { key: 'I', description: 'Open base camp details', category: 'general' },
   { key: 'R', description: 'Build road mode', category: 'building' },
   { key: 'E', description: 'Erase tool (roads, buildings, trees)', category: 'building' },
   { key: 'B', description: 'Open building menu', category: 'building' },
   { key: 'O', description: 'Open options', category: 'general' },
   { key: 'S', description: 'Quick save', category: 'general' },
+  { key: 'F', description: 'Toggle fast-forward (3x)', category: 'general' },
   { key: 'Arrow Up', description: 'Pan up', category: 'navigation' },
   { key: 'Arrow Down', description: 'Pan down', category: 'navigation' },
   { key: 'Arrow Left', description: 'Pan left', category: 'navigation' },
@@ -95,17 +100,34 @@ function tryCloseTopOverlay(): boolean {
 export function setupKeyboardShortcuts(game: Game): void {
   const { inputSystem, renderSystem } = game;
 
-  // H — Center on base camp
+  // H — Cycle through player HQs (main base camp first, then auxiliary; cycles back)
   hotkeys('h', e => {
     if (isModalOpen()) return;
     if (inputSystem.getMode() !== 'view') return;
     e.preventDefault();
 
-    if (!game.baseCampEntity) return;
-    const pos = game.baseCampEntity.getComponent(Position);
-    const building = game.baseCampEntity.getComponent(Building);
-    if (!pos || !building) return;
+    // Build ordered list: main base camp first, then any captured auxiliary HQs.
+    const allHqs = game.getPlayerHqEntities();
+    if (allHqs.length === 0) return;
+    const mainHq = game.baseCampEntity;
+    const ordered = mainHq ? [mainHq, ...allHqs.filter(e => e !== mainHq)] : allHqs;
 
+    // Find which HQ (if any) the camera is already centred on.
+    const currentIndex = ordered.findIndex(hqEntity => {
+      const pos = hqEntity.getComponent(Position);
+      const building = hqEntity.getComponent(Building);
+      if (!pos || !building) return false;
+      return renderSystem.isCenteredOnGrid(pos.x + building.width / 2, pos.y + building.height / 2);
+    });
+
+    // If not centred on any HQ → jump to main (index 0).
+    // If already centred on one → advance to the next, cycling back to main.
+    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % ordered.length;
+    const target = ordered[nextIndex];
+
+    const pos = target.getComponent(Position);
+    const building = target.getComponent(Building);
+    if (!pos || !building) return;
     renderSystem.centerOnGrid(pos.x + building.width / 2, pos.y + building.height / 2);
   });
 
@@ -207,6 +229,12 @@ export function setupKeyboardShortcuts(game: Game): void {
     } else {
       inputSystem.setSpacebarPressed(false);
     }
+  });
+
+  // F — Toggle fast-forward
+  hotkeys('f', e => {
+    e.preventDefault();
+    eventBus.emit('toggle:fast_forward');
   });
 
   registerInsightAltKeyListeners();

@@ -4,13 +4,14 @@ This document defines how **staffed buildings** get a **map worker**: a peasant 
 
 ## Who gets a map worker?
 
-| Condition                                                                                                | Map worker                                                                                                                                                                                      |
-| -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `population.provides` only (hut, house, headquarters, warehouse, …)                                      | **No** dedicated map worker for “housing capacity”.                                                                                                                                             |
-| `population.requires` + `requiredTool`                                                                   | **No extra map worker** — the delivered tool specialist is the building worker. They enter the building, are tracked on the building, and return to HQ if the building is demolished.           |
-| `population.requires` + timed `production` + **no** `animation` in JSON + **no** `requiredTool`          | **Yes** — runtime synthesizes **`interior_operator`**, except buildings deferred until custom outdoor animation exists (today: `hunter`, `farm`, `pig_farm`; see `resolveStaffingAnimation()`). |
-| `population.requires` + explicit `animation`                                                             | **Yes** — behaviour is whatever that block specifies, except `requiredTool` + `interior_operator` still uses only the tool specialist.                                                          |
-| `population.requires` but **no** `production` timer (e.g. donkey breeder, lookout as of today) | **No** automatic interior worker; add `animation` later or extend systems when those buildings get timed work.                                                                                  |
+| Condition                                                                                                      | Map worker                                                                                                                                                                                      |
+| -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `population.provides` only (hut, house, headquarters, warehouse, …)                                            | **No** dedicated map worker for “housing capacity”.                                                                                                                                             |
+| `population.requires` + `requiredTool`                                                                         | **No extra map worker** — the delivered tool specialist is the building worker. They enter the building, are tracked on the building, and return to HQ if the building is demolished.           |
+| `population.requires` + timed `production` + **no** `animation` in JSON + **no** `requiredTool`                | **Yes** — runtime synthesizes **`interior_operator`**, except buildings deferred until custom outdoor animation exists (today: `hunter`, `farm`, `pig_farm`; see `resolveStaffingAnimation()`). |
+| `population.requires` + explicit `animation`                                                                   | **Yes** — behaviour is whatever that block specifies, except `requiredTool` + `interior_operator` still uses only the tool specialist.                                                          |
+| `population.requires` + explicit `animation: interior_operator` + **no** `production` (e.g. **Lookout Tower**) | **Yes** — `GameWorkerRegistry` explicitly allows interior_operator without a Production component; the operator stays concealed permanently and never idles out.                                |
+| `population.requires` but **no** `production` timer and **no** explicit `animation` (e.g. donkey breeder)      | **No** automatic interior worker; add `animation` later or extend systems when those buildings get timed work.                                                                                  |
 
 Residential and pure storage/military buildings without `population.requires` do not use this staffing pipeline.
 
@@ -46,7 +47,13 @@ For `interior_operator`, **`operatorRole`** is the stable key for “which worke
 - Defaults to the building **`id`** when animation is **inferred** (no JSON block).
 - Can be set explicitly in JSON (e.g. `"operatorRole": "mill"`) so tuning and art notes stay obvious.
 
-`GameWorkerRegistry.applyInteriorOperatorAppearance()` maps roles to outfits today (e.g. white apron + hat for `mill` and `bakery`); other roles keep the random peasant palette until you add more roles.
+`GameWorkerRegistry.applyInteriorOperatorAppearance()` maps roles to outfits today:
+
+| `operatorRole`   | Appearance                                                                                   |
+| ---------------- | -------------------------------------------------------------------------------------------- |
+| `mill`, `bakery` | White apron + hat                                                                            |
+| `lookout_scout`  | Forest-green explorer uniform, wide-brim hat, `Worker.isExplorer = true` (binoculars visual) |
+| others           | Random peasant palette                                                                       |
 
 ## Adding or changing behaviour
 

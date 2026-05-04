@@ -30,9 +30,33 @@
 1. Mark specific tiles with `tile.explore()` and call `renderSystem.updateMinimapTiles` for those coords.
 2. **Not** add a disk to the union used for build rules unless you extend `rebuildFrom` with another source type (e.g. timed scout radius).
 
+## Territory expansion tiers (garrison buildings)
+
+| Building   | Garrison | `territoryVisionRadius` | Shown in menu    |
+| ---------- | -------- | ----------------------- | ---------------- |
+| Barracks   | 2        | **8**                   | Low expansion    |
+| Guardhouse | 3        | **10**                  | Medium expansion |
+| Watchtower | 6        | **12**                  | High expansion   |
+| Fortress   | 9        | **12**                  | High expansion   |
+
+The building menu shows a colour-coded badge (yellow / orange / red) derived from the radius. The exact cell count is intentionally hidden from the player.
+
+## Lookout Tower — fog-only reveal (no territory expansion)
+
+The **Lookout Tower** has been moved to the **residential** category. It no longer carries `military.territoryVisionRadius` and therefore does **not** expand territory ownership or the cordon.
+
+Instead it uses `fogRevealRadius: 14` (Chebyshev cells) applied by `Game.tickLookoutTowerFogReveal()` every 5 s of simulation time **while a scout operator is stationed inside**. The scout is a `lookout_scout` `interior_operator` worker dispatched from HQ, visually identical to the field Explorer (wide-brim hat, forest-green uniform, `Worker.isExplorer = true`). No tool is required — any available settler slot is used.
+
+Key rules:
+
+- Lookout Tower **does not** contribute to `TerritoryCoordinator` disks.
+- Fog revealed by the tower is permanent (tiles stay explored).
+- Building the tower inside your territory but near the frontier lets you see the terrain beyond the cordon without pushing the border.
+
 ## Tuning
 
 - Preview band: `TERRITORY_PREVIEW_BAND_CELLS` in `TerritoryCoordinator.ts`.
 - Pole spacing: `CORDON_POLE_STRIDE_CELLS`.
 - Military claim priority: `MILITARY_CLAIM_STRENGTH_BONUS`.
-- Per-building vision: `territoryVisionRadius` in `buildings.json` (non-expander buildings omit the field).
+- Per-garrison vision: `territoryVisionRadius` in `buildings.json`.
+- Lookout Tower reveal radius: `fogRevealRadius` in `buildings.json`; interval: `Game.LOOKOUT_REVEAL_INTERVAL_MS`.

@@ -15,12 +15,13 @@ All keyboard shortcuts are defined and registered in `src/input/KeyboardShortcut
 
 | Key              | Condition                  | Action                                                                                                         |
 | ---------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| **H**            | view mode, no modal dialog | Center camera on base camp                                                                                     |
+| **H**            | view mode, no modal dialog | Center on main base camp; if already centred there, cycles to the next HQ (auxiliary captured HQs); wraps back |
 | **I**            | no modal dialog            | Open Base Camp details                                                                                         |
 | **R**            | no modal dialog            | Enter build road mode                                                                                          |
 | **E**            | no modal dialog            | Erase tool (roads, buildings, trees); drag to strip tiles like roads                                           |
 | **B**            | no modal dialog            | Toggle building menu                                                                                           |
 | **S**            | no modal dialog            | Save to the current manually picked slot, or open the save dialog if this game has not been manually saved yet |
+| **F**            | always                     | Toggle fast-forward (3×) on/off                                                                                |
 | **Arrow Up**     | view mode, no modal dialog | Pan camera up                                                                                                  |
 | **Arrow Down**   | view mode, no modal dialog | Pan camera down                                                                                                |
 | **Arrow Left**   | view mode, no modal dialog | Pan camera left                                                                                                |

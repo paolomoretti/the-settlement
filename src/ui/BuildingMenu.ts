@@ -302,9 +302,35 @@ export class BuildingMenu {
       );
       roleRow.appendChild(line);
     } else if (building.military?.soldierCapacity) {
+      const garrisonLine = this.createRoleLine();
+      garrisonLine.appendChild(this.createRoleLabel('Garrisons'));
+      garrisonLine.appendChild(
+        this.createPlainRoleText(`${building.military.soldierCapacity} soldiers`)
+      );
+      roleRow.appendChild(garrisonLine);
+      // Territory expansion badge
+      const radius = building.military.territoryVisionRadius;
+      if (radius) {
+        const expandLine = this.createRoleLine();
+        expandLine.appendChild(this.createRoleLabel('Territory'));
+        const levelKey = radius <= 8 ? 'low' : radius <= 10 ? 'medium' : 'high';
+        const levelLabel =
+          levelKey === 'low'
+            ? 'Low expansion'
+            : levelKey === 'medium'
+              ? 'Medium expansion'
+              : 'High expansion';
+        const badge = document.createElement('span');
+        badge.className = 'building-territory-badge';
+        badge.dataset.level = levelKey;
+        badge.textContent = levelLabel;
+        expandLine.appendChild(badge);
+        roleRow.appendChild(expandLine);
+      }
+    } else if (building.fogRevealRadius) {
       const line = this.createRoleLine();
-      line.appendChild(this.createRoleLabel('Garrisons'));
-      line.appendChild(this.createPlainRoleText(`${building.military.soldierCapacity} soldiers`));
+      line.appendChild(this.createRoleLabel('Vision'));
+      line.appendChild(this.createPlainRoleText('Reveals fog of war'));
       roleRow.appendChild(line);
     } else if (building.population?.provides) {
       const line = this.createRoleLine();

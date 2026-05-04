@@ -128,6 +128,8 @@ export interface WorkerWorldAccess {
   isEntitySimulationActive(entity: Entity): boolean;
   /** Current simulation time in milliseconds (for timed worker behaviors). */
   getSimulationNowMs(): number;
+  /** All player-owned, completed base_camp entities (main + auxiliary HQs). */
+  getPlayerHqEntities(): Entity[];
 }
 
 export class GameWorkerRegistry {
@@ -269,9 +271,9 @@ export class GameWorkerRegistry {
   queueHqStreetEntry(
     entity: Entity,
     path: Position[],
-    options: { speed?: number; onRelease?: () => void } = {}
+    options: { speed?: number; onRelease?: () => void; hqEntity?: Entity } = {}
   ): void {
-    const hqId = this.world.getBaseCampEntity()?.id ?? null;
+    const hqId = (options.hqEntity ?? this.world.getBaseCampEntity())?.id ?? null;
     const worker = entity.getComponent(Worker);
     const movable = entity.getComponent(Movable);
     if (!worker || !movable || hqId == null) {
@@ -361,7 +363,6 @@ export class GameWorkerRegistry {
 
   rerouteReturningWorkers(): void {
     if (this.returningWorkers.size === 0) return;
-    const spawnTile = this.findBaseCampSpawnTile();
     const entities = [...this.world.getEntities()];
     const tileMap = this.world.getTileMap();
     const pathFinder = this.world.getPathFinder();
@@ -380,6 +381,18 @@ export class GameWorkerRegistry {
         this.world.removeEntity(entity);
         this.returningWorkers.delete(workerId);
         continue;
+      }
+
+      // Use the worker's recorded target HQ, or find the nearest one from current position.
+      let spawnTile: { x: number; y: number } | null = null;
+      if (worker.targetHqEntityId != null) {
+        const targetHq = entities.find(e => e.id === worker.targetHqEntityId && e.active);
+        if (targetHq) spawnTile = this.findHqSpawnTileForEntity(targetHq);
+      }
+      if (!spawnTile) {
+        const nearest = this.findNearestHqForPosition(Math.floor(pos.x), Math.floor(pos.y));
+        spawnTile = nearest?.spawnTile ?? this.findBaseCampSpawnTile();
+        if (nearest?.hqEntity) worker.targetHqEntityId = nearest.hqEntity.id;
       }
 
       if (!spawnTile) {
@@ -453,10 +466,15 @@ export class GameWorkerRegistry {
             this.world.onMilitarySpecialistReturnedToHq();
           }
 
-          // Conceal worker in HQ building before removing them
-          if (baseCampEntity && worker) {
-            worker.concealedInBuildingId = baseCampEntity.id;
+          // Conceal worker in their target HQ building before removing them
+          const workerTargetHqId = worker?.targetHqEntityId ?? baseCampEntity?.id ?? null;
+          const workerTargetHq = workerTargetHqId
+            ? (entities.find(e => e.id === workerTargetHqId && e.active) ?? baseCampEntity)
+            : baseCampEntity;
+          if (workerTargetHq && worker) {
+            worker.concealedInBuildingId = workerTargetHq.id;
             worker.dropResource();
+            worker.targetHqEntityId = null;
             // Remove worker after 800ms delay for visual feedback
             this.workersEnteringHq.set(workerId, nowMs + 800);
           } else {
@@ -480,10 +498,15 @@ export class GameWorkerRegistry {
         if (movable && !movable.isMoving) {
           const worker = entity.getComponent(Worker);
 
-          // Conceal builder in HQ building before removing them
-          if (baseCampEntity && worker) {
-            worker.concealedInBuildingId = baseCampEntity.id;
+          // Conceal builder in their target HQ building before removing them
+          const builderTargetHqId = worker?.targetHqEntityId ?? baseCampEntity?.id ?? null;
+          const builderTargetHq = builderTargetHqId
+            ? (entities.find(e => e.id === builderTargetHqId && e.active) ?? baseCampEntity)
+            : baseCampEntity;
+          if (builderTargetHq && worker) {
+            worker.concealedInBuildingId = builderTargetHq.id;
             worker.dropResource();
+            worker.targetHqEntityId = null;
             // Remove builder after 800ms delay for visual feedback
             this.workersEnteringHq.set(builderId, nowMs + 800);
           } else {
@@ -866,7 +889,8 @@ export class GameWorkerRegistry {
         if (
           !buildingEntity ||
           !building ||
-          !production ||
+          // interior_operator buildings (e.g. lookout_tower) may have no Production component
+          (!production && animCfg?.type !== 'interior_operator') ||
           (animCfg?.type !== 'well_operator' && animCfg?.type !== 'interior_operator')
         ) {
           workerComp.concealedInBuildingId = null;
@@ -881,8 +905,9 @@ export class GameWorkerRegistry {
         const isInterior = animCfg.type === 'interior_operator';
         const carriedResource: ResourceType = 'water';
         const workVisual = 'production_well' as const;
-        const prodTime = production.productionTime;
-        const timer = production.timer;
+        // production may be null for interior_operator buildings with no timed output (e.g. lookout_tower)
+        const prodTime = production?.productionTime ?? 0;
+        const timer = production?.timer ?? 0;
         const startWalk = Math.max(0, prodTime - drawingPhaseSec - walkLeadSec);
         const startDraw = Math.max(0, prodTime - drawingPhaseSec);
 
@@ -1496,12 +1521,14 @@ export class GameWorkerRegistry {
       if (!this.world.isEntitySimulationActive(entity)) continue;
       const building = entity.getComponent(Building);
       const production = entity.getComponent(Production);
-      if (!building || !production) continue;
+      if (!building) continue;
       if (!building.isComplete() || !building.isActive) continue;
       if (building.animationWorkerId != null) continue;
 
       const buildingDef = dataManager.getBuilding(building.buildingType);
       if (!buildingDef) continue;
+      // Buildings with an explicit animation block (e.g. lookout_tower) may have no Production component
+      if (!production && !buildingDef.animation) continue;
       const staffingAnim = this.resolveStaffingAnimation(buildingDef);
       if (!staffingAnim) continue;
 
@@ -1542,7 +1569,8 @@ export class GameWorkerRegistry {
       return;
     }
 
-    const spawnTile = this.findBaseCampSpawnTile();
+    const hqDispatch = this.findNearestHqForBuilding(buildingEntity);
+    const spawnTile = hqDispatch?.spawnTile ?? this.findBaseCampSpawnTile();
     if (!spawnTile) {
       this.world.removeEntity(builderEntity);
       building.builderEntityId = null;
@@ -1609,6 +1637,7 @@ export class GameWorkerRegistry {
         worker.visualActivity = 'general';
         worker.hammerConstructionEnabled = false;
         worker.buildIdleUntil = 0;
+        if (hqDispatch?.hqEntity) worker.targetHqEntityId = hqDispatch.hqEntity.id;
         this.returningBuilders.add(builderEntity.id);
       }
     } else {
@@ -1625,7 +1654,8 @@ export class GameWorkerRegistry {
     const entities = [...this.world.getEntities()];
     const tileMap = this.world.getTileMap();
     const pathFinder = this.world.getPathFinder();
-    const spawnTile = this.findBaseCampSpawnTile();
+    const hqDispatch = this.findNearestHqForBuilding(buildingEntity);
+    const spawnTile = hqDispatch?.spawnTile ?? this.findBaseCampSpawnTile();
     const roadTile = this.findBuildingAdjacentRoadTile(buildingEntity);
 
     if (!spawnTile || !roadTile) {
@@ -1664,6 +1694,7 @@ export class GameWorkerRegistry {
       worker.visualActivity = 'general';
       worker.setState('walking');
       worker.returnToHqAsSpecialist = true;
+      if (hqDispatch?.hqEntity) worker.targetHqEntityId = hqDispatch.hqEntity.id;
       pos.set(roadTile.x + 0.5, roadTile.y + 0.5);
       movable.speed = 1.8;
       const chosenPath =
@@ -1682,9 +1713,6 @@ export class GameWorkerRegistry {
     sourceBuildingEntity: Entity,
     speed: number = 1.8
   ): boolean {
-    const spawnTile = this.findBaseCampSpawnTile();
-    if (!spawnTile) return false;
-
     const pos = workerEntity.getComponent(Position);
     const movable = workerEntity.getComponent(Movable);
     const worker = workerEntity.getComponent(Worker);
@@ -1698,6 +1726,12 @@ export class GameWorkerRegistry {
     worker.concealedInBuildingId = null;
     worker.visualActivity = 'general';
     worker.setState('walking');
+
+    // Route to the nearest HQ (main or auxiliary) based on the worker's current position.
+    const hqDispatch = this.findNearestHqForPosition(Math.floor(pos.x), Math.floor(pos.y));
+    const spawnTile = hqDispatch?.spawnTile ?? this.findBaseCampSpawnTile();
+    if (!spawnTile) return false;
+    if (hqDispatch?.hqEntity) worker.targetHqEntityId = hqDispatch.hqEntity.id;
 
     const start = new Position(Math.floor(pos.x), Math.floor(pos.y));
     const goal = new Position(spawnTile.x, spawnTile.y);
@@ -1927,9 +1961,10 @@ export class GameWorkerRegistry {
       return null;
     }
 
-    const spawnTile = this.findBaseCampSpawnTile();
     const rest = roadSegmentManager.getCenterRestPosition(segment);
     const near = roadSegmentManager.nearestSegmentTileToPoint(segment, rest.x, rest.y);
+    const hqDispatch = this.findNearestHqForPosition(rest.x, rest.y);
+    const spawnTile = hqDispatch?.spawnTile ?? this.findBaseCampSpawnTile();
     const tileMap = this.world.getTileMap();
     const pathFinder = this.world.getPathFinder();
 
@@ -1959,7 +1994,7 @@ export class GameWorkerRegistry {
     }
 
     if (spawnTile) {
-      this.queueHqStreetEntry(worker, streetPath);
+      this.queueHqStreetEntry(worker, streetPath, { hqEntity: hqDispatch?.hqEntity });
     } else if (streetPath.length > 0) {
       const movable = worker.getComponent(Movable);
       const workerComp = worker.getComponent(Worker);
@@ -2035,7 +2070,9 @@ export class GameWorkerRegistry {
       return;
     }
 
-    const spawnTile = this.findBaseCampSpawnTile();
+    // Route freed road worker to the nearest HQ based on their current position.
+    const hqDispatch = this.findNearestHqForPosition(Math.floor(pos.x), Math.floor(pos.y));
+    const spawnTile = hqDispatch?.spawnTile ?? this.findBaseCampSpawnTile();
     if (!spawnTile) {
       this.world.removeEntity(entity);
       return;
@@ -2053,6 +2090,7 @@ export class GameWorkerRegistry {
       const movable = entity.getComponent(Movable);
       const worker = entity.getComponent(Worker);
       if (movable && worker) {
+        if (hqDispatch?.hqEntity) worker.targetHqEntityId = hqDispatch.hqEntity.id;
         movable.setPath(path);
         worker.setState('walking');
         this.returningWorkers.add(workerId);
@@ -2069,6 +2107,7 @@ export class GameWorkerRegistry {
       const movable = entity.getComponent(Movable);
       const worker = entity.getComponent(Worker);
       if (movable && worker) {
+        if (hqDispatch?.hqEntity) worker.targetHqEntityId = hqDispatch.hqEntity.id;
         movable.setPath(offRoadPath);
         worker.setState('walking');
         worker.visualActivity = 'general';
@@ -2185,25 +2224,82 @@ export class GameWorkerRegistry {
     return null;
   }
 
-  private findBaseCampSpawnTile(): { x: number; y: number } | null {
-    const baseCampEntity = this.world.getBaseCampEntity();
-    if (!baseCampEntity) return null;
-    const pos = baseCampEntity.getComponent(Position);
-    const building = baseCampEntity.getComponent(Building);
+  /** Generic spawn-tile finder for any HQ entity (works for main and auxiliary HQs). */
+  private findHqSpawnTileForEntity(hqEntity: Entity): { x: number; y: number } | null {
+    const pos = hqEntity.getComponent(Position);
+    const building = hqEntity.getComponent(Building);
     if (!pos || !building) return null;
-
     const entrance = building.getEntranceOffset();
     if (!entrance) return null;
-
     const ex = pos.x + entrance.dx;
     const ey = pos.y + entrance.dy;
     const tileMap = this.world.getTileMap();
     const connected = this.world.getBaseCampConnectedRoads();
-
     const adjacent = this.findAdjacentNetworkRoadTile(ex, ey, tileMap, connected);
     if (adjacent) return adjacent;
-
+    // Auxiliary HQs may not be on the main road network — fall back to any adjacent road tile.
+    const dirs: [number, number][] = [
+      [0, 1],
+      [0, -1],
+      [1, 0],
+      [-1, 0],
+    ];
+    for (const [dx, dy] of dirs) {
+      const tile = tileMap.getTile(ex + dx, ey + dy);
+      if (tile?.hasRoad) return { x: ex + dx, y: ey + dy };
+    }
     return { x: ex, y: ey };
+  }
+
+  /**
+   * Nearest player HQ (main or auxiliary) to the given map position.
+   * Returns the HQ entity and its spawn tile. Falls back to the main HQ.
+   */
+  private findNearestHqForPosition(
+    refX: number,
+    refY: number
+  ): { hqEntity: Entity; spawnTile: { x: number; y: number } } | null {
+    let bestHq: Entity | null = null;
+    let bestSpawnTile: { x: number; y: number } | null = null;
+    let bestDist = Infinity;
+    for (const hqEntity of this.world.getPlayerHqEntities()) {
+      const hqPos = hqEntity.getComponent(Position);
+      const hqBuilding = hqEntity.getComponent(Building);
+      if (!hqPos || !hqBuilding) continue;
+      const cx = hqPos.x + hqBuilding.width / 2;
+      const cy = hqPos.y + hqBuilding.height / 2;
+      const dist = Math.abs(cx - refX) + Math.abs(cy - refY);
+      if (dist >= bestDist) continue;
+      const spawnTile = this.findHqSpawnTileForEntity(hqEntity);
+      if (!spawnTile) continue;
+      bestDist = dist;
+      bestHq = hqEntity;
+      bestSpawnTile = spawnTile;
+    }
+    if (bestHq && bestSpawnTile) return { hqEntity: bestHq, spawnTile: bestSpawnTile };
+    // Fallback to main HQ
+    const mainHq = this.world.getBaseCampEntity();
+    if (mainHq) {
+      const spawnTile = this.findBaseCampSpawnTile();
+      if (spawnTile) return { hqEntity: mainHq, spawnTile };
+    }
+    return null;
+  }
+
+  /** Nearest player HQ for a given building entity (uses building center as reference). */
+  private findNearestHqForBuilding(
+    buildingEntity: Entity
+  ): { hqEntity: Entity; spawnTile: { x: number; y: number } } | null {
+    const pos = buildingEntity.getComponent(Position);
+    const building = buildingEntity.getComponent(Building);
+    if (!pos || !building) return this.findNearestHqForPosition(0, 0);
+    return this.findNearestHqForPosition(pos.x + building.width / 2, pos.y + building.height / 2);
+  }
+
+  private findBaseCampSpawnTile(): { x: number; y: number } | null {
+    const baseCampEntity = this.world.getBaseCampEntity();
+    if (!baseCampEntity) return null;
+    return this.findHqSpawnTileForEntity(baseCampEntity);
   }
 
   private findBuildingAdjacentRoadTile(buildingEntity: Entity): { x: number; y: number } | null {
@@ -2235,7 +2331,8 @@ export class GameWorkerRegistry {
     if (!building || building.builderEntityId != null) return;
     if (this.world.getAvailablePeasantSlotCount() <= 0) return;
 
-    const spawnTile = this.findBaseCampSpawnTile();
+    const hqDispatch = this.findNearestHqForBuilding(buildingEntity);
+    const spawnTile = hqDispatch?.spawnTile ?? this.findBaseCampSpawnTile();
     if (!spawnTile) return;
 
     const targetTile = this.findBuildingAdjacentRoadTile(buildingEntity);
@@ -2264,7 +2361,7 @@ export class GameWorkerRegistry {
     building.builderEntityId = builder.id;
     this.builderWorkers.set(builder.id, buildingEntity.id);
 
-    this.queueHqStreetEntry(builder, path);
+    this.queueHqStreetEntry(builder, path, { hqEntity: hqDispatch?.hqEntity });
   }
 
   private tryReassignBuilderToSite(targetEntity: Entity, constructionSites: Entity[]): boolean {
@@ -2323,7 +2420,8 @@ export class GameWorkerRegistry {
   }
 
   private spawnToolWorker(buildingEntity: Entity, tool: string): void {
-    const spawnTile = this.findBaseCampSpawnTile();
+    const hqDispatch = this.findNearestHqForBuilding(buildingEntity);
+    const spawnTile = hqDispatch?.spawnTile ?? this.findBaseCampSpawnTile();
     if (!spawnTile) return;
 
     const targetTile = this.findBuildingAdjacentRoadTile(buildingEntity);
@@ -2350,11 +2448,25 @@ export class GameWorkerRegistry {
 
     this.toolWorkers.set(worker.id, { buildingId: buildingEntity.id, tool });
 
-    this.queueHqStreetEntry(worker, path);
+    this.queueHqStreetEntry(worker, path, { hqEntity: hqDispatch?.hqEntity });
   }
 
   /** Outfits tied to `interior_operator.operatorRole` (building-specific worker spec). */
   private applyInteriorOperatorAppearance(workerComp: Worker, operatorRole: string): void {
+    if (operatorRole === 'lookout_scout') {
+      // Explorer appearance: forest-green uniform + wide-brim hat + binoculars flag
+      const skins = ['#d4a66a', '#c89858', '#c09050'];
+      workerComp.isExplorer = true;
+      workerComp.appearance = {
+        skin: skins[Math.floor(Math.random() * skins.length)]!,
+        hair: '#2a1a10',
+        tunic: '#506838', // medium forest green
+        pants: '#3a4a28', // dark olive
+        boots: '#222818', // near-black green
+        variant: 'hat', // wide-brim explorer hat
+      };
+      return;
+    }
     const whiteApron = new Set(['mill', 'bakery']);
     if (!whiteApron.has(operatorRole)) return;
     workerComp.appearance = {
@@ -2583,7 +2695,8 @@ export class GameWorkerRegistry {
     const building = buildingEntity.getComponent(Building);
     const pos = buildingEntity.getComponent(Position);
     const production = buildingEntity.getComponent(Production);
-    if (!building || !pos || !production || building.animationWorkerId != null) return false;
+    // production may be null for no-output interior operators (e.g. lookout_tower)
+    if (!building || !pos || building.animationWorkerId != null) return false;
 
     const tiles =
       this.computeInteriorApproachTiles(buildingEntity) ??
@@ -2615,7 +2728,7 @@ export class GameWorkerRegistry {
       phase: 'interior_inside',
       idleTile: tiles.idle,
       workTile: tiles.work,
-      lastProductionTimer: production.timer,
+      lastProductionTimer: production?.timer ?? 0,
     });
     return true;
   }
@@ -2624,8 +2737,8 @@ export class GameWorkerRegistry {
     for (const entity of this.world.getEntities()) {
       if (!entity.active || !isPlayerOwned(entity)) continue;
       const building = entity.getComponent(Building);
-      const production = entity.getComponent(Production);
-      if (!building || !production || !building.isComplete() || !building.isActive) continue;
+      // production is intentionally not required — interior_operator buildings may have none (e.g. lookout_tower)
+      if (!building || !building.isComplete() || !building.isActive) continue;
       if (building.animationWorkerId != null) continue;
 
       const buildingDef = dataManager.getBuilding(building.buildingType);
@@ -2640,7 +2753,7 @@ export class GameWorkerRegistry {
     const building = buildingEntity.getComponent(Building);
     const pos = buildingEntity.getComponent(Position);
     const production = buildingEntity.getComponent(Production);
-    if (!building || !pos || !production) return;
+    if (!building || !pos) return;
     if (building.animationWorkerId != null) return;
     if (this.world.getAvailablePeasantSlotCount() <= 0) return;
 
@@ -2655,7 +2768,8 @@ export class GameWorkerRegistry {
         : this.computeSiteOperatorTiles(buildingEntity);
     if (!tiles) return;
 
-    const spawnTile = this.findBaseCampSpawnTile();
+    const hqDispatch = this.findNearestHqForBuilding(buildingEntity);
+    const spawnTile = hqDispatch?.spawnTile ?? this.findBaseCampSpawnTile();
     if (!spawnTile) return;
 
     const roadNearWell = this.findBuildingAdjacentRoadTile(buildingEntity);
@@ -2682,7 +2796,7 @@ export class GameWorkerRegistry {
         this.applyInteriorOperatorAppearance(workerComp, anim.operatorRole);
       }
     }
-    this.queueHqStreetEntry(worker, path, { speed });
+    this.queueHqStreetEntry(worker, path, { speed, hqEntity: hqDispatch?.hqEntity });
 
     building.animationWorkerId = worker.id;
     this.animationWorkers.set(worker.id, {
@@ -2691,7 +2805,7 @@ export class GameWorkerRegistry {
       phase: 'idle_left',
       idleTile: tiles.idle,
       workTile: tiles.work,
-      lastProductionTimer: production.timer,
+      lastProductionTimer: production?.timer ?? 0,
     });
   }
 

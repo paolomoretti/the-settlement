@@ -47,7 +47,9 @@ export function buildBuildingHoverLines(entity: Entity): { title: string; lines:
   if (!building) return null;
 
   const def = dataManager.getBuilding(building.buildingType as BuildingType);
-  const title = def?.name ?? building.buildingType;
+  const title = building.isAuxiliaryHQ
+    ? 'Auxiliary Headquarters'
+    : (def?.name ?? building.buildingType);
   const lines: string[] = [];
 
   const pushDescriptionAndGatherHint = (production: Production | null): void => {
@@ -94,7 +96,10 @@ export function buildBuildingHoverLines(entity: Entity): { title: string; lines:
 
     if (def?.isHeadquarters) {
       const hq = buildHeadquartersInventoryTooltip();
-      if (def.description) {
+      if (building.isAuxiliaryHQ) {
+        hq.title = 'Auxiliary Headquarters';
+      }
+      if (def.description && !building.isAuxiliaryHQ) {
         hq.lines.unshift(def.description);
       }
       return hq;

@@ -295,14 +295,20 @@ export function paintWorkerFromLegacy(
 
 function _buildAppearance(worker: Worker): WorkerAppearanceV2 {
   const base = migrateAppearance(worker.appearance);
-  if (worker.role !== 'military') return base;
-  // Military rank determines hat type; override what migrateAppearance guessed
-  const hatMap: Record<number, HatType> = {
-    1: 'helmet_leather',
-    2: 'helmet_steel',
-    3: 'crown',
-  };
-  return { ...base, hatType: hatMap[worker.militaryRank] ?? 'helmet_leather' };
+  if (worker.role === 'military') {
+    // Military rank determines hat type; override what migrateAppearance guessed
+    const hatMap: Record<number, HatType> = {
+      1: 'helmet_leather',
+      2: 'helmet_steel',
+      3: 'crown',
+    };
+    return { ...base, hatType: hatMap[worker.militaryRank] ?? 'helmet_leather' };
+  }
+  if (worker.isExplorer) {
+    // Override hat colours to camo green regardless of hair colour
+    return { ...base, isExplorer: true, hatColor: '#3a4a25', hatAccentColor: '#2a3518' };
+  }
+  return base;
 }
 
 function _toolForCarriedResource(resource: string | undefined): WorkerToolDef | undefined {

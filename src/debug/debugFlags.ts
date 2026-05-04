@@ -24,7 +24,7 @@ export function setRoadRenderingMode(mode: RoadRenderingMode): void {
  * Donkey carriers always use the old renderer regardless of this flag.
  * Default: false (old renderer until Phase 8 cleanup).
  */
-export let USE_WORKER_V2 = true;
+export let USE_WORKER_V2 = false;
 
 export function setWorkerV2Mode(enabled: boolean): void {
   USE_WORKER_V2 = enabled;

@@ -4339,9 +4339,9 @@ export class RenderSystem extends System {
     const entranceCenterY = (entrance.dx * tileH) / 2 + (entrance.dy * tileH) / 2 + tileH / 2;
 
     // Place flag near the entrance (slightly left of the enemy flag position)
-    const footX = entranceCenterX - tileW / 4;
+    const footX = entranceCenterX + tileW;
     const footY = entranceCenterY - tileH / 4;
-    const s = 0.9;
+    const s = 1.3;
     const poleH = Math.max(20, Math.min(32, building.buildingHeight * 0.5));
     const topY = footY - poleH;
     const t = performance.now() * 0.0035 + building.width * 2.1 + building.height * 3.3;
@@ -5379,6 +5379,17 @@ export class RenderSystem extends System {
     const worldPos = this.iso.gridToScreen(gridX, gridY);
     this.camera.x = this.canvas.width / 2 - worldPos.x * this.camera.zoom;
     this.camera.y = this.canvas.height / 2 - worldPos.y * this.camera.zoom;
+  }
+
+  /** Returns true when the camera is already centred on the given grid position (within tolerancePx pixels). */
+  isCenteredOnGrid(gridX: number, gridY: number, tolerancePx = 5): boolean {
+    const worldPos = this.iso.gridToScreen(gridX, gridY);
+    const expectedX = this.canvas.width / 2 - worldPos.x * this.camera.zoom;
+    const expectedY = this.canvas.height / 2 - worldPos.y * this.camera.zoom;
+    return (
+      Math.abs(this.camera.x - expectedX) <= tolerancePx &&
+      Math.abs(this.camera.y - expectedY) <= tolerancePx
+    );
   }
 
   getCamera(): { x: number; y: number; zoom: number } {

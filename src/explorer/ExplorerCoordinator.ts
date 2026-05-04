@@ -1,7 +1,9 @@
 /**
- * Explorer: a scout worker dispatched from HQ to walk toward unexplored territory,
- * revealing fog of war as they go. Periodically stops to use "binoculars" (raises
- * arms to eyes) revealing a large radius. Returns after 3 minutes.
+ * Explorer: a specialised scout worker dispatched from HQ to a target cell.
+ * Once arrived, patrols randomly within PATROL_RADIUS of the dispatch origin,
+ * periodically stopping to raise binoculars and reveal a large fog-of-war radius.
+ * Returns to HQ after EXPLORE_DURATION_MS (3 min). Visually distinguished by
+ * binoculars strapped to the chest (Worker.isExplorer flag).
  * See `.claude/EXPLORER.md`.
  */
 
@@ -20,7 +22,7 @@ const EXPLORE_REVEAL_RADIUS = 5; // Chebyshev reveal while walking
 const BINOCULARS_REVEAL_RADIUS = 14; // large reveal on binoculars stop
 const BINOCULARS_INTERVAL_MS = 22_000; // stop every 22 s
 const BINOCULARS_DURATION_MS = 4_500; // hold binoculars 4.5 s
-const WAYPOINT_SEARCH_RADIUS = 20; // scan radius for next unexplored tile
+const PATROL_RADIUS = 20; // hard cap: never wander more than this from the dispatch origin
 const MAX_ACTIVE_EXPLORERS = 2;
 const WAYPOINT_DEBOUNCE_MS = 500; // don't repick waypoints faster than this
 
@@ -30,6 +32,9 @@ type ActiveExplorer = {
   workerEntityId: number | null;
   phase: ExplorerPhase;
   spawnTile: { x: number; y: number };
+  /** The cell the player clicked to dispatch this explorer — roaming is capped around it. */
+  originX: number;
+  originY: number;
   startedAt: number;
   nextBinocularsAt: number;
   binocularsUntilMs: number;
@@ -97,6 +102,20 @@ export class ExplorerCoordinator {
     const m = worker.getComponent(Movable);
     if (w) {
       w.visualActivity = 'general';
+      w.isExplorer = true;
+      // Mimetic uniform: forest green shirt, dark olive trousers, near-black boots.
+      // Wide-brim hat (variant:'hat') gives the classic explorer silhouette;
+      // hat colour is derived from hair in migrateAppearance, overridden to camo
+      // green in WorkerBodyRenderer._buildAppearance when isExplorer is true.
+      const skins = ['#d4a66a', '#c89858', '#c09050'];
+      w.appearance = {
+        skin: skins[Math.floor(Math.random() * skins.length)]!,
+        hair: '#2a1a10',
+        tunic: '#506838', // medium forest green
+        pants: '#3a4a28', // dark olive
+        boots: '#222818', // near-black green
+        variant: 'hat', // wide-brim explorer hat
+      };
     }
     if (m) {
       m.clearPath();
@@ -110,6 +129,8 @@ export class ExplorerCoordinator {
       workerEntityId: worker.id,
       phase: 'travel',
       spawnTile: { x: spawnTile.x, y: spawnTile.y },
+      originX: targetX,
+      originY: targetY,
       startedAt: now,
       nextBinocularsAt: now + BINOCULARS_INTERVAL_MS,
       binocularsUntilMs: 0,
@@ -178,15 +199,17 @@ export class ExplorerCoordinator {
           wc.visualActivity = 'explore_scout';
           this._revealAroundPos(pos, BINOCULARS_REVEAL_RADIUS, tileMap);
         } else if (!movable.isMoving) {
-          // Pick next waypoint toward unexplored territory
+          // Pick next patrol waypoint around the dispatch origin
           if (nowMs - s.lastWaypointPickMs >= WAYPOINT_DEBOUNCE_MS) {
             s.lastWaypointPickMs = nowMs;
-            const path = this._pickNextWaypoint(pos, pathFinder, tileMap);
+            const path = this._pickNextWaypoint(pos, s.originX, s.originY, pathFinder, tileMap);
             if (path) {
               movable.setPath(path);
               wc.setState('walking');
               wc.visualActivity = 'general';
             }
+            // If no walkable path found (e.g. explorer is in water-surrounded area),
+            // just wait for the next debounce tick rather than heading home early.
           }
         }
       }
@@ -227,35 +250,53 @@ export class ExplorerCoordinator {
   }
 
   /**
-   * Scan outward for unexplored walkable tiles; try the nearest candidates
-   * with A* and return the first path that resolves.
+   * Pick a patrol waypoint within PATROL_RADIUS of the dispatch origin.
+   * Unexplored walkable tiles are preferred so the explorer naturally heads toward
+   * unseen land first; once the whole radius is revealed it falls back to any
+   * walkable tile so patrolling continues for the full duration.
    */
   private _pickNextWaypoint(
     pos: Position,
+    originX: number,
+    originY: number,
     pathFinder: PathFinder,
     tileMap: TileMap
   ): Position[] | null {
     const cx = Math.floor(pos.x);
     const cy = Math.floor(pos.y);
 
-    const candidates: { x: number; y: number; dist: number }[] = [];
-    for (let dy = -WAYPOINT_SEARCH_RADIUS; dy <= WAYPOINT_SEARCH_RADIUS; dy++) {
-      for (let dx = -WAYPOINT_SEARCH_RADIUS; dx <= WAYPOINT_SEARCH_RADIUS; dx++) {
-        const x = cx + dx;
-        const y = cy + dy;
+    const unexplored: { x: number; y: number }[] = [];
+    const explored: { x: number; y: number }[] = [];
+
+    for (let dy = -PATROL_RADIUS; dy <= PATROL_RADIUS; dy++) {
+      for (let dx = -PATROL_RADIUS; dx <= PATROL_RADIUS; dx++) {
+        const x = originX + dx;
+        const y = originY + dy;
         const tile = tileMap.getTile(x, y);
-        if (!tile || tile.isExplored() || !tile.walkable) continue;
-        const dist = Math.abs(dx) + Math.abs(dy);
-        if (dist < 3) continue; // skip tiles too close
-        candidates.push({ x, y, dist });
+        if (!tile || !tile.walkable) continue;
+        // Skip tiles too close to the current position (avoid micro-steps)
+        if (Math.abs(x - cx) + Math.abs(y - cy) < 4) continue;
+        if (tile.isExplored()) {
+          explored.push({ x, y });
+        } else {
+          unexplored.push({ x, y });
+        }
       }
     }
 
-    if (candidates.length === 0) return null;
+    // Prefer unexplored; fall back to explored so patrolling continues
+    // even when the whole radius has already been revealed.
+    const pool = unexplored.length > 0 ? unexplored : explored;
+    if (pool.length === 0) return null;
 
-    // Try closest candidates first; A* may fail if obstacles block a specific tile
-    candidates.sort((a, b) => a.dist - b.dist);
-    for (const c of candidates.slice(0, 10)) {
+    // Shuffle for natural patrol variety, then try up to 10 candidates
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = pool[i]!;
+      pool[i] = pool[j]!;
+      pool[j] = tmp;
+    }
+    for (const c of pool.slice(0, 10)) {
       const path = pathFinder.findOffRoadPath(
         new Position(cx, cy),
         new Position(c.x + 0.5, c.y + 0.5),

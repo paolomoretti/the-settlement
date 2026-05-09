@@ -72,6 +72,17 @@ export const GAME_CONFIG = {
       width: 1000,
       height: 1000,
     },
+    // Base terrain: forest blobs + scattered trees (`TileMap.generateTerrain`).
+    // Previous sparse defaults (~0.6 / 0.2 / 0.65) were tuned down in one pass; these
+    // values bring roughly 2×+ more forest + lone trees while staying clustered.
+    terrain: {
+      forestDensityMin: 0.38,
+      forestTreePlacementMin: 0.17,
+      scatteredTreePlacementMin: 0.42,
+      // Fair start: reachable wood near HQ (new worlds only; see TileMap.ensureStarterTreesNearHq).
+      hqMinTreeCellsNearHq: 10,
+      hqStarterForestSearchRadius: 48,
+    },
   },
 
   enemyRealms: {

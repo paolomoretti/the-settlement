@@ -22,6 +22,7 @@ All keyboard shortcuts are defined and registered in `src/input/KeyboardShortcut
 | **B**            | no modal dialog            | Toggle building menu                                                                                           |
 | **S**            | no modal dialog            | Save to the current manually picked slot, or open the save dialog if this game has not been manually saved yet |
 | **F**            | always                     | Toggle fast-forward (3×) on/off                                                                                |
+| **P**            | no modal dialog            | Toggle pause (freeze gameplay); fires `Paused` / `Resumed` toast                                               |
 | **Arrow Up**     | view mode, no modal dialog | Pan camera up                                                                                                  |
 | **Arrow Down**   | view mode, no modal dialog | Pan camera down                                                                                                |
 | **Arrow Left**   | view mode, no modal dialog | Pan camera left                                                                                                |

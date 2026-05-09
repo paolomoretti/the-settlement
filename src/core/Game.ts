@@ -120,6 +120,8 @@ export class Game {
   private lastTime = 0;
   private simulationNowMs = Date.now();
   private timeScale = 1;
+  private speedMode: 'normal' | 'fast' = 'normal';
+  private paused = false;
   private fps = 0;
   private frameCount = 0;
   private fpsTime = 0;
@@ -3799,11 +3801,30 @@ export class Game {
   }
 
   isFastForwardEnabled(): boolean {
-    return this.timeScale > 1;
+    return this.speedMode === 'fast';
   }
 
   setFastForwardEnabled(enabled: boolean): void {
-    this.timeScale = enabled ? FAST_FORWARD_TIME_SCALE : 1;
+    this.speedMode = enabled ? 'fast' : 'normal';
+    this.recomputeTimeScale();
+  }
+
+  isPaused(): boolean {
+    return this.paused;
+  }
+
+  setPaused(paused: boolean): void {
+    if (this.paused === paused) return;
+    this.paused = paused;
+    this.recomputeTimeScale();
+  }
+
+  private recomputeTimeScale(): void {
+    if (this.paused) {
+      this.timeScale = 0;
+      return;
+    }
+    this.timeScale = this.speedMode === 'fast' ? FAST_FORWARD_TIME_SCALE : 1;
   }
 
   private gameLoop = (currentTime: number): void => {

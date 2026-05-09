@@ -354,23 +354,30 @@ function setupGameUI(game: Game): void {
     fastForwardButton?.querySelector<HTMLImageElement>('.btn-fast-forward-icon') ?? null;
   const syncFastForwardButton = (): void => {
     if (!fastForwardButton) return;
-    const enabled = game.isFastForwardEnabled();
-    fastForwardButton.classList.toggle('is-active', enabled);
-    fastForwardButton.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    const fastEnabled = game.isFastForwardEnabled();
+    const paused = game.isPaused();
+    fastForwardButton.classList.toggle('is-active', fastEnabled || paused);
+    fastForwardButton.classList.toggle('is-paused', paused);
+    fastForwardButton.setAttribute('aria-pressed', paused || fastEnabled ? 'true' : 'false');
     fastForwardButton.setAttribute(
       'aria-label',
-      enabled ? 'Disable fast forward' : 'Enable fast forward'
+      paused
+        ? 'Game paused (press P to resume)'
+        : fastEnabled
+          ? 'Disable fast forward'
+          : 'Enable fast forward'
     );
     if (fastForwardIcon) {
-      fastForwardIcon.src = enabled
-        ? (fastForwardIcon.dataset.activeSrc ?? '/assets/ui/fast_forward_selected.png')
-        : (fastForwardIcon.dataset.normalSrc ?? '/assets/ui/fast_forward.png');
+      const normalSrc = fastForwardIcon.dataset.normalSrc ?? '/assets/ui/fast_forward.png';
+      const activeSrc = fastForwardIcon.dataset.activeSrc ?? '/assets/ui/fast_forward_selected.png';
+      const pausedSrc = fastForwardIcon.dataset.pausedSrc ?? '/assets/ui/pause.png';
+      fastForwardIcon.src = paused ? pausedSrc : fastEnabled ? activeSrc : normalSrc;
     }
   };
   if (fastForwardButton) {
     tippy(fastForwardButton, {
       ...iconBarTippy,
-      content: 'Fast forward (3x) [F]',
+      content: 'Fast forward (3x) [F] · Pause [P]',
     });
     fastForwardButton.addEventListener('click', () => {
       game.setFastForwardEnabled(!game.isFastForwardEnabled());
@@ -381,6 +388,12 @@ function setupGameUI(game: Game): void {
   eventBus.on('toggle:fast_forward', () => {
     game.setFastForwardEnabled(!game.isFastForwardEnabled());
     syncFastForwardButton();
+  });
+  eventBus.on('toggle:pause', () => {
+    const next = !game.isPaused();
+    game.setPaused(next);
+    syncFastForwardButton();
+    showToast(next ? 'Paused' : 'Resumed');
   });
 
   const optionsButton = document.getElementById('btn-options');

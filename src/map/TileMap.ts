@@ -6,9 +6,12 @@ import { Tile, TerrainType } from './Tile';
 import { cellMineralTotal } from './CellMinerals';
 import { NoiseGenerator } from '@/utils/NoiseGenerator';
 import { rollWaterFishSchoolMax } from './waterFishSchool';
+import { dataManager } from '@/data/DataManager';
 
 /** Orthogonal flood-fill cap (avoids runaway work on pathological maps). */
 const WATER_FISH_CLUSTER_BFS_CAP = 262144;
+/** Cap for HQ→mainland tunnel BFS (same order as map area). */
+const HQ_MAINLAND_BRIDGE_BFS_CAP = 1_000_000;
 const WATER_CARDINALS: readonly [number, number][] = [
   [-1, 0],
   [1, 0],
@@ -41,6 +44,16 @@ export class TileMap {
   public readonly width: number;
   public readonly height: number;
   private seed: number;
+  /** Cached from `GAME_CONFIG` at the start of each full generate pass. */
+  private terrainGen: {
+    forestDensityMin: number;
+    forestTreePlacementMin: number;
+    scatteredTreePlacementMin: number;
+  } = {
+    forestDensityMin: 0.38,
+    forestTreePlacementMin: 0.17,
+    scatteredTreePlacementMin: 0.42,
+  };
   /**
    * Shared fish stock per orthogonal water body. Populated lazily via {@link ensureWaterFishClusterAt}.
    * Public so {@link TileMap.deserialize} can attach state when using `Object.create` (no constructor run).
@@ -60,6 +73,13 @@ export class TileMap {
   }
 
   private generate(): void {
+    const t = dataManager.getGameConfig().world.terrain;
+    this.terrainGen = {
+      forestDensityMin: t.forestDensityMin,
+      forestTreePlacementMin: t.forestTreePlacementMin,
+      scatteredTreePlacementMin: t.scatteredTreePlacementMin,
+    };
+
     const noise = new NoiseGenerator(this.seed);
 
     for (let y = 0; y < this.height; y++) {
@@ -75,7 +95,9 @@ export class TileMap {
     this.generateRockFormations(noise);
     this.removeIsolatedWater();
     this.clearBaseCampArea();
+    this.ensureHqMainlandBridge();
     this.removeIslands();
+    this.ensureStarterTreesNearHq();
     this.computeWaterDepth();
     this.computeForestDepth();
   }
@@ -106,18 +128,17 @@ export class TileMap {
       return 'water';
     }
 
-    // Tree coverage is intentionally sparse: forests appear as well-defined
-    // clusters in a few regions, with very few scattered trees in between.
+    // Forest clusters + scattered trees: thresholds from `GAME_CONFIG.world.terrain`.
     const forestDensity = noise.noise(x + 5000, y + 5000, 0.008);
     const treePlacement =
       noise.noise(x + 6000, y + 6000, 0.1) * 0.5 +
       noise.noise(x + 6500, y + 6500, 0.2) * 0.3 +
       noise.noise(x + 7000, y + 7000, 0.4) * 0.2;
 
-    if (forestDensity > 0.6 && treePlacement > 0.2) {
+    if (forestDensity > this.terrainGen.forestDensityMin && treePlacement > this.terrainGen.forestTreePlacementMin) {
       return 'forest';
     }
-    if (treePlacement > 0.65) {
+    if (treePlacement > this.terrainGen.scatteredTreePlacementMin) {
       return 'tree';
     }
 
@@ -257,6 +278,252 @@ export class TileMap {
           tile.walkable = true;
         }
       }
+    }
+  }
+
+  private static isWaterOrMountainTerrain(t: TerrainType): boolean {
+    return t === 'water' || t === 'mountain';
+  }
+
+  /**
+   * If the HQ walkable blob is not the largest landmass (e.g. camp was cleared inside a lake),
+   * carve an orthogonal land bridge by converting water/mountain along a shortest path to the
+   * largest component. Runs after `clearBaseCampArea` and before `removeIslands` so the latter
+   * does not turn the entire mainland into water while leaving HQ on a pond island.
+   */
+  private ensureHqMainlandBridge(): void {
+    const W = this.width;
+    const H = this.height;
+    const cx = Math.floor(W / 2);
+    const cy = Math.floor(H / 2);
+    const hqIdx = cy * W + cx;
+    const hqTile = this.tiles[cy][cx];
+    if (TileMap.isWaterOrMountainTerrain(hqTile.terrain)) {
+      console.warn(
+        `[TileMap] HQ mainland bridge skipped: HQ tile (${cx},${cy}) is still ${hqTile.terrain} after clearBaseCampArea.`
+      );
+      return;
+    }
+
+    const comp = new Int32Array(W * H);
+    comp.fill(-1);
+    const compSizes: number[] = [];
+    const dirs = WATER_CARDINALS;
+
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (comp[i] >= 0) continue;
+        const t = this.tiles[y][x].terrain;
+        if (TileMap.isWaterOrMountainTerrain(t)) continue;
+
+        const id = compSizes.length;
+        let size = 0;
+        const q: number[] = [x, y];
+        comp[i] = id;
+        let head = 0;
+        while (head < q.length) {
+          const qx = q[head++];
+          const qy = q[head++];
+          size++;
+          for (const [dx, dy] of dirs) {
+            const nx = qx + dx;
+            const ny = qy + dy;
+            if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+            const ni = ny * W + nx;
+            if (comp[ni] >= 0) continue;
+            const nt = this.tiles[ny][nx].terrain;
+            if (TileMap.isWaterOrMountainTerrain(nt)) continue;
+            comp[ni] = id;
+            q.push(nx, ny);
+          }
+        }
+        compSizes.push(size);
+      }
+    }
+
+    const hqComp = comp[hqIdx];
+    if (hqComp < 0) {
+      console.warn(`[TileMap] HQ mainland bridge skipped: HQ tile not in any walkable component.`);
+      return;
+    }
+
+    let maxSize = -1;
+    let targetComp = -1;
+    for (let id = 0; id < compSizes.length; id++) {
+      if (compSizes[id] > maxSize) {
+        maxSize = compSizes[id];
+        targetComp = id;
+      }
+    }
+
+    if (targetComp < 0 || compSizes[hqComp] >= maxSize) {
+      return;
+    }
+
+    const parent = new Int32Array(W * H);
+    parent.fill(-1);
+    const seen = new Uint8Array(W * H);
+
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (comp[i] === hqComp) {
+          seen[i] = 1;
+        }
+      }
+    }
+
+    const q: number[] = [];
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (comp[i] !== hqComp) continue;
+        for (const [dx, dy] of dirs) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+          const ni = ny * W + nx;
+          if (seen[ni]) continue;
+          const nt = this.tiles[ny][nx].terrain;
+          if (!TileMap.isWaterOrMountainTerrain(nt)) continue;
+          seen[ni] = 1;
+          parent[ni] = i;
+          q.push(nx, ny);
+        }
+      }
+    }
+
+    let head = 0;
+    let dequeues = 0;
+    while (head < q.length) {
+      if (dequeues++ > HQ_MAINLAND_BRIDGE_BFS_CAP) {
+        console.warn('[TileMap] HQ mainland bridge: BFS cap reached; giving up.');
+        return;
+      }
+      const x = q[head++];
+      const y = q[head++];
+      const i = y * W + x;
+
+      for (const [dx, dy] of dirs) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+        const ni = ny * W + nx;
+        const nt = this.tiles[ny][nx].terrain;
+
+        if (!TileMap.isWaterOrMountainTerrain(nt)) {
+          if (comp[ni] === targetComp) {
+            this.carveHqMainlandBridge(parent, comp, hqComp, i);
+            return;
+          }
+          continue;
+        }
+
+        if (!seen[ni]) {
+          seen[ni] = 1;
+          parent[ni] = i;
+          q.push(nx, ny);
+        }
+      }
+    }
+
+    console.warn(
+      `[TileMap] HQ mainland bridge: no water/mountain path from HQ component (${compSizes[hqComp]} cells) to largest (${maxSize} cells).`
+    );
+  }
+
+  private carveHqMainlandBridge(
+    parent: Int32Array,
+    comp: Int32Array,
+    hqComp: number,
+    startIdx: number
+  ): void {
+    const W = this.width;
+    let cur = startIdx;
+    for (let guard = 0; guard < W * this.height; guard++) {
+      const x = cur % W;
+      const y = Math.floor(cur / W);
+      const tile = this.tiles[y][x];
+      if (TileMap.isWaterOrMountainTerrain(tile.terrain)) {
+        tile.terrain = 'grass';
+        tile.walkable = true;
+      }
+      const p = parent[cur];
+      if (p < 0) break;
+      const px = p % W;
+      const py = Math.floor(p / W);
+      const pt = this.tiles[py][px];
+      if (comp[p] === hqComp && !TileMap.isWaterOrMountainTerrain(pt.terrain)) {
+        break;
+      }
+      cur = p;
+    }
+  }
+
+  /**
+   * New worlds: if procedural noise left too few trees near HQ, convert nearby grass to `forest`
+   * until `GAME_CONFIG.world.terrain.hqMinTreeCellsNearHq` tree/forest cells exist within Chebyshev
+   * `hqStarterForestSearchRadius` of HQ center (excluding the HQ footprint). Runs after
+   * `removeIslands` so tiles stay mainland-reachable.
+   */
+  private ensureStarterTreesNearHq(): void {
+    const { hqMinTreeCellsNearHq, hqStarterForestSearchRadius } = dataManager.getGameConfig().world.terrain;
+    const cx = Math.floor(this.width / 2);
+    const cy = Math.floor(this.height / 2);
+    const hqDef = dataManager.getBuilding('base_camp');
+    const hqW = hqDef?.size.width ?? 5;
+    const hqH = hqDef?.size.height ?? 5;
+    const centerX = cx + Math.floor((hqW - 1) / 2);
+    const centerY = cy + Math.floor((hqH - 1) / 2);
+
+    const inHqFootprint = (x: number, y: number) =>
+      x >= cx && x < cx + hqW && y >= cy && y < cy + hqH;
+
+    const isTreeTerrain = (t: TerrainType) => t === 'forest' || t === 'tree';
+    const chebFromCenter = (x: number, y: number) =>
+      Math.max(Math.abs(x - centerX), Math.abs(y - centerY));
+
+    let nearTreeCells = 0;
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        if (inHqFootprint(x, y)) continue;
+        if (chebFromCenter(x, y) > hqStarterForestSearchRadius) continue;
+        const tile = this.tiles[y][x];
+        if (tile && isTreeTerrain(tile.terrain)) nearTreeCells++;
+      }
+    }
+
+    if (nearTreeCells >= hqMinTreeCellsNearHq) return;
+
+    type Cand = { x: number; y: number; d: number };
+    const candidates: Cand[] = [];
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        if (inHqFootprint(x, y)) continue;
+        const d = chebFromCenter(x, y);
+        if (d === 0 || d > hqStarterForestSearchRadius) continue;
+        const tile = this.tiles[y][x];
+        if (!tile || tile.terrain !== 'grass' || !tile.walkable) continue;
+        candidates.push({ x, y, d });
+      }
+    }
+    candidates.sort((a, b) => a.d - b.d || a.x - b.x || a.y - b.y);
+
+    const need = hqMinTreeCellsNearHq - nearTreeCells;
+    let placed = 0;
+    for (const c of candidates) {
+      if (placed >= need) break;
+      const tile = this.tiles[c.y][c.x];
+      tile.terrain = 'forest';
+      tile.walkable = true;
+      placed++;
+    }
+
+    if (placed < need) {
+      console.warn(
+        `[TileMap] HQ starter forest: needed ${need} cells but only placed ${placed} (${candidates.length} grass candidates in Chebyshev radius ${hqStarterForestSearchRadius}).`
+      );
     }
   }
 

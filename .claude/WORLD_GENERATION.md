@@ -20,13 +20,15 @@ The world is a 1000x1000 tile grid generated procedurally from a seed. Terrain i
 
 All generation is **deterministic** — same seed always produces the same world. The pipeline runs in order:
 
-1. **Base terrain** (`generateTerrain`) — per-tile noise: water bodies, lakes, forests, trees
+1. **Base terrain** (`generateTerrain`) — per-tile noise: water bodies, lakes, forests, trees. Forest and scattered-tree thresholds are tuned in `src/config/gameConfig.ts` under `GAME_CONFIG.world.terrain` (see `.claude/GAME_CONFIGURATION.md`).
 2. **Rivers** (`generateRivers`) — 2-4 vertical rivers using seeded noise for path wandering
 3. **Mountain ranges** (`generateMountainRanges`) — 8-16 horizontal bands placed via noise-based positioning
 4. **Rock formations** (`generateRockFormations`) — 300-500 small clusters (1-5 tiles), first 30 guaranteed near base camp
 5. **Remove isolated water** (`removeIsolatedWater`) — water tiles with < 2 cardinal water neighbors become grass
 6. **Clear base camp area** (`clearBaseCampArea`) — clears water/mountain within building footprint + 4 tile margin
-7. **Remove islands** (`removeIslands`) — BFS flood fill from base camp; unreachable walkable tiles become water
+7. **HQ mainland bridge** (`ensureHqMainlandBridge`) — labels orthogonal walkable land components; if HQ’s blob is smaller than the largest continent, converts a shortest water/mountain corridor to `grass` so HQ is not a lake island before the island-removal pass
+8. **Remove islands** (`removeIslands`) — BFS flood fill from base camp; unreachable walkable tiles become water
+9. **HQ starter trees** (`ensureStarterTreesNearHq`) — new worlds only: if fewer than `hqMinTreeCellsNearHq` `forest`/`tree` cells fall within Chebyshev `hqStarterForestSearchRadius` of HQ center (excluding the HQ footprint), the nearest walkable `grass` tiles are converted to `forest` so early wood is always in reach. Tuned in `GAME_CONFIG.world.terrain`. Runs before water/forest depth passes.
 
 ## Save/Load — Terrain Persistence
 

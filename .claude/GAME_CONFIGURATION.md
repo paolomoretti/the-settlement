@@ -9,6 +9,7 @@ Use it for balance knobs that designers or future agents should be able to scan 
 - starting headquarters territory radius
 - enemy village count, size scaling, aggressiveness, raid cadence, road maintenance cadence, and forward barracks limits
 - map-wide economy/population/world tuning values
+- procedural terrain: forest density and scattered-tree thresholds (`world.terrain` in `gameConfig.ts`, read by `TileMap.generateTerrain`), plus `hqMinTreeCellsNearHq` / `hqStarterForestSearchRadius` for the post-pass that guarantees reachable wood near HQ (`TileMap.ensureStarterTreesNearHq`)
 
 Prefer this TypeScript object over JSON for global tuning because it supports comments beside each value. Comments should clarify units and semantics, especially when a value is a radius vs diameter, seconds vs milliseconds, cells vs pixels, or a multiplier vs absolute amount.
 

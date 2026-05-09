@@ -81,7 +81,7 @@ Behavior depends on **input mode** (toolbar, hotkeys, or post-placement return t
 
 | Control                           | Action                                                                                        |
 | --------------------------------- | --------------------------------------------------------------------------------------------- |
-| **Fast forward**                  | Toggle full gameplay simulation speed between normal `1x` and fast `3x`.                      |
+| **Fast forward**                  | Toggle full gameplay simulation speed between normal `1x` and fast `3x`. The same icon swaps to **pause** while the game is paused (`P`). |
 | **Settings** (options icon) `[O]` | Toggle options overlay (when not blocked by stricter modal checks — see `KeyboardShortcuts`). |
 | **Exit**                          | Flow to exit / save-and-exit dialogs.                                                         |
 
@@ -99,6 +99,8 @@ Full table and extension notes: [KEYBOARD_SHORTCUTS.md](KEYBOARD_SHORTCUTS.md).
 | **B**              | Toggle building menu.                                                               |
 | **O**              | Toggle options.                                                                     |
 | **S**              | Quick save.                                                                         |
+| **F**              | Toggle fast-forward (3×) on/off; cycles only between normal and fast.               |
+| **P**              | Toggle pause (freeze gameplay); cycles only between normal and paused.              |
 | **Arrow keys**     | Pan camera (view mode only; no modal).                                              |
 | **V** / **Escape** | Close overlays in priority order, then return to view mode and clear map selection. |
 | **Space** (hold)   | Pan-only while dragging on the canvas.                                              |

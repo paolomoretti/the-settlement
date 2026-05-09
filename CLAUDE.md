@@ -51,7 +51,7 @@ npm run preview  # Preview production build
 - **Map:** 1000x1000 tiles, procedurally generated from a seed using Perlin-like noise
 - **Rendering:** Viewport culling, isometric depth sorting (back-to-front), minimap with offscreen canvas cache
 - **Save/Load:** localStorage - stores RLE-encoded terrain, explored tiles, roads, buildings. Terrain is generated once on new game and persisted; loads restore exact saved terrain without regeneration
-- **Input modes:** view, build_road, build_warehouse, build_lumberjack, select (drag); **right mouse drag always pans** (never places or selects on the main canvas); top-right fast-forward toggles full gameplay simulation speed (see `.claude/GAME_SPEED.md`)
+- **Input modes:** view, build_road, build_warehouse, build_lumberjack, select (drag); **right mouse drag always pans** (never places or selects on the main canvas); top-right fast-forward toggles full gameplay simulation speed and visually swaps to a pause icon while paused — `F` cycles normal ↔ fast, `P` cycles normal ↔ paused (see `.claude/GAME_SPEED.md`)
 
 ## Current State
 

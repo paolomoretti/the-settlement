@@ -26,6 +26,7 @@ export const SHORTCUT_BINDINGS: ShortcutBinding[] = [
   { key: 'O', description: 'Open options', category: 'general' },
   { key: 'S', description: 'Quick save', category: 'general' },
   { key: 'F', description: 'Toggle fast-forward (3x)', category: 'general' },
+  { key: 'P', description: 'Toggle pause (freeze gameplay)', category: 'general' },
   { key: 'Arrow Up', description: 'Pan up', category: 'navigation' },
   { key: 'Arrow Down', description: 'Pan down', category: 'navigation' },
   { key: 'Arrow Left', description: 'Pan left', category: 'navigation' },
@@ -235,6 +236,13 @@ export function setupKeyboardShortcuts(game: Game): void {
   hotkeys('f', e => {
     e.preventDefault();
     eventBus.emit('toggle:fast_forward');
+  });
+
+  // P — Toggle pause
+  hotkeys('p', e => {
+    if (isModalOpen()) return;
+    e.preventDefault();
+    eventBus.emit('toggle:pause');
   });
 
   registerInsightAltKeyListeners();

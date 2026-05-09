@@ -376,6 +376,25 @@ export interface GameConfig {
   world: {
     mapSize: { width: number; height: number };
     seed?: number;
+    /**
+     * Knobs for `TileMap` base terrain (forest clusters + scattered trees).
+     * Noise outputs are in ~[0, 1]; lower mins mean more of that terrain.
+     */
+    terrain: {
+      /** `forest` when forest-density noise exceeds this and {@link forestTreePlacementMin}. */
+      forestDensityMin: number;
+      /** Second gate for `forest` using blended tree-placement noise. */
+      forestTreePlacementMin: number;
+      /** `tree` (single tile) when tree-placement noise exceeds this. */
+      scatteredTreePlacementMin: number;
+      /**
+       * After procedural terrain, guarantee at least this many `forest`/`tree` cells within
+       * {@link hqStarterForestSearchRadius} (Chebyshev) of HQ center, excluding the HQ footprint.
+       */
+      hqMinTreeCellsNearHq: number;
+      /** Search radius (Chebyshev cells from HQ center) when planting starter trees. */
+      hqStarterForestSearchRadius: number;
+    };
   };
 
   enemyRealms: {

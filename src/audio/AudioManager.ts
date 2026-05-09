@@ -23,7 +23,8 @@ export type SoundEvent =
   | 'hammer'
   | 'ambient_birds'
   | 'ui_click'
-  | 'surveyor';
+  | 'surveyor'
+  | 'fish_jump';
 
 export class AudioManager {
   private sounds: Map<SoundEvent, Howl> = new Map();

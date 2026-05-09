@@ -101,6 +101,16 @@ export class RoadSegmentManager {
     return this.nearestSegmentTileToPoint(segment, r.x, r.y);
   }
 
+  /** Null out any assignedWorkerId that no longer points to a live entity.
+   * Call before recalculate so stale IDs don't masquerade as assigned workers. */
+  clearDeadWorkers(isAlive: (id: number) => boolean): void {
+    for (const seg of this.segments) {
+      if (seg.assignedWorkerId !== null && !isAlive(seg.assignedWorkerId)) {
+        seg.assignedWorkerId = null;
+      }
+    }
+  }
+
   recalculate(tileMap: TileMap): void {
     const newSegments = this.computeSegments(tileMap);
     this.reconcile(this.segments, newSegments);
@@ -265,7 +275,8 @@ export class RoadSegmentManager {
   }
 
   private reconcile(oldSegments: RoadSegment[], newSegments: RoadSegment[]): void {
-    // Build fingerprint map for exact matches
+    // Build fingerprint map for exact matches (workers-only — null-worker segments
+    // are not in this map and fall through to spawn attempts below).
     const oldByFingerprint = new Map<string, RoadSegment>();
     for (const seg of oldSegments) {
       if (seg.assignedWorkerId !== null) {
@@ -275,7 +286,7 @@ export class RoadSegmentManager {
 
     const claimedOld = new Set<string>();
 
-    // Pass 1: exact fingerprint matches
+    // Pass 1: exact fingerprint matches — keep existing worker on unchanged segments.
     for (const newSeg of newSegments) {
       const fp = this.fingerprint(newSeg);
       const oldMatch = oldByFingerprint.get(fp);
@@ -285,7 +296,10 @@ export class RoadSegmentManager {
       }
     }
 
-    // Pass 2: fuzzy match by tile overlap for unmatched new segments
+    // Pass 2: fuzzy match by tile overlap — move a worker from the best-overlapping
+    // old segment to each new segment that still needs one.
+    // NOTE: this pass ONLY does moves; spawning is deferred to Pass 4 so that freed
+    // workers from Pass 3 can be reused without touching the population budget.
     const unmatchedOld = oldSegments.filter(
       s => s.assignedWorkerId !== null && !claimedOld.has(this.fingerprint(s))
     );
@@ -313,18 +327,45 @@ export class RoadSegmentManager {
         newSeg.assignedWorkerId = bestMatch.assignedWorkerId;
         claimedOld.add(this.fingerprint(bestMatch));
         this.onMoveWorker?.(bestMatch.assignedWorkerId!, newSeg);
-      } else {
-        const workerId = this.onSpawnWorker?.(newSeg) ?? null;
-        newSeg.assignedWorkerId = workerId;
       }
+      // Spawning deliberately omitted here — handled in Pass 4.
     }
 
-    // Free workers from unmatched old segments
-    for (const oldSeg of oldSegments) {
-      if (oldSeg.assignedWorkerId === null) continue;
-      if (!claimedOld.has(this.fingerprint(oldSeg))) {
-        this.onFreeWorker?.(oldSeg.assignedWorkerId);
-      }
+    // Collect what's left after Passes 1–2.
+    const workersToFree = oldSegments.filter(
+      s => s.assignedWorkerId !== null && !claimedOld.has(this.fingerprint(s))
+    );
+    // Sort: building-endpoint segments first so the most critical legs get covered.
+    const segmentsNeedingWorkers = newSegments
+      .filter(s => s.assignedWorkerId === null)
+      .sort((a, b) => {
+        const aHasBuilding = a.endpoints.some(ep => ep.type === 'building') ? 0 : 1;
+        const bHasBuilding = b.endpoints.some(ep => ep.type === 'building') ? 0 : 1;
+        return aHasBuilding - bHasBuilding;
+      });
+
+    // Pass 3: directly reassign freed workers to segments still needing one.
+    // This avoids both the population cost AND the round-trip to HQ: the worker simply
+    // walks to the new segment's centre.  Only truly net-new segments (road additions)
+    // that exceed the freed-worker supply will fall through to the spawn in Pass 4.
+    const reassignCount = Math.min(workersToFree.length, segmentsNeedingWorkers.length);
+    for (let i = 0; i < reassignCount; i++) {
+      const freed = workersToFree[i]!;
+      const needy = segmentsNeedingWorkers[i]!;
+      needy.assignedWorkerId = freed.assignedWorkerId;
+      this.onMoveWorker?.(freed.assignedWorkerId!, needy);
+    }
+
+    // Pass 4: free workers that have no new segment to serve.
+    for (let i = reassignCount; i < workersToFree.length; i++) {
+      this.onFreeWorker?.(workersToFree[i]!.assignedWorkerId!);
+    }
+
+    // Pass 5: spawn fresh workers for any segments still uncovered.
+    for (let i = reassignCount; i < segmentsNeedingWorkers.length; i++) {
+      const seg = segmentsNeedingWorkers[i]!;
+      const workerId = this.onSpawnWorker?.(seg) ?? null;
+      seg.assignedWorkerId = workerId;
     }
   }
 

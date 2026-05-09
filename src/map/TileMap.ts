@@ -97,25 +97,27 @@ export class TileMap {
     }
 
     const lakeNoise =
-      noise.noise(x + 3000, y + 3000, 0.12) * 0.5 +
-      noise.noise(x + 3500, y + 3500, 0.25) * 0.3 +
-      noise.noise(x + 3800, y + 3800, 0.4) * 0.2;
+      noise.noise(x + 3000, y + 3000, 0.1) * 0.5 +
+      noise.noise(x + 3500, y + 3500, 0.22) * 0.3 +
+      noise.noise(x + 3800, y + 3800, 0.38) * 0.2;
     const wetness = noise.noise(x + 4000, y + 4000, 0.005);
-    const lakeThreshold = 0.12 + Math.max(0, wetness - 0.35) * 0.25;
+    const lakeThreshold = 0.16 + Math.max(0, wetness - 0.32) * 0.32;
     if (lakeNoise < lakeThreshold && elevation < 0.45) {
       return 'water';
     }
 
+    // Tree coverage is intentionally sparse: forests appear as well-defined
+    // clusters in a few regions, with very few scattered trees in between.
     const forestDensity = noise.noise(x + 5000, y + 5000, 0.008);
     const treePlacement =
       noise.noise(x + 6000, y + 6000, 0.1) * 0.5 +
       noise.noise(x + 6500, y + 6500, 0.2) * 0.3 +
       noise.noise(x + 7000, y + 7000, 0.4) * 0.2;
 
-    if (forestDensity > 0.27 && treePlacement > 0.17) {
+    if (forestDensity > 0.6 && treePlacement > 0.2) {
       return 'forest';
     }
-    if (treePlacement > 0.32) {
+    if (treePlacement > 0.65) {
       return 'tree';
     }
 

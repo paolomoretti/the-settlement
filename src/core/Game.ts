@@ -181,6 +181,8 @@ export class Game {
   private lastProductionInputCheckTime = 0;
   /** Full transport heal (segment graph + route maps + junction rescue); mirrors road `scheduleSegmentRecalc`. */
   private lastPeriodicTransportHealTime = 0;
+  /** Lightweight retry: tries to spawn workers for connected segments that have none. */
+  private lastWorkerFillAttemptTime = 0;
   private lastOutputTransportKickTime = 0;
   /** In-world seconds (uncapped); used for fish school regen on a fixed interval. */
   private worldTimeSeconds = 0;
@@ -197,6 +199,7 @@ export class Game {
   private nextBattleClashAt = 0;
   private nextForestAmbientAt = 0;
   private nextHammerSoundAt = 0;
+  private nextFishJumpSoundAt = 0;
   private readonly nextWorkerSoundAt = new Map<string, number>();
   private pendingWellDemolitions = new Map<number, number>();
 
@@ -286,6 +289,7 @@ export class Game {
       isEntitySimulationActive: entity => this.isEntitySimulationActive(entity),
       getSimulationNowMs: () => this.simulationNowMs,
       getPlayerHqEntities: () => this.getPlayerHqEntities(),
+      scheduleRoadFillCheck: () => this.scheduleRoadFillCheck(),
     });
 
     this.surveys = new SurveyCoordinator({
@@ -337,6 +341,7 @@ export class Game {
     audioManager.loadSound('forest_2', '/audio/forest_2.mp3', 0.35);
     audioManager.loadSound('hammer', '/audio/hammer.mp3', 0.45);
     audioManager.loadSound('surveyor', '/audio/surveyor.mp3', 0.6);
+    audioManager.loadSound('fish_jump', '/audio/fish_jump.mp3', 0.225);
     for (const def of dataManager.getAllBuildings()) {
       if (def.ambientSound) {
         audioManager.loadDynamicSound('building_worker_' + def.id, def.ambientSound.src);
@@ -701,9 +706,26 @@ export class Game {
     if (this.segmentRecalcTimer) return;
     this.segmentRecalcTimer = setTimeout(() => {
       this.segmentRecalcTimer = null;
+      roadSegmentManager.clearDeadWorkers(id => this.entities.some(e => e.id === id && e.active));
       roadSegmentManager.recalculate(this.tileMap);
       this.recomputeTransportRoutes();
     }, 200);
+  }
+
+  private scheduleRoadFillCheck(): void {
+    // Run at most once per second to avoid hammering recalculate.
+    const now = this.simulationNowMs;
+    if (now - this.lastWorkerFillAttemptTime < 800) return;
+    this.lastWorkerFillAttemptTime = now;
+    const connectedRoads = this.getBaseCampConnectedRoads();
+    const hasWorkerlessConnected = roadSegmentManager
+      .getSegments()
+      .some(
+        s => s.assignedWorkerId === null && s.tiles.some(t => connectedRoads.has(`${t.x},${t.y}`))
+      );
+    if (hasWorkerlessConnected) {
+      roadSegmentManager.recalculate(this.tileMap);
+    }
   }
 
   private flushSegmentRecalc(): void {
@@ -711,6 +733,7 @@ export class Game {
       clearTimeout(this.segmentRecalcTimer);
       this.segmentRecalcTimer = null;
     }
+    roadSegmentManager.clearDeadWorkers(id => this.entities.some(e => e.id === id && e.active));
     roadSegmentManager.recalculate(this.tileMap);
     this.recomputeTransportRoutes();
   }
@@ -2236,6 +2259,120 @@ export class Game {
   }
 
   /**
+   * Find the nearest player HQ (main or auxiliary) that has ≥1 sword AND ≥1 shield in storage
+   * AND has a road path to the given military building's entrance.
+   * Used for non-pooled training so captured auxiliary HQs can garrison their local region
+   * without requiring weapons to be ferried all the way back to the main base camp.
+   */
+  private findMilitaryDispatchHq(
+    targetEntity: Entity
+  ): { hqEntity: Entity; spawnTile: { x: number; y: number }; path: Position[] } | null {
+    const roadGoal = this.workers.getBuildingDispatchRoadTile(targetEntity);
+    if (!roadGoal) return null;
+
+    const targetPos = targetEntity.getComponent(Position);
+    const targetBuilding = targetEntity.getComponent(Building);
+    if (!targetPos || !targetBuilding) return null;
+    const targetCx = targetPos.x + targetBuilding.width / 2;
+    const targetCy = targetPos.y + targetBuilding.height / 2;
+
+    let bestDist = Infinity;
+    let best: { hqEntity: Entity; spawnTile: { x: number; y: number }; path: Position[] } | null =
+      null;
+
+    for (const e of this.entities) {
+      if (!e.active || !isPlayerOwned(e)) continue;
+      const b = e.getComponent(Building);
+      if (!b || b.buildingType !== 'base_camp' || !b.isComplete()) continue;
+      const storage = e.getComponent(Storage);
+      if (!storage || storage.getAmount('sword') < 1 || storage.getAmount('shield') < 1) continue;
+
+      const spawnTile =
+        e === this.baseCampEntity ? this.workers.getBaseCampSpawnTile() : this.getAuxHqSpawnTile(e);
+      if (!spawnTile) continue;
+
+      const path = this.pathFinder.findPath(
+        new Position(spawnTile.x, spawnTile.y),
+        new Position(roadGoal.x, roadGoal.y),
+        this.tileMap
+      );
+      if (path.length === 0) continue;
+
+      const ePos = e.getComponent(Position);
+      const dist = ePos
+        ? Math.abs(ePos.x + b.width / 2 - targetCx) + Math.abs(ePos.y + b.height / 2 - targetCy)
+        : Infinity;
+
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = { hqEntity: e, spawnTile, path };
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Returns whether any player HQ (main or auxiliary) holds at least one sword / shield.
+   * Used by the building popover to colour the garrison-requirement hints correctly even
+   * when weapons are stored in a captured auxiliary headquarters rather than the main base.
+   */
+  public anyPlayerHqHasMilitaryResources(): { hasSword: boolean; hasShield: boolean } {
+    let hasSword = false;
+    let hasShield = false;
+    for (const e of this.entities) {
+      if (!e.active || !isPlayerOwned(e)) continue;
+      const b = e.getComponent(Building);
+      if (!b || b.buildingType !== 'base_camp') continue;
+      const storage = e.getComponent(Storage);
+      if (!storage) continue;
+      if (storage.getAmount('sword') > 0) hasSword = true;
+      if (storage.getAmount('shield') > 0) hasShield = true;
+      if (hasSword && hasShield) break;
+    }
+    return { hasSword, hasShield };
+  }
+
+  public setGarrisonTarget(buildingEntity: Entity, target: number): void {
+    const building = buildingEntity.getComponent(Building);
+    const def = building ? dataManager.getBuilding(building.buildingType) : null;
+    const cap = def?.military?.soldierCapacity ?? 0;
+    if (!building || cap <= 0) return;
+    const clamped = Math.max(0, Math.min(cap, target));
+    building.garrisonTarget = clamped === cap ? null : clamped;
+    if (clamped < building.getMilitaryGarrisonFilledCount()) {
+      this.recallExcessGarrison(buildingEntity);
+    }
+    this.recheckProductionInputDeliveries(true);
+  }
+
+  /** Recall lowest-rank soldiers above the garrisonTarget back to the nearest HQ. */
+  private recallExcessGarrison(buildingEntity: Entity): void {
+    const building = buildingEntity.getComponent(Building);
+    if (!building?.militaryGarrison) return;
+    const target = building.garrisonTarget ?? building.militaryGarrison.length;
+    const filled = building.getMilitaryGarrisonFilledCount();
+    if (filled <= target) return;
+
+    const excess = filled - target;
+    const filledSlots: { idx: number; rank: number; workerId: number }[] = [];
+    for (let i = 0; i < building.militaryGarrison.length; i++) {
+      const s = building.militaryGarrison[i];
+      if (s) filledSlots.push({ idx: i, rank: s.rank, workerId: s.workerEntityId });
+    }
+    // Recall lowest-rank first (keep the strongest soldiers)
+    filledSlots.sort((a, b) => a.rank - b.rank || a.idx - b.idx);
+
+    const toRecall: number[] = [];
+    for (let i = 0; i < excess && i < filledSlots.length; i++) {
+      toRecall.push(filledSlots[i]!.workerId);
+      building.militaryGarrison[filledSlots[i]!.idx] = null;
+    }
+    if (toRecall.length > 0) {
+      this.workers.returnMilitaryGarrisonWorkers(buildingEntity, toRecall);
+    }
+  }
+
+  /**
    * Assemble one soldier at HQ (1× worker slot + sword + shield), walk to the target military building.
    * Weapons must already be in HQ storage (delivered by road workers from the armory).
    * @param opts.silent — no on-screen toasts (used by automatic garrison fill).
@@ -2269,50 +2406,69 @@ export class Game {
       toastFail('Garrison is full');
       return false;
     }
+    const garrisonTarget = building.garrisonTarget ?? cap;
+    const filledNow = building.getMilitaryGarrisonFilledCount();
     const pending = this.workers.countMilitaryDispatchToBuilding(buildingEntity.id);
+    if (filledNow + pending >= garrisonTarget) {
+      if (!silent) toastFail('Garrison target reached — raise the target to add more soldiers');
+      return false;
+    }
     const emptySlots = building.militaryGarrison!.filter(s => s == null).length;
     if (pending >= emptySlots) {
-      toastFail('Every free slot already has a soldier marching to this post');
+      if (!silent) toastFail('Every free slot already has a soldier marching to this post');
       return false;
     }
     const usePooledMilitary = this.militarySpecialistsAtHq > 0;
-    if (!usePooledMilitary) {
+
+    // Determine which HQ to dispatch from and confirm a road path exists.
+    let spawnTile: { x: number; y: number } | null;
+    let dispatchPath: Position[];
+    let hqEntityForTraining: Entity;
+
+    if (usePooledMilitary) {
+      // Pooled specialists are assembled at the main HQ — always dispatch from there.
+      spawnTile = this.workers.getBaseCampSpawnTile();
+      const roadGoal = this.workers.getBuildingDispatchRoadTile(buildingEntity);
+      if (!spawnTile || !roadGoal) {
+        toastFail('No road to HQ or fort entrance');
+        return false;
+      }
+      dispatchPath = this.pathFinder.findPath(
+        new Position(spawnTile.x, spawnTile.y),
+        new Position(roadGoal.x, roadGoal.y),
+        this.tileMap
+      );
+      if (dispatchPath.length === 0) {
+        toastFail('No road path from HQ to this fort — connect both to the same road network');
+        return false;
+      }
+      hqEntityForTraining = this.baseCampEntity;
+    } else {
       if (this.getAvailablePopulation() <= 0) {
         toastFail('No free settlers');
         return false;
       }
-
-      const hqStorage = this.baseCampEntity.getComponent(Storage);
-      if (!hqStorage || hqStorage.getAmount('sword') < 1 || hqStorage.getAmount('shield') < 1) {
-        toastFail('Need sword and shield at HQ (not only in armory buffer)');
+      // Find the nearest HQ (main or auxiliary) that has sword+shield and a road path.
+      // This lets captured auxiliary HQs supply garrisons in their local region without
+      // requiring weapons to be hauled all the way back to the main base camp.
+      const militaryHq = this.findMilitaryDispatchHq(buildingEntity);
+      if (!militaryHq) {
+        toastFail('Need sword and shield at any HQ (not only in armory buffer)');
         return false;
       }
-    }
-
-    const spawnTile = this.workers.getBaseCampSpawnTile();
-    const roadGoal = this.workers.getBuildingDispatchRoadTile(buildingEntity);
-    if (!spawnTile || !roadGoal) {
-      toastFail('No road to HQ or fort entrance');
-      return false;
-    }
-
-    const path = this.pathFinder.findPath(
-      new Position(spawnTile.x, spawnTile.y),
-      new Position(roadGoal.x, roadGoal.y),
-      this.tileMap
-    );
-    if (path.length === 0) {
-      toastFail('No road path from HQ to this fort — connect both to the same road network');
-      return false;
+      spawnTile = militaryHq.spawnTile;
+      dispatchPath = militaryHq.path;
+      hqEntityForTraining = militaryHq.hqEntity;
     }
 
     if (usePooledMilitary) {
       // Pool count was validated above; consume only after dispatch path is confirmed.
       this.consumeMilitarySpecialistFromHqPool();
     } else {
-      const hqStorage = this.baseCampEntity.getComponent(Storage);
+      // Final atomic check + deduction from the chosen HQ storage.
+      const hqStorage = hqEntityForTraining.getComponent(Storage);
       if (!hqStorage || hqStorage.getAmount('sword') < 1 || hqStorage.getAmount('shield') < 1) {
-        toastFail('Need sword and shield at HQ (not only in armory buffer)');
+        toastFail('Need sword and shield at any HQ (not only in armory buffer)');
         return false;
       }
       hqStorage.removeItem('sword', 1);
@@ -2324,7 +2480,7 @@ export class Game {
     this.addEntity(soldier);
     const w = soldier.getComponent(Worker);
     if (w) w.setState('idle');
-    this.workers.queueHqStreetEntry(soldier, path);
+    this.workers.queueHqStreetEntry(soldier, dispatchPath, { hqEntity: hqEntityForTraining });
     this.workers.beginMilitaryDispatch(soldier.id, buildingEntity.id);
     if (!silent) {
       const hp = this.inputSystem.hoverGridPos;
@@ -2359,10 +2515,18 @@ export class Game {
           continue;
         if (this.hasMilitaryFromBuildingInActiveAttack(entity.id)) continue;
         building.initMilitaryGarrison(cap);
+        const garrisonTarget = building.garrisonTarget ?? cap;
+        const filled = building.getMilitaryGarrisonFilledCount();
+
+        // Recall excess if target was lowered after soldiers arrived
+        if (filled > garrisonTarget) {
+          this.recallExcessGarrison(entity);
+          continue;
+        }
+
         if (building.findFreeMilitarySlotIndex() < 0) continue;
-        const emptySlots = building.militaryGarrison!.filter(s => s == null).length;
         const pending = this.workers.countMilitaryDispatchToBuilding(entity.id);
-        if (pending >= emptySlots) continue;
+        if (filled + pending >= garrisonTarget) continue;
 
         if (this.trainMilitary(entity, { silent: true })) {
           trainedThisRound = true;
@@ -3041,25 +3205,25 @@ export class Game {
     if (!bldgEntity) return null;
     const production = bldgEntity.getComponent(Production);
     if (!production) return null;
+
+    // Primary: always scan outputBuffer directly. This is correct for all production modes:
+    //   - standard `all` buildings: buffer keys match production.outputs keys exactly
+    //   - `weighted_random` (metalworks): buffer key is one of the production.outputs keys
+    //   - alternating output (armory): buffer may hold 'shield' which is NOT in production.outputs
+    // Scanning outputBuffer is also O(buffer-size) ≤ O(maxOutputBuffer), always tiny.
+    for (const [res, amount] of Object.entries(production.outputBuffer)) {
+      if (amount > 0) return { resourceType: res };
+    }
+
+    // Legacy fallback: pre-migration saves may have finished goods sitting in the ingredient
+    // Storage rather than outputBuffer. Only production buildings carry output-in-storage.
     const storage = bldgEntity.getComponent(Storage);
-    if (storage && storage.isProductionStorage) {
+    if (storage?.isProductionStorage) {
       for (const res of Object.keys(production.outputs)) {
-        if ((production.outputBuffer[res] ?? 0) > 0) {
-          return { resourceType: res };
-        }
-      }
-      for (const res of Object.keys(production.outputs)) {
-        if (storage.getAmount(res) > 0) {
-          return { resourceType: res };
-        }
-      }
-    } else {
-      for (const [res, amount] of Object.entries(production.outputBuffer)) {
-        if (amount > 0) {
-          return { resourceType: res };
-        }
+        if (storage.getAmount(res) > 0) return { resourceType: res };
       }
     }
+
     return null;
   }
 
@@ -3817,6 +3981,7 @@ export class Game {
     this.updateEnemyAttacks();
     this.updateForestAmbient();
     this.updateHammerSound();
+    this.updateFishJumpSound();
     this.updateWorkerAmbientSounds();
     this.pruneAllMilitaryGarrisons();
 
@@ -3833,8 +3998,38 @@ export class Game {
     const now = this.simulationNowMs;
     if (now - this.lastPeriodicTransportHealTime > 8000) {
       this.lastPeriodicTransportHealTime = now;
+      roadSegmentManager.clearDeadWorkers(id => this.entities.some(e => e.id === id && e.active));
       roadSegmentManager.recalculate(this.tileMap);
       this.recomputeTransportRoutes();
+    }
+
+    // Fast worker-fill retry (every 3 s): if any connected road segment has no worker
+    // (null ID or dead entity ID), trigger a recalculate so newly available population
+    // slots get assigned quickly.
+    // Skipped when the full heal just ran (redundant) or no segments are missing workers.
+    if (
+      now - this.lastWorkerFillAttemptTime > 3000 &&
+      now - this.lastPeriodicTransportHealTime > 500
+    ) {
+      this.lastWorkerFillAttemptTime = now;
+      const connectedRoads = this.getBaseCampConnectedRoads();
+      const isAlive = (id: number) => this.entities.some(e => e.id === id && e.active);
+      const missing = roadSegmentManager
+        .getSegments()
+        .filter(
+          s =>
+            (s.assignedWorkerId === null || !isAlive(s.assignedWorkerId)) &&
+            s.tiles.some(t => connectedRoads.has(`${t.x},${t.y}`))
+        );
+      if (missing.length > 0) {
+        console.log(
+          `[RoadWorker] fill-retry: ${missing.length} workerless connected segment(s). Running recalculate.`
+        );
+        roadSegmentManager.clearDeadWorkers(isAlive);
+        roadSegmentManager.recalculate(this.tileMap);
+        // Route maps are still valid; only worker assignment changed, so skip the
+        // expensive recomputeTransportRoutes here — the 8-second heal handles that.
+      }
     }
 
     // Heal stale toward-base / toward-consumer maps when goods sit in output buffers
@@ -5256,6 +5451,17 @@ export class Game {
     );
   }
 
+  private updateFishJumpSound(): void {
+    if (!document.hasFocus()) return;
+    const now = Date.now(); // wall-clock — unaffected by fast-forward
+    if (now < this.nextFishJumpSoundAt) return;
+    if (!this.renderSystem.hasActiveFishJumpOnScreen()) return;
+    // Delay by 1 s so the splash plays on re-entry (fish arc peaks ~0.6 s in, lands at ~1.2 s).
+    setTimeout(() => audioManager.playSound('fish_jump'), 1_000);
+    // Cooldown: 1 s delay + 1.4 s animation window so we never double-trigger the same jump.
+    this.nextFishJumpSoundAt = now + 2_400;
+  }
+
   private updateForestAmbient(): void {
     if (!document.hasFocus()) return;
     const now = Date.now(); // wall-clock — unaffected by fast-forward
@@ -6340,6 +6546,9 @@ export class Game {
             s ? { rank: s.rank, workerEntityId: s.workerEntityId } : null
           );
         }
+        if (typeof building?.garrisonTarget === 'number') {
+          data.garrisonTarget = building.garrisonTarget;
+        }
         if (building?.militaryTerritoryEstablished) {
           data.militaryTerritoryEstablished = true;
         }
@@ -6435,6 +6644,7 @@ export class Game {
     this.nextBattleClashAt = 0;
     this.nextForestAmbientAt = 0;
     this.nextHammerSoundAt = 0;
+    this.nextFishJumpSoundAt = 0;
     this.nextWorkerSoundAt.clear();
     this.pendingWellDemolitions.clear();
     this.syncDemolitionSitesToRender();
@@ -6487,6 +6697,7 @@ export class Game {
       this.nextBattleClashAt = 0;
       this.nextForestAmbientAt = 0;
       this.nextHammerSoundAt = 0;
+      this.nextFishJumpSoundAt = 0;
       this.nextWorkerSoundAt.clear();
       this.pendingWellDemolitions.clear();
       this.syncDemolitionSitesToRender();
@@ -6592,6 +6803,9 @@ export class Game {
             building.initMilitaryGarrison(capRestore);
             building.militaryTerritoryEstablished =
               buildingData.militaryTerritoryEstablished === true;
+            if (typeof buildingData.garrisonTarget === 'number') {
+              building.garrisonTarget = buildingData.garrisonTarget;
+            }
             if (Array.isArray(buildingData.militaryGarrison) && building.militaryGarrison) {
               for (let i = 0; i < building.militaryGarrison.length; i++) {
                 const entry = buildingData.militaryGarrison[i];

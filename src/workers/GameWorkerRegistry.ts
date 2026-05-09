@@ -130,10 +130,15 @@ export interface WorkerWorldAccess {
   getSimulationNowMs(): number;
   /** All player-owned, completed base_camp entities (main + auxiliary HQs). */
   getPlayerHqEntities(): Entity[];
+  /** Called when a returning worker has been concealed in HQ and scheduled for removal (population slot will free up within 800 ms). */
+  scheduleRoadFillCheck?(): void;
 }
 
 export class GameWorkerRegistry {
   private readonly returningWorkers = new Set<number>();
+  /** Subset of returningWorkers that were specifically freed road-segment workers.
+   * Used to let spawnSegmentWorker pre-borrow against slots that are imminently freeing up. */
+  private readonly returningRoadWorkers = new Set<number>();
   private readonly roadSegmentWorkers = new Set<number>();
   private readonly builderWorkers = new Map<number, number>();
   private readonly returningBuilders = new Set<number>();
@@ -190,12 +195,17 @@ export class GameWorkerRegistry {
   }
 
   getReservedPopulationCount(): number {
+    // NOTE: toolWorkers and militaryDispatchWorkers are intentionally excluded here.
+    // In-transit tool workers are already counted via getTotalToolSpecialistsCount() →
+    // getToolSpecialistsInTransitCount() → getToolDispatchCounts().
+    // In-transit military dispatch workers are already counted via getTotalMilitarySpecialistsCount()
+    // → activeMilitaryWorkers (they are active entities with role === 'military').
+    // Including them here would double-count each in-transit specialist, costing 2 population
+    // slots instead of 1 — silently blocking garrison fill for large military posts.
     return (
       this.countPlayerWorkerIds(this.returningWorkers) +
       this.countPlayerWorkerIds(this.builderWorkers.keys()) +
       this.countPlayerWorkerIds(this.returningBuilders) +
-      this.countPlayerWorkerIds(this.toolWorkers.keys()) +
-      this.countPlayerWorkerIds(this.militaryDispatchWorkers.keys()) +
       this.countPlayerWorkerIds(this.animationWorkers.keys()) +
       this.countPlayerWorkerIds(this.surveyorWorkers) +
       this.countPlayerWorkerIds(this.explorerWorkers) +
@@ -371,6 +381,7 @@ export class GameWorkerRegistry {
       const entity = entities.find(e => e.id === workerId && e.active);
       if (!entity) {
         this.returningWorkers.delete(workerId);
+        this.returningRoadWorkers.delete(workerId);
         continue;
       }
 
@@ -380,6 +391,7 @@ export class GameWorkerRegistry {
       if (!pos || !movable || !worker) {
         this.world.removeEntity(entity);
         this.returningWorkers.delete(workerId);
+        this.returningRoadWorkers.delete(workerId);
         continue;
       }
 
@@ -398,6 +410,7 @@ export class GameWorkerRegistry {
       if (!spawnTile) {
         this.world.removeEntity(entity);
         this.returningWorkers.delete(workerId);
+        this.returningRoadWorkers.delete(workerId);
         continue;
       }
 
@@ -424,6 +437,7 @@ export class GameWorkerRegistry {
         } else {
           this.world.removeEntity(entity);
           this.returningWorkers.delete(workerId);
+          this.returningRoadWorkers.delete(workerId);
         }
       }
     }
@@ -450,6 +464,7 @@ export class GameWorkerRegistry {
         const entity = entities.find(e => e.id === workerId && e.active);
         if (!entity) {
           this.returningWorkers.delete(workerId);
+          this.returningRoadWorkers.delete(workerId);
           continue;
         }
         const movable = entity.getComponent(Movable);
@@ -477,12 +492,14 @@ export class GameWorkerRegistry {
             worker.targetHqEntityId = null;
             // Remove worker after 800ms delay for visual feedback
             this.workersEnteringHq.set(workerId, nowMs + 800);
+            this.world.scheduleRoadFillCheck?.();
           } else {
             // Fallback: remove immediately if no HQ
             this.world.removeEntity(entity);
           }
 
           this.returningWorkers.delete(workerId);
+          this.returningRoadWorkers.delete(workerId);
         }
       }
     }
@@ -509,6 +526,7 @@ export class GameWorkerRegistry {
             worker.targetHqEntityId = null;
             // Remove builder after 800ms delay for visual feedback
             this.workersEnteringHq.set(builderId, nowMs + 800);
+            this.world.scheduleRoadFillCheck?.();
           } else {
             // Fallback: remove immediately if no HQ
             this.world.removeEntity(entity);
@@ -990,7 +1008,7 @@ export class GameWorkerRegistry {
 
         if (movable?.isMoving) continue;
 
-        if (production.status !== 'producing') {
+        if (!production || production.status !== 'producing') {
           if (
             state.phase === 'drawing' ||
             state.phase === 'to_entrance' ||
@@ -1538,12 +1556,12 @@ export class GameWorkerRegistry {
       }
 
       if (staffingAnim.type === 'plant_tree') {
-        if (production.status !== 'producing') continue;
+        if (!production || production.status !== 'producing') continue;
         this.spawnPlantTreeWorker(entity);
         continue;
       }
 
-      if (production.status !== 'producing') continue;
+      if (!production || production.status !== 'producing') continue;
       this.spawnGatherAnimationWorker(entity);
     }
   }
@@ -1937,6 +1955,7 @@ export class GameWorkerRegistry {
 
   resetState(): void {
     this.returningWorkers.clear();
+    this.returningRoadWorkers.clear();
     this.roadSegmentWorkers.clear();
     this.builderWorkers.clear();
     this.returningBuilders.clear();
@@ -1954,10 +1973,26 @@ export class GameWorkerRegistry {
     const connectedRoads = this.world.getBaseCampConnectedRoads();
     const isConnected = segment.tiles.some(t => connectedRoads.has(`${t.x},${t.y}`));
     if (!isConnected) {
+      const ep0 = segment.endpoints[0];
+      const ep1 = segment.endpoints[1];
+      console.warn(
+        `[RoadWorker] seg#${segment.id} NOT connected to HQ — skipping spawn.` +
+          ` tiles: ${segment.tiles.length}, endpoints: (${ep0.x},${ep0.y} ${ep0.type}) ↔ (${ep1.x},${ep1.y} ${ep1.type}),` +
+          ` connectedRoads size: ${connectedRoads.size}`
+      );
       return null;
     }
-    if (this.world.getAvailablePeasantSlotCount() <= 0) {
-      console.warn('No available population for road worker');
+    // Count road workers currently walking back to HQ — their population slots are
+    // about to be freed.  We allow spawning against that headroom so a segment that
+    // lost its worker due to a road edit can be filled immediately rather than waiting
+    // until the returning worker physically arrives.
+    const returningRoadBonus = this.countPlayerWorkerIds(this.returningRoadWorkers);
+    const available = this.world.getAvailablePeasantSlotCount();
+    if (available + returningRoadBonus <= 0) {
+      console.warn(
+        `[RoadWorker] seg#${segment.id} spawn blocked — population full.` +
+          ` available=${available}, returningRoadBonus=${returningRoadBonus}`
+      );
       return null;
     }
 
@@ -2013,6 +2048,11 @@ export class GameWorkerRegistry {
 
   private freeSegmentWorker(workerId: number): void {
     this.roadSegmentWorkers.delete(workerId);
+    // Always null out the segment reference first so the dead ID never masquerades
+    // as an assigned worker if we have to hard-remove the entity below.
+    const ownSegment = roadSegmentManager.getSegmentForWorker(workerId);
+    if (ownSegment) ownSegment.assignedWorkerId = null;
+
     const entities = [...this.world.getEntities()];
     const entity = entities.find(e => e.id === workerId && e.active);
     if (!entity) return;
@@ -2075,31 +2115,50 @@ export class GameWorkerRegistry {
     const spawnTile = hqDispatch?.spawnTile ?? this.findBaseCampSpawnTile();
     if (!spawnTile) {
       this.world.removeEntity(entity);
-      return;
+      return; // segment already nulled out above
     }
 
     const tileMap = this.world.getTileMap();
     const pathFinder = this.world.getPathFinder();
-    const path = pathFinder.findPath(
-      new Position(Math.floor(pos.x), Math.floor(pos.y)),
-      new Position(spawnTile.x, spawnTile.y),
-      tileMap
-    );
+    const workerX = Math.floor(pos.x);
+    const workerY = Math.floor(pos.y);
 
-    if (path.length > 0) {
-      const movable = entity.getComponent(Movable);
-      const worker = entity.getComponent(Worker);
-      if (movable && worker) {
-        if (hqDispatch?.hqEntity) worker.targetHqEntityId = hqDispatch.hqEntity.id;
-        movable.setPath(path);
-        worker.setState('walking');
-        this.returningWorkers.add(workerId);
-        return;
+    // 1. Try a road-network path starting from the nearest reachable road tile within 8 tiles.
+    //    The deleted tile is no longer walkable in the road grid, so jumping to a nearby valid
+    //    road tile first and combining an off-road hop + road-only leg avoids the instant fail.
+    const nearestRoadTile = this.findNearestRoadTileFrom(workerX, workerY, tileMap, 8);
+    if (nearestRoadTile) {
+      const roadPath = pathFinder.findPath(
+        new Position(nearestRoadTile.x, nearestRoadTile.y),
+        new Position(spawnTile.x, spawnTile.y),
+        tileMap
+      );
+      if (roadPath.length > 0) {
+        // Short off-road hop from current position to the road tile, then follow the road home.
+        const legToRoad = pathFinder.findOffRoadPath(
+          new Position(workerX, workerY),
+          new Position(nearestRoadTile.x, nearestRoadTile.y),
+          tileMap
+        );
+        const fullPath = legToRoad.length > 0 ? [...legToRoad, ...roadPath] : roadPath;
+        const movable = entity.getComponent(Movable);
+        const worker = entity.getComponent(Worker);
+        if (movable && worker) {
+          if (hqDispatch?.hqEntity) worker.targetHqEntityId = hqDispatch.hqEntity.id;
+          movable.setPath(fullPath);
+          worker.setState('walking');
+          worker.visualActivity = 'general';
+          worker.dropResource();
+          this.returningWorkers.add(workerId);
+          this.returningRoadWorkers.add(workerId);
+          return;
+        }
       }
     }
 
+    // 2. Fallback: pure off-road path directly to the HQ spawn tile.
     const offRoadPath = pathFinder.findOffRoadPath(
-      new Position(Math.floor(pos.x), Math.floor(pos.y)),
+      new Position(workerX, workerY),
       new Position(spawnTile.x, spawnTile.y),
       tileMap
     );
@@ -2113,11 +2172,42 @@ export class GameWorkerRegistry {
         worker.visualActivity = 'general';
         worker.dropResource();
         this.returningWorkers.add(workerId);
+        this.returningRoadWorkers.add(workerId);
         return;
       }
     }
 
+    // 3. Last resort: remove the entity entirely.
     this.world.removeEntity(entity);
+  }
+
+  /**
+   * BFS scan within `maxRadius` tiles (Manhattan) for the nearest road tile that is
+   * not occupied. Returns null if none is found.
+   */
+  private findNearestRoadTileFrom(
+    x: number,
+    y: number,
+    tileMap: TileMap,
+    maxRadius: number
+  ): { x: number; y: number } | null {
+    // Iterate by expanding Manhattan-distance shells so the first hit is truly nearest.
+    for (let r = 0; r <= maxRadius; r++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const dy1 = r - Math.abs(dx);
+        const dy2 = -dy1;
+        for (const dy of dy1 === dy2 ? [dy1] : [dy1, dy2]) {
+          const tx = x + dx;
+          const ty = y + dy;
+          if (tx < 0 || ty < 0 || tx >= tileMap.width || ty >= tileMap.height) continue;
+          const tile = tileMap.getTile(tx, ty);
+          if (tile && tile.hasRoad && !tile.isOccupied()) {
+            return { x: tx, y: ty };
+          }
+        }
+      }
+    }
+    return null;
   }
 
   private moveSegmentWorker(workerId: number, segment: RoadSegment): void {
@@ -2764,7 +2854,8 @@ export class GameWorkerRegistry {
 
     const tiles =
       anim.type === 'interior_operator'
-        ? this.computeInteriorApproachTiles(buildingEntity)
+        ? (this.computeInteriorApproachTiles(buildingEntity) ??
+          this.fallbackInteriorTiles(buildingEntity))
         : this.computeSiteOperatorTiles(buildingEntity);
     if (!tiles) return;
 

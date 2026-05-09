@@ -51,9 +51,10 @@ const FLAT_SHORE_CLIP_EXTENT = 1_000_000;
 /** Uniform draw scale for `/assets/resources/*.png` on the main canvas (workers, junctions, map bubbles). */
 const RESOURCE_ICON_DRAW_SCALE = 1.25;
 
-/** TEMP (visual QA): time between decorative fish jumps — restore to `30_000` / `300_000` when done. */
-const FISH_SPAWN_GAP_MIN_MS = 400;
-const FISH_SPAWN_GAP_MAX_MS = 2_000;
+/** Interval between decorative fish jumps. Random pick in [min, max] guarantees roughly one jump
+ * every 10–30 s whenever a valid water tile is visible. */
+const FISH_SPAWN_GAP_MIN_MS = 10_000;
+const FISH_SPAWN_GAP_MAX_MS = 30_000;
 const CONSTRUCTION_SMOKE_ON_SEC = 15;
 const CONSTRUCTION_SMOKE_OFF_MIN_SEC = 3;
 const CONSTRUCTION_SMOKE_OFF_MAX_SEC = 5;
@@ -220,7 +221,7 @@ export class RenderSystem extends System {
     // Center camera on map
     this.centerCamera();
 
-    this.nextFishSpawn = getSimulationNowMs() + nextFishSpawnGapMs();
+    this.nextFishSpawn = Date.now() + nextFishSpawnGapMs();
 
     this.preloadSprites(collectAllCataloguedBuildingSpritePaths());
 
@@ -3952,11 +3953,11 @@ export class RenderSystem extends System {
   }
 
   private renderFishJumps(): void {
-    const now = getSimulationNowMs();
+    const now = Date.now(); // wall-clock: works correctly on loaded saves and ignores fast-forward
     const JUMP_DURATION = 1200;
 
     if (now >= this.nextFishSpawn) {
-      this.spawnFish();
+      this.spawnFish(now);
       this.nextFishSpawn = now + nextFishSpawnGapMs();
     }
 
@@ -3980,19 +3981,36 @@ export class RenderSystem extends System {
     }
   }
 
-  private spawnFish(): void {
+  private spawnFish(now: number): void {
     const bounds = this.getViewportBounds();
     const w = bounds.maxX - bounds.minX + 1;
     const h = bounds.maxY - bounds.minY + 1;
+
+    // Fast path: random sampling works well when water is plentiful.
     for (let attempt = 0; attempt < 40; attempt++) {
       const x = bounds.minX + Math.floor(Math.random() * w);
       const y = bounds.minY + Math.floor(Math.random() * h);
       const tile = this.tileMap.getTile(x, y);
       if (!tile || tile.terrain !== 'water' || !tile.isExplored()) continue;
       if (this.tileMap.getWaterFishRemainingAt(x, y) <= 0) continue;
-      this.fishJumps.push({ x, y, startTime: getSimulationNowMs() });
+      this.fishJumps.push({ x, y, startTime: now });
       return;
     }
+
+    // Fallback: scan the full viewport so a fish always jumps if any water is visible,
+    // even on maps with very few lake tiles on screen.
+    const candidates: { x: number; y: number }[] = [];
+    for (let gy = bounds.minY; gy <= bounds.maxY; gy++) {
+      for (let gx = bounds.minX; gx <= bounds.maxX; gx++) {
+        const tile = this.tileMap.getTile(gx, gy);
+        if (!tile || tile.terrain !== 'water' || !tile.isExplored()) continue;
+        if (this.tileMap.getWaterFishRemainingAt(gx, gy) <= 0) continue;
+        candidates.push({ x: gx, y: gy });
+      }
+    }
+    if (candidates.length === 0) return;
+    const pick = candidates[Math.floor(Math.random() * candidates.length)]!;
+    this.fishJumps.push({ x: pick.x, y: pick.y, startTime: now });
   }
 
   private renderFish(tileX: number, tileY: number, progress: number, hash: number): void {
@@ -5390,6 +5408,15 @@ export class RenderSystem extends System {
       Math.abs(this.camera.x - expectedX) <= tolerancePx &&
       Math.abs(this.camera.y - expectedY) <= tolerancePx
     );
+  }
+
+  /** True when at least one fish jump is currently animating within the visible canvas area. */
+  hasActiveFishJumpOnScreen(): boolean {
+    if (this.fishJumps.length === 0) return false;
+    return this.fishJumps.some(fish => {
+      const s = this.gridToScreen(fish.x, fish.y);
+      return s.x >= 0 && s.x <= this.canvas.width && s.y >= 0 && s.y <= this.canvas.height;
+    });
   }
 
   getCamera(): { x: number; y: number; zoom: number } {

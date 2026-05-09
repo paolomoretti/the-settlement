@@ -280,9 +280,10 @@ export class BuildingPopover {
     if (!building.militaryGarrison) return;
 
     const filled = building.getMilitaryGarrisonFilledCount();
-    const key = building.militaryGarrison
-      .map(s => (s ? `${s.rank}:${s.workerEntityId}` : 'null'))
-      .join(',');
+    const target = building.garrisonTarget ?? cap;
+    const key =
+      `t${target}:` +
+      building.militaryGarrison.map(s => (s ? `${s.rank}:${s.workerEntityId}` : 'null')).join(',');
     if (key === this._militaryPanelKey) return;
     this._militaryPanelKey = key;
 
@@ -300,13 +301,53 @@ export class BuildingPopover {
     countSpan.className = filled > 0 ? 'popover-status-good' : 'popover-status-warn';
     countSpan.textContent = `${filled}/${cap}`;
     meta.appendChild(countSpan);
-    if (filled === cap && cap > 0) {
+    if (filled > 0 && filled >= target) {
       const stationedSpan = document.createElement('span');
       stationedSpan.className = 'popover-status-good';
-      stationedSpan.textContent = 'Stationed';
+      stationedSpan.textContent = target === 0 ? 'Standing down' : 'Target met';
       meta.appendChild(stationedSpan);
     }
     this.militaryPanelEl.appendChild(meta);
+
+    // Garrison target controls: [−]  target / cap  [+]
+    const controls = document.createElement('div');
+    controls.className = 'popover-garrison-controls';
+
+    const minusBtn = document.createElement('button');
+    minusBtn.className = 'popover-garrison-btn';
+    minusBtn.textContent = '−';
+    minusBtn.title = 'Recall one soldier (lowers garrison target)';
+    minusBtn.disabled = target <= 0;
+    minusBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (!this.currentEntity) return;
+      this.game.setGarrisonTarget(this.currentEntity, target - 1);
+      this._militaryPanelKey = '';
+      this.updateMilitaryPanel();
+    });
+
+    const targetLabel = document.createElement('span');
+    targetLabel.className = 'popover-garrison-target-label';
+    targetLabel.textContent = `${target} / ${cap}`;
+    targetLabel.title = 'Garrison target / capacity';
+
+    const plusBtn = document.createElement('button');
+    plusBtn.className = 'popover-garrison-btn';
+    plusBtn.textContent = '+';
+    plusBtn.title = 'Dispatch another soldier (raises garrison target)';
+    plusBtn.disabled = target >= cap;
+    plusBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (!this.currentEntity) return;
+      this.game.setGarrisonTarget(this.currentEntity, target + 1);
+      this._militaryPanelKey = '';
+      this.updateMilitaryPanel();
+    });
+
+    controls.appendChild(minusBtn);
+    controls.appendChild(targetLabel);
+    controls.appendChild(plusBtn);
+    this.militaryPanelEl.appendChild(controls);
 
     const defaultAppearance = WORKER_DEFS.military.variants[0];
     const grid = document.createElement('div');
@@ -333,7 +374,7 @@ export class BuildingPopover {
     const hint = document.createElement('div');
     hint.style.cssText = 'color:#888;font-size:10px;margin-top:6px;line-height:1.4';
     hint.innerHTML =
-      'Settlers march from HQ when you have 1+ sword &amp; shield <b>in HQ storage</b> and a road path. Auto-fill runs every few seconds.';
+      'Settlers march from the nearest HQ (main or captured) that has 1+ sword &amp; shield and a road connection. Auto-fill runs every few seconds.';
     this.militaryPanelEl.appendChild(hint);
   }
 
@@ -580,6 +621,25 @@ export class BuildingPopover {
       const builderColor = building.builderArrived ? '#4caf50' : '#ffb74d';
       const builderText = building.builderArrived ? 'Builder: Arrived' : 'Builder: En route...';
       lines.push(`<span style="color:${builderColor}">${builderText}</span>`);
+    }
+
+    // Garrison hint: show sword + shield needed when no soldiers have been stationed yet
+    if (
+      isMilitaryPost &&
+      building.isComplete() &&
+      building.getMilitaryGarrisonFilledCount() === 0
+    ) {
+      // Check all player HQs (main + auxiliary) so weapons stored in a captured
+      // enemy headquarters are correctly recognised as available for garrison.
+      const { hasSword, hasShield } = this.game.anyPlayerHqHasMilitaryResources();
+      const hasPopulation = this.game.getAvailablePopulation() > 0;
+      const swordColor = hasSword ? '#4caf50' : '#ef5350';
+      const shieldColor = hasShield ? '#4caf50' : '#ef5350';
+      const popColor = hasPopulation ? '#4caf50' : '#ef5350';
+      lines.push(`Soldiers need at any HQ:`);
+      lines.push(`<span style="color:${swordColor}">1× sword</span>`);
+      lines.push(`<span style="color:${shieldColor}">1× shield</span>`);
+      lines.push(`<span style="color:${popColor}">1 free settler</span>`);
     }
 
     if (lines.length === 0) {

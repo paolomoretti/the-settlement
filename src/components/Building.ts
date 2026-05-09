@@ -45,6 +45,8 @@ export class Building extends Component {
 
   /** Length = `military.soldierCapacity` when set; entries `null` = empty slot. */
   public militaryGarrison: (MilitaryGarrisonSlot | null)[] | null = null;
+  /** Player-set garrison target. null = fill to soldierCapacity. 0 = evacuate. */
+  public garrisonTarget: number | null = null;
   /** Once a soldier first enters a military post, its territory remains established even if soldiers march out. */
   public militaryTerritoryEstablished: boolean = false;
   /** True for a captured enemy headquarters that has been converted into a secondary player base. */

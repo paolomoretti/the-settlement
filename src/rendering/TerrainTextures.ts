@@ -697,6 +697,221 @@ function buildTextureFill(gen: GenFn, noise: NoiseGenerator): HTMLCanvasElement 
   return canvas;
 }
 
+// ---- Grass micro-decoration helpers (baked into atlas at startup, zero runtime cost) ----
+
+/**
+ * Deterministic per-slot RNG from atlas coordinates.
+ * Different `salt` values give independent streams for each decoration type.
+ */
+function slotRng(gx: number, gy: number, salt: number): () => number {
+  let s = ((gx * 374761393) ^ (gy * 668265263) ^ (salt * 2246822519)) >>> 0;
+  return (): number => {
+    s = Math.imul(s ^ (s >>> 13), 1274126177);
+    s = (s ^ (s >>> 16)) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+type GrassDecoration = 'plain' | 'stone' | 'flower' | 'dirt' | 'tall';
+
+/**
+ * Pick decoration type for an atlas slot.
+ * Uses two-octave tileable noise to create natural-looking patches across the atlas.
+ * Proportions: ~53% plain, ~14% tall grass, ~12% stone, ~11% flower, ~10% dirt.
+ */
+function slotDecoration(noise: NoiseGenerator, gx: number, gy: number): GrassDecoration {
+  const coarse = tileNoise(noise, gx, gy, 0.5, 200, 300);
+  const med = tileNoise(noise, gx, gy, 1.8, 250, 350);
+  const v = coarse * 0.65 + med * 0.35;
+  if (v < 0.53) return 'plain';
+  if (v < 0.67) return 'tall';
+  if (v < 0.79) return 'stone';
+  if (v < 0.9) return 'flower';
+  return 'dirt';
+}
+
+/**
+ * Convert fractional isometric tile-local coordinates (u, v) to atlas pixel position.
+ * u, v ∈ [-0.5, 0.5] — fractional grid offsets from tile center.
+ * cx, cy — tile center in atlas pixel space.
+ */
+function isoToAtlasPx(u: number, v: number, cx: number, cy: number): [number, number] {
+  return [cx + (u - v) * (TILE_W / 2), cy + (u + v) * (TILE_H / 2)];
+}
+
+/** Draw 2–3 small stones on an atlas tile slot. */
+function drawStonesOnSlot(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  gx: number,
+  gy: number
+): void {
+  const rng = slotRng(gx, gy, 11);
+  const count = 2 + Math.floor(rng() * 2);
+  for (let i = 0; i < count; i++) {
+    const u = (rng() - 0.5) * 0.68;
+    const v = (rng() - 0.5) * 0.68;
+    const [px, py] = isoToAtlasPx(u, v, cx, cy);
+    const rw = 3.2 + rng() * 2.8; // 3.2–6 px half-width
+    const rh = rw * 0.52; // flattened for iso perspective
+    const rot = (rng() - 0.5) * 0.5;
+
+    // Drop shadow
+    ctx.fillStyle = 'rgba(30, 22, 12, 0.40)';
+    ctx.beginPath();
+    ctx.ellipse(px + 1.3, py + 0.9, rw * 0.88, rh * 0.75, rot, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Stone body — warm grey-brown
+    const L = 118 + Math.floor(rng() * 48);
+    ctx.fillStyle = `rgb(${L}, ${L - 11}, ${L - 23})`;
+    ctx.beginPath();
+    ctx.ellipse(px, py, rw, rh, rot, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Specular highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.30)';
+    ctx.beginPath();
+    ctx.ellipse(px - rw * 0.2, py - rh * 0.22, rw * 0.44, rh * 0.38, rot - 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+const FLOWER_COLORS = ['#FFD700', '#F5F5F5', '#FFB6C1', '#B8E0F7', '#E8C5F5', '#FFA040'];
+
+/** Draw 3–6 small flowers on an atlas tile slot. */
+function drawFlowersOnSlot(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  gx: number,
+  gy: number
+): void {
+  const rng = slotRng(gx, gy, 22);
+  const count = 3 + Math.floor(rng() * 4);
+  for (let i = 0; i < count; i++) {
+    const u = (rng() - 0.5) * 0.74;
+    const v = (rng() - 0.5) * 0.74;
+    const [px, py] = isoToAtlasPx(u, v, cx, cy);
+    const color = FLOWER_COLORS[Math.floor(rng() * FLOWER_COLORS.length)];
+    const r = 1.6 + rng() * 0.9; // 1.6–2.5 px petal radius
+
+    // Stem — short downward stroke ("down" in iso = toward viewer = positive py)
+    ctx.strokeStyle = '#4a7a1e';
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(px, py + r);
+    ctx.lineTo(px + (rng() - 0.5) * 0.8, py + r + 2.4);
+    ctx.stroke();
+
+    // Petal cluster
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Tiny yellow-orange center
+    ctx.fillStyle = 'rgba(255, 160, 30, 0.88)';
+    ctx.beginPath();
+    ctx.arc(px, py, r * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+/** Draw a bare-soil patch on an atlas tile slot. */
+function drawDirtOnSlot(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  gx: number,
+  gy: number
+): void {
+  const rng = slotRng(gx, gy, 33);
+  const du = (rng() - 0.5) * 0.32;
+  const dv = (rng() - 0.5) * 0.32;
+  const [px, py] = isoToAtlasPx(du, dv, cx, cy);
+  const scale = 0.38 + rng() * 0.32; // 0.38–0.70 of tile half-size
+  const rw = (TILE_W / 2) * scale;
+  const rh = (TILE_H / 2) * scale;
+  const rot = (rng() - 0.5) * 0.55;
+
+  // Primary dirt oval
+  ctx.fillStyle = 'rgba(126, 88, 46, 0.60)';
+  ctx.beginPath();
+  ctx.ellipse(px, py, rw, rh, rot, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Secondary smaller blob for irregular edge
+  const u2 = du + (rng() - 0.5) * 0.18;
+  const v2 = dv + (rng() - 0.5) * 0.18;
+  const [px2, py2] = isoToAtlasPx(u2, v2, cx, cy);
+  ctx.fillStyle = 'rgba(108, 72, 36, 0.38)';
+  ctx.beginPath();
+  ctx.ellipse(px2, py2, rw * 0.6, rh * 0.6, rot + 0.38, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/** Draw 3–5 clumps of taller, darker grass blades on an atlas tile slot. */
+function drawTallGrassOnSlot(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  gx: number,
+  gy: number
+): void {
+  const rng = slotRng(gx, gy, 44);
+  const clumpCount = 3 + Math.floor(rng() * 3);
+  for (let i = 0; i < clumpCount; i++) {
+    const u = (rng() - 0.5) * 0.72;
+    const v = (rng() - 0.5) * 0.72;
+    const [px, py] = isoToAtlasPx(u, v, cx, cy);
+    const blades = 2 + Math.floor(rng() * 2);
+    for (let b = 0; b < blades; b++) {
+      const lean = (rng() - 0.5) * 3.2; // horizontal lean
+      const len = 3.5 + rng() * 3.0; // 3.5–6.5 px blade length
+      const gVal = 72 + Math.floor(rng() * 38); // darker green range
+      ctx.strokeStyle = `rgb(24, ${gVal}, 10)`;
+      ctx.lineWidth = 0.9 + rng() * 0.5;
+      ctx.beginPath();
+      ctx.moveTo(px + (rng() - 0.5) * 1.2, py);
+      ctx.lineTo(px + lean, py - len * 0.88); // blades go upward in screen space
+      ctx.stroke();
+    }
+  }
+}
+
+/**
+ * Paint micro-decorations for all 256 atlas slots directly on the canvas,
+ * before the diamond mask is applied (so masking clips them correctly).
+ */
+function addGrassDecorations(ctx: CanvasRenderingContext2D, noise: NoiseGenerator): void {
+  ctx.save();
+  for (let gy = 0; gy < ATLAS_GRID; gy++) {
+    for (let gx = 0; gx < ATLAS_GRID; gx++) {
+      const type = slotDecoration(noise, gx, gy);
+      if (type === 'plain') continue;
+      const cx = gx * TILE_W + TILE_W / 2;
+      const cy = gy * TILE_H + TILE_H / 2;
+      switch (type) {
+        case 'stone':
+          drawStonesOnSlot(ctx, cx, cy, gx, gy);
+          break;
+        case 'flower':
+          drawFlowersOnSlot(ctx, cx, cy, gx, gy);
+          break;
+        case 'dirt':
+          drawDirtOnSlot(ctx, cx, cy, gx, gy);
+          break;
+        case 'tall':
+          drawTallGrassOnSlot(ctx, cx, cy, gx, gy);
+          break;
+      }
+    }
+  }
+  ctx.restore();
+}
+
 const GRASS_TEXTURE_SRC = '/assets/terrain/grass-texture.png';
 
 /**
@@ -729,7 +944,8 @@ function canvasFromImageData(id: ImageData): HTMLCanvasElement {
  */
 function buildGrassPhotoAtlases(
   img: HTMLImageElement,
-  repeat: number
+  repeat: number,
+  noise?: NoiseGenerator
 ): {
   grass: HTMLCanvasElement;
   forest: HTMLCanvasElement;
@@ -759,6 +975,9 @@ function buildGrassPhotoAtlases(
       ctx.drawImage(img, sx, sy, cellW, cellH, gx * TILE_W, gy * TILE_H, TILE_W, TILE_H);
     }
   }
+
+  // Paint micro-decorations (stones, flowers, dirt, tall grass) before diamond mask clips them.
+  if (noise) addGrassDecorations(ctx, noise);
 
   const baseId = ctx.getImageData(0, 0, ATLAS_W, ATLAS_H);
   const base = baseId.data;
@@ -850,9 +1069,12 @@ export class TerrainTextures {
   private waterAtlas: HTMLCanvasElement;
   private waterFillTexture: HTMLCanvasElement;
   private waterFillPattern: CanvasPattern | null = null;
+  /** Stored for async grass photo atlas decoration pass. */
+  private noise: NoiseGenerator;
 
   constructor(seed: number = 42) {
     const noise = new NoiseGenerator(seed);
+    this.noise = noise;
     for (const terrain of Object.keys(GENERATORS)) {
       this.atlases.set(terrain, buildAtlas(GENERATORS[terrain], noise));
     }
@@ -868,7 +1090,7 @@ export class TerrainTextures {
     const apply = (): void => {
       if (!img.naturalWidth) return;
       try {
-        const built = buildGrassPhotoAtlases(img, GRASS_TEXTURE_REPEAT);
+        const built = buildGrassPhotoAtlases(img, GRASS_TEXTURE_REPEAT, this.noise);
         if (!built) return;
         this.atlases.set('grass', built.grass);
         this.atlases.set('forest', built.forest);

@@ -37,15 +37,17 @@ export interface WildRabbit {
   jumping?: RabbitJumpState;
 }
 
-const SPAWN_INTERVAL_MS = 120_000;
-/** Explored rabbit-habitat tiles per batch / per 3 rabbits of cap (see countExploredRabbitHabitatCells). */
-const HABITAT_TILES_PER_CHUNK = 2000;
-const RABBITS_PER_HABITAT_CHUNK = 3;
+/** Spawn cadence: pick a random interval between these two bounds each time. */
+const SPAWN_INTERVAL_MIN_MS = 60_000; // 1 min
+const SPAWN_INTERVAL_MAX_MS = 180_000; // 3 min
+/** One explored valid tile counts toward 1 potential rabbit every this many tiles. */
+const TILES_PER_RABBIT_SLOT = 600;
+/** Soft population ceiling multiplier: keep at most this many rabbits per slot. */
+const MAX_RABBITS_PER_SLOT = 3;
 const WANDER_INTERVAL_MS = 40_000;
 const INITIAL_MIN = 2;
 const INITIAL_MAX = 3;
 const WANDER_RADIUS_MANHATTAN = 2;
-const SPAWN_ATTEMPTS_PER_RABBIT = 96;
 
 function cellKey(x: number, y: number): string {
   return `${x},${y}`;
@@ -203,16 +205,12 @@ export class WildlifeCoordinator {
 
   /** After a brand-new map (HQ + initial explore), place starter rabbits and arm periodic spawns. */
   seedInitialRabbits(tileMap: TileMap, centerX: number, centerY: number): void {
-    const habitatCells = countExploredRabbitHabitatCells(tileMap);
-    const maxRabbits =
-      Math.floor(habitatCells / HABITAT_TILES_PER_CHUNK) * RABBITS_PER_HABITAT_CHUNK;
-    const want = INITIAL_MIN + Math.floor(Math.random() * (INITIAL_MAX - INITIAL_MIN + 1));
-    const target = Math.min(want, maxRabbits);
-    if (target > 0) {
-      const placed = this.tryPlaceStarterRabbits(tileMap, centerX, centerY, target);
-      if (placed < target) {
-        this.tryPlaceStarterRabbitsLoose(tileMap, centerX, centerY, target - placed);
-      }
+    // Always place 2-3 starter rabbits regardless of how large the explored area is.
+    // The habitat cap only governs *ongoing* periodic spawns, not the initial population.
+    const target = INITIAL_MIN + Math.floor(Math.random() * (INITIAL_MAX - INITIAL_MIN + 1));
+    const placed = this.tryPlaceStarterRabbits(tileMap, centerX, centerY, target);
+    if (placed < target) {
+      this.tryPlaceStarterRabbitsLoose(tileMap, centerX, centerY, target - placed);
     }
     this.scheduleNextSpawnFromNow(getSimulationNowMs());
   }
@@ -233,8 +231,7 @@ export class WildlifeCoordinator {
     }
 
     if (now >= this.nextSpawnAttemptAtMs) {
-      const jitter = Math.floor(Math.random() * 8000);
-      this.nextSpawnAttemptAtMs = now + SPAWN_INTERVAL_MS + jitter;
+      this.scheduleNextSpawnFromNow(now);
       this.trySpawnBatch(tileMap);
     }
   }
@@ -364,8 +361,10 @@ export class WildlifeCoordinator {
   }
 
   private scheduleNextSpawnFromNow(now: number = getSimulationNowMs()): void {
-    const jitter = Math.floor(Math.random() * 8000);
-    this.nextSpawnAttemptAtMs = now + SPAWN_INTERVAL_MS + jitter;
+    const range = SPAWN_INTERVAL_MAX_MS - SPAWN_INTERVAL_MIN_MS;
+    const delay = SPAWN_INTERVAL_MIN_MS + Math.floor(Math.random() * range);
+    this.nextSpawnAttemptAtMs = now + delay;
+    console.log(`[Rabbits] Next spawn in ${(delay / 1000).toFixed(1)}s (sim-time)`);
   }
 
   private insertRabbit(r: WildRabbit): void {
@@ -491,42 +490,81 @@ export class WildlifeCoordinator {
    * Stops early if random search finds no free stand tile.
    */
   private trySpawnBatch(tileMap: TileMap): void {
-    const habitatCells = countExploredRabbitHabitatCells(tileMap);
-    const batchCount = Math.floor(habitatCells / HABITAT_TILES_PER_CHUNK);
-    const maxRabbits = batchCount * RABBITS_PER_HABITAT_CHUNK;
-    if (batchCount <= 0 || maxRabbits <= 0) return;
-
-    const headroom = maxRabbits - this.rabbits.length;
-    const toPlace = Math.min(batchCount, headroom);
-    if (toPlace <= 0) return;
-
+    // Scan all explored valid tiles once and split into forest-edge vs other.
+    // This avoids the futile blind-random approach on a 1000×1000 map where only
+    // a tiny fraction of tiles are explored — 96 random attempts would almost never
+    // hit a valid explored tile in early-game.
+    const forestEdge: { x: number; y: number }[] = [];
+    const anyValid: { x: number; y: number }[] = [];
     const w = tileMap.width;
     const h = tileMap.height;
-    const now = getSimulationNowMs();
-
-    for (let b = 0; b < toPlace; b++) {
-      let placedOne = false;
-      for (let a = 0; a < SPAWN_ATTEMPTS_PER_RABBIT; a++) {
-        const x = Math.floor(Math.random() * w);
-        const y = Math.floor(Math.random() * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
         const tile = tileMap.getTile(x, y);
         if (!isValidRabbitStandTile(tile)) continue;
-        if (this.cellOccupied.has(cellKey(x, y))) continue;
-
-        this.insertRabbit({
-          id: this.nextRabbitId++,
-          originX: x,
-          originY: y,
-          x,
-          y,
-          variant: rollVariant(),
-          animSeed: Math.random() * 1000,
-          nextWanderAtMs: now + WANDER_INTERVAL_MS + Math.floor(Math.random() * 4000),
-        });
-        placedOne = true;
-        break;
+        const k = cellKey(x, y);
+        if (this.cellOccupied.has(k)) continue;
+        const nbrs = tileMap.getNeighbors(x, y);
+        if (nbrs.some(isForestLike)) {
+          forestEdge.push({ x, y });
+        } else {
+          anyValid.push({ x, y });
+        }
       }
-      if (!placedOne) return;
+    }
+
+    const totalValid = forestEdge.length + anyValid.length;
+    if (totalValid === 0) return;
+
+    // How many rabbits the explored area can support.
+    const slots = Math.max(1, Math.floor(totalValid / TILES_PER_RABBIT_SLOT));
+    const maxRabbits = slots * MAX_RABBITS_PER_SLOT;
+    const headroom = maxRabbits - this.rabbits.length;
+    if (headroom <= 0) return;
+
+    // Pick a random count between 1 and slots (i.e. 1 per 600 tiles), capped by headroom.
+    const maxThisTick = Math.min(slots, headroom);
+    const toPlace = 1 + Math.floor(Math.random() * maxThisTick);
+
+    console.log(
+      `[Rabbits] Spawning ${toPlace} rabbit(s) | explored valid tiles: ${totalValid}` +
+        ` | slots: ${slots} (1 per ${TILES_PER_RABBIT_SLOT} tiles)` +
+        ` | pop cap: ${maxRabbits} | current: ${this.rabbits.length} | headroom: ${headroom}`
+    );
+
+    if (toPlace <= 0) return;
+
+    const now = getSimulationNowMs();
+
+    // Fisher-Yates-style shuffle helper: pick a random index, swap to end, pop.
+    const pickRandom = <T>(arr: T[]): T => {
+      const idx = Math.floor(Math.random() * arr.length);
+      const item = arr[idx];
+      arr[idx] = arr[arr.length - 1];
+      arr.pop();
+      return item;
+    };
+
+    for (let b = 0; b < toPlace; b++) {
+      // Prefer forest-edge tiles; fall back to any valid tile.
+      let pos: { x: number; y: number } | null = null;
+      if (forestEdge.length > 0) {
+        pos = pickRandom(forestEdge);
+      } else if (anyValid.length > 0) {
+        pos = pickRandom(anyValid);
+      }
+      if (!pos) break;
+
+      this.insertRabbit({
+        id: this.nextRabbitId++,
+        originX: pos.x,
+        originY: pos.y,
+        x: pos.x,
+        y: pos.y,
+        variant: rollVariant(),
+        animSeed: Math.random() * 1000,
+        nextWanderAtMs: now + WANDER_INTERVAL_MS + Math.floor(Math.random() * 4000),
+      });
     }
   }
 }

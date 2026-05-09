@@ -272,7 +272,7 @@
     "name": "Well",
     "description": "Draws fresh water from underground.",
     "size": { "width": 1, "height": 1 },
-    "visual": { "buildingHeight": 30, "color": "#4682b4", "spriteScale": 1.35 },
+    "visual": { "buildingHeight": 30, "color": "#4682b4", "spriteScale": 1.05 },
     "buildCost": { "wood_plank": 2 },
     "buildTime": 20,
     "requiresRoad": true,
@@ -471,9 +471,9 @@
     "visual": {
       "buildingHeight": 55,
       "color": "#8b2500",
-      "spriteScale": 1.5,
-      "offsetX": -4,
-      "offsetY": 1
+      "spriteScale": 1.25,
+      "offsetX": -1,
+      "offsetY": 0
     },
     "buildCost": { "wood_plank": 2, "stone": 2 },
     "buildTime": 30,
@@ -874,7 +874,7 @@
     "name": "Watchtower",
     "description": "Large military tower garrisoning 6 soldiers.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 85, "color": "#704214" },
+    "visual": { "buildingHeight": 85, "color": "#704214", "spriteScale": 1.25 },
     "buildCost": { "wood_plank": 3, "stone": 4 },
     "buildTime": 40,
     "requiresRoad": true,
@@ -935,7 +935,13 @@
     "name": "Donkey Breeder",
     "description": "Breeds donkeys from grain and water to speed up road transport.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 55, "color": "#9c8a6e", "spriteScale": 1.3 },
+    "visual": {
+      "buildingHeight": 55,
+      "color": "#9c8a6e",
+      "spriteScale": 1.5,
+      "offsetX": 1,
+      "offsetY": 5
+    },
     "buildCost": { "wood_plank": 3, "stone": 3 },
     "buildTime": 35,
     "requiresRoad": true,

@@ -35,7 +35,12 @@ import { RABBIT_JUMP_DURATION_MS, type WildRabbit } from '@/wildlife/WildlifeCoo
 import { territoryKey } from '@/map/TerritoryCoordinator';
 import { createChimneySmoke, type ChimneySmoke } from '@/rendering/chimneySmoke';
 import { createLoFiFire, type LoFiFire } from '@/rendering/loFiFire';
-import { DEBUG, DEBUG_WATER_RENDER_LOG, ROAD_RENDERING_MODE, USE_WORKER_V2 } from '@/debug/debugFlags';
+import {
+  DEBUG,
+  DEBUG_WATER_RENDER_LOG,
+  ROAD_RENDERING_MODE,
+  USE_WORKER_V2,
+} from '@/debug/debugFlags';
 import { paintWorkerFromLegacy } from '@/rendering/workerV2/WorkerBodyRenderer';
 import { getEnemyFactionStyle, getEntityFaction, isPlayerOwned } from '@/components/ownerUtils';
 
@@ -4581,27 +4586,50 @@ export class RenderSystem extends System {
     this.ctx.restore();
   }
 
-  /** Orange X above roof when lumberjack / quarry / fisher cannot reach any map source, or a well's aquifer is dry. */
+  /** Pill bubble with a red X — shown when lumberjack / quarry / fisher cannot reach any map source, or a well's aquifer is dry. */
   private renderMapResourcesExhaustedMarker(building: Building): void {
     const tileW = this.iso.tileWidth;
     const tileH = this.iso.tileHeight;
-    const centerX = ((building.width - building.height) * tileW) / 4;
-    const centerY = ((building.width + building.height) * tileH) / 4;
-    const bob = Math.sin(getSimulationNowMs() * 0.004) * 2.5;
-    const y = centerY - building.buildingHeight - 28 + bob;
-    const size = 11;
+
+    const bubbleX = ((building.width - 1) * tileW) / 2;
+    const bubbleY = ((building.width - 1) * tileH) / 2 - 12;
+
+    const bob = Math.sin(getSimulationNowMs() * 0.003) * 2;
+
+    const pillW = 20;
+    const pillH = 20;
+    const r = pillH / 2;
+    const xSize = 4.5;
 
     this.ctx.save();
-    this.ctx.translate(centerX, y);
-    this.ctx.strokeStyle = '#ff7043';
-    this.ctx.lineWidth = 3;
+    this.ctx.translate(bubbleX, bubbleY + bob);
+
+    // Pill shape (same as renderProductionBubble)
+    this.ctx.beginPath();
+    this.ctx.moveTo(-pillW / 2 + r, -pillH / 2);
+    this.ctx.lineTo(pillW / 2 - r, -pillH / 2);
+    this.ctx.arc(pillW / 2 - r, 0, r, -Math.PI / 2, Math.PI / 2);
+    this.ctx.lineTo(-pillW / 2 + r, pillH / 2);
+    this.ctx.arc(-pillW / 2 + r, 0, r, Math.PI / 2, -Math.PI / 2);
+    this.ctx.closePath();
+
+    this.ctx.fillStyle = 'rgba(30, 30, 30, 0.88)';
+    this.ctx.fill();
+    this.ctx.strokeStyle = '#cc3333';
+    this.ctx.lineWidth = 1.5;
+    this.ctx.stroke();
+
+    // Red X inside
+    this.ctx.strokeStyle = '#ff6666';
+    this.ctx.lineWidth = 2;
     this.ctx.lineCap = 'round';
     this.ctx.beginPath();
-    this.ctx.moveTo(-size, -size);
-    this.ctx.lineTo(size, size);
-    this.ctx.moveTo(size, -size);
-    this.ctx.lineTo(-size, size);
+    this.ctx.moveTo(-xSize, -xSize);
+    this.ctx.lineTo(xSize, xSize);
+    this.ctx.moveTo(xSize, -xSize);
+    this.ctx.lineTo(-xSize, xSize);
     this.ctx.stroke();
+
     this.ctx.restore();
   }
 

@@ -5,6 +5,13 @@
  */
 export const DEBUG = false;
 
+/**
+ * When true, `RenderSystem` logs a line to the console whenever lake/water rendering
+ * inputs change (camera, viewport tile range, contour vs atlas fallback). Set to true
+ * locally to capture before/after zoom when water disappears; keep false in normal play.
+ */
+export const DEBUG_WATER_RENDER_LOG = true;
+
 export type RoadRenderingMode = 'vector' | 'classic';
 
 /**

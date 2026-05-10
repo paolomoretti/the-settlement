@@ -35,7 +35,7 @@ import { RABBIT_JUMP_DURATION_MS, type WildRabbit } from '@/wildlife/WildlifeCoo
 import { territoryKey } from '@/map/TerritoryCoordinator';
 import { createChimneySmoke, type ChimneySmoke } from '@/rendering/chimneySmoke';
 import { createLoFiFire, type LoFiFire } from '@/rendering/loFiFire';
-import { DEBUG, ROAD_RENDERING_MODE, USE_WORKER_V2 } from '@/debug/debugFlags';
+import { DEBUG, DEBUG_WATER_RENDER_LOG, ROAD_RENDERING_MODE, USE_WORKER_V2 } from '@/debug/debugFlags';
 import { paintWorkerFromLegacy } from '@/rendering/workerV2/WorkerBodyRenderer';
 import { getEnemyFactionStyle, getEntityFaction, isPlayerOwned } from '@/components/ownerUtils';
 
@@ -179,6 +179,9 @@ export class RenderSystem extends System {
    * every frame just before the entity sort.
    */
   private _workerFrontQuadrantBoost = new Map<number, number>();
+
+  /** Last signature for `DEBUG_WATER_RENDER_LOG` (avoid duplicate lines). */
+  private _waterRenderDiagLastSig = '';
 
   // Minimap
   private minimapCanvas: HTMLCanvasElement;
@@ -1860,12 +1863,13 @@ export class RenderSystem extends System {
     maxY: number;
   }): void {
     const segments = this.collectShorelineContourSegments(viewportBounds);
-    if (segments.length === 0) return;
-
-    const polylines = this.buildContourPolylines(segments);
-    if (polylines.length === 0) return;
+    const polylines = segments.length > 0 ? this.buildContourPolylines(segments) : [];
     const screenContours = polylines
-      .map(line => this.jitterClosedShoreline(this.simplifyShorelinePolyline(line, 12)))
+      .map(line =>
+        this.jitterClosedShoreline(
+          this.snapNearlyClosedScreenContour(this.simplifyShorelinePolyline(line, 12))
+        )
+      )
       .filter(line => line.length >= 2);
 
     this.ctx.save();
@@ -1881,7 +1885,28 @@ export class RenderSystem extends System {
     };
 
     const closedContours = screenContours.filter(line => this.isClosedScreenContour(line));
+    const hasWater = this.viewportHasExploredWater(viewportBounds);
+    const branch: 'contour' | 'atlas_fallback' | 'none' =
+      closedContours.length > 0 ? 'contour' : hasWater ? 'atlas_fallback' : 'none';
+
+    this.logWaterRenderDiagIfChanged({
+      viewportBounds,
+      segmentsLen: segments.length,
+      polylinesLen: polylines.length,
+      screenContoursLen: screenContours.length,
+      closedContoursLen: closedContours.length,
+      hasWater,
+      branch,
+    });
+
     if (closedContours.length > 0) {
+      // Per-tile atlas only as an underlay when some polylines stay open (viewport clip /
+      // simplification): fills holes. Smooth marching-squares stroke + pattern fill always
+      // run after so the vector layer stays visually on top.
+      if (hasWater && closedContours.length < screenContours.length) {
+        this.renderWaterTilesAsAtlasFallback(viewportBounds);
+      }
+
       drawContourPath(closedContours);
       this.ctx.strokeStyle = 'rgba(66, 112, 42, 0.58)';
       this.ctx.lineWidth = 6;
@@ -1894,9 +1919,130 @@ export class RenderSystem extends System {
       this.ctx.fill('evenodd');
 
       this.renderWaterDepthContourFills(viewportBounds);
+    } else if (hasWater) {
+      // Marching squares only emits edges between water and non-water. A viewport that is
+      // entirely water (lake interior) yields no segments; a clipped shore can yield open
+      // polylines only, so nothing closes. Per-tile atlas fill matches the pre-contour look.
+      this.renderWaterTilesAsAtlasFallback(viewportBounds);
     }
 
     this.ctx.restore();
+  }
+
+  private logWaterRenderDiagIfChanged(state: {
+    viewportBounds: { minX: number; maxX: number; minY: number; maxY: number };
+    segmentsLen: number;
+    polylinesLen: number;
+    screenContoursLen: number;
+    closedContoursLen: number;
+    hasWater: boolean;
+    branch: 'contour' | 'atlas_fallback' | 'none';
+  }): void {
+    if (!DEBUG_WATER_RENDER_LOG) return;
+
+    const { minX, maxX, minY, maxY } = state.viewportBounds;
+    let exploredWater = 0;
+    let fogWater = 0;
+    let firstExploredWater: { x: number; y: number } | null = null;
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        const tile = this.tileMap.getTile(x, y);
+        if (tile?.terrain !== 'water') continue;
+        if (tile.isExplored()) {
+          exploredWater++;
+          if (!firstExploredWater) firstExploredWater = { x, y };
+        } else {
+          fogWater++;
+        }
+      }
+    }
+
+    const sig = [
+      state.branch,
+      state.segmentsLen,
+      state.polylinesLen,
+      state.closedContoursLen,
+      state.hasWater,
+      exploredWater,
+      fogWater,
+      minX,
+      maxX,
+      minY,
+      maxY,
+      Math.round(this.camera.x),
+      Math.round(this.camera.y),
+      this.camera.zoom.toFixed(3),
+      this.canvas.width,
+      this.canvas.height,
+    ].join('|');
+
+    if (sig === this._waterRenderDiagLastSig) return;
+    this._waterRenderDiagLastSig = sig;
+
+    // eslint-disable-next-line no-console -- intentional debug aid (gated by DEBUG_WATER_RENDER_LOG)
+    console.log('[water-render]', {
+      wallMs: Math.round(performance.now()),
+      branch: state.branch,
+      contour: {
+        segments: state.segmentsLen,
+        polylines: state.polylinesLen,
+        screenContours: state.screenContoursLen,
+        closedContours: state.closedContoursLen,
+      },
+      hasWaterFlag: state.hasWater,
+      waterTilesInView: { explored: exploredWater, fog: fogWater },
+      firstExploredWater,
+      viewportTile: { minX, maxX, minY, maxY, w: maxX - minX + 1, h: maxY - minY + 1 },
+      camera: { x: this.camera.x, y: this.camera.y, zoom: this.camera.zoom },
+      canvasCssPx: { w: this.canvas.width, h: this.canvas.height },
+    });
+  }
+
+  private viewportHasExploredWater(viewportBounds: {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  }): boolean {
+    for (let y = viewportBounds.minY; y <= viewportBounds.maxY; y++) {
+      for (let x = viewportBounds.minX; x <= viewportBounds.maxX; x++) {
+        const tile = this.tileMap.getTile(x, y);
+        if (tile?.isExplored() && tile.terrain === 'water') return true;
+      }
+    }
+    return false;
+  }
+
+  private shouldUseLinearizedWaterAtlas(gx: number, gy: number): boolean {
+    const cfg = this.getWaterConfig(gx, gy);
+    if (cfg === 255) return false;
+    const card = cfg & 0xf;
+    return this.popcountNibble(card) === 2 && this.isLinearizedWaterHalfShore(gx, gy, card);
+  }
+
+  private renderWaterTilesAsAtlasFallback(viewportBounds: {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  }): void {
+    for (let y = viewportBounds.minY; y <= viewportBounds.maxY; y++) {
+      for (let x = viewportBounds.minX; x <= viewportBounds.maxX; x++) {
+        const tile = this.tileMap.getTile(x, y);
+        if (!tile?.isExplored() || tile.terrain !== 'water') continue;
+        const center = this.iso.gridToScreen(x, y);
+        const config = this.getWaterConfig(x, y);
+        this.terrainTextures.drawWater(
+          this.ctx,
+          config,
+          x,
+          y,
+          center.x,
+          center.y,
+          this.shouldUseLinearizedWaterAtlas(x, y)
+        );
+      }
+    }
   }
 
   private renderWaterDepthContourFills(viewportBounds: {
@@ -1934,6 +2080,24 @@ export class RenderSystem extends System {
       this.ctx.fillStyle = band.color;
       this.ctx.fill('evenodd');
     }
+  }
+
+  /** Squared distance below this ⇒ treat polyline as closed (simplify/jitter drift). */
+  private static readonly SHORELINE_NEAR_CLOSED_SQ = 2.5 * 2.5;
+
+  /**
+   * `simplifyShorelinePolyline` can leave the ring slightly open in screen px; jitter
+   * only runs on closed rings. Snap so nearly-closed paths qualify.
+   */
+  private snapNearlyClosedScreenContour(points: GridPoint[]): GridPoint[] {
+    if (points.length < 3) return points;
+    const first = points[0]!;
+    const last = points[points.length - 1]!;
+    const dx = last.x - first.x;
+    const dy = last.y - first.y;
+    if (dx * dx + dy * dy > RenderSystem.SHORELINE_NEAR_CLOSED_SQ) return points;
+    const ring = points.length >= 4 ? points.slice(0, -1) : points;
+    return [...ring, { x: first.x, y: first.y }];
   }
 
   private isClosedScreenContour(points: GridPoint[]): boolean {

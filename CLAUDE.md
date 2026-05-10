@@ -6,6 +6,23 @@ A browser-based city-building game heavily inspired by Settlers of Catan / The S
 
 - **Never start a dev server** (`npm run dev`, `npm run preview`, etc.) — the user will start servers manually when needed.
 
+## Gameplay logic, documentation, and tests
+
+Whenever you **change or fix how the game behaves** (simulation rules, not only visuals or copy), you must leave the repo in a state the next agent can trust.
+
+1. **Update `.claude/` documentation** for the behavior you touched. At minimum, keep the right topic file accurate and link it from this guide if it is a new surface area. Pay extra attention when editing:
+   - **Transport & economy** — production, storage, relay, road segments, segment workers, `GameWorkerRegistry` dispatch (see [.claude/TRANSPORT.md](.claude/TRANSPORT.md), [.claude/ECONOMICS_RUNTIME.md](.claude/ECONOMICS_RUNTIME.md), [.claude/ROAD_WORKER_DISPATCH.md](.claude/ROAD_WORKER_DISPATCH.md), [.claude/BUILDING_DEPENDENCIES.md](.claude/BUILDING_DEPENDENCIES.md), etc.).
+   - **Military** — assembly, march, garrison, attacks, promotions (see [.claude/MILITARY.md](.claude/MILITARY.md), [.claude/MILITARY_ATTACKS.md](.claude/MILITARY_ATTACKS.md), …).
+   - **Territory & boundaries** — fog, cordon, interior build rules, enemy realms (see [.claude/TERRITORY_VISION.md](.claude/TERRITORY_VISION.md), [.claude/ENEMY_REALMS.md](.claude/ENEMY_REALMS.md), …).
+
+2. **Add or extend automated tests** that would have caught the bug or lock in the new rule (Vitest: `src/**/*.spec.ts`). Prefer focused specs next to the code they protect (e.g. `src/workers/roadWorker*.spec.ts`, `src/economics/roadSegments.*.spec.ts`). If a full browser flow is impractical, still add a **unit-level** test for the pure logic.
+
+3. **Run checks before you finish** — from the repo root:
+   - `npm run test` — full suite must pass.
+   - `npm run typecheck` — required when TypeScript sources or config change.
+
+Skimping on docs or tests for these domains is how regressions slip back in (e.g. transport paths vs road-worker validation).
+
 ## Tech Stack
 
 - **Language:** TypeScript (strict mode)
@@ -39,9 +56,11 @@ debug.html      - **Standalone catalogue** page (Vite multi-page entry); open `/
 ## Key Commands
 
 ```bash
-npm run dev      # Start dev server
-npm run build    # Production build
-npm run preview  # Preview production build
+npm run dev        # Start dev server
+npm run build      # Production build
+npm run preview    # Preview production build
+npm run test       # Vitest — run after gameplay / economics / transport / military / territory changes
+npm run typecheck  # TypeScript — run when TS or build config changes
 ```
 
 ## Architecture Notes
@@ -101,7 +120,7 @@ Not yet implemented: tool requirements for workers, mine food system (bread/fish
 - [Street planning & vector roads](.claude/STREET_PLANNING_AND_RENDERING.md) - **Shift A-to-B road planning + vector road visuals** — buildable-road A\*, batch placement, mask-derived curved road drawing, worker visual alignment
 - [Debug asset catalogue](.claude/DEBUG_CATALOGUE.md) - **`/debug.html`** — building sprite maps + worker preview grid; **must stay in sync** when adding/changing building PNGs, construction/production frames, or new worker visual cases
 
-**Convention**: Every time new logic is added to the game, document it in `.claude/` and reference it here. Future agents and chats rely on these docs to understand how systems work without re-explanation.
+**Convention**: Every time **gameplay logic** changes, follow **[Gameplay logic, documentation, and tests](#gameplay-logic-documentation-and-tests)** — update the relevant `.claude/` topic(s), add or extend **Vitest** coverage, run **`npm run test`** (and **`npm run typecheck`** when TS changes), and fix failures before considering the work done. For new systems, also add a bullet under **Documentation** above. Future agents rely on these docs and tests to avoid re-breaking transport, economy, military, and territory behavior.
 
 **Art & worker visuals:** Whenever you add or change **building sprites** (final, `*_build_*`, `*_prod_*`) or **worker drawing / new poses / roles** you expect to review visually, also update the debug catalogue per [.claude/DEBUG_CATALOGUE.md](.claude/DEBUG_CATALOGUE.md) so `debug.html` stays truthful.
 

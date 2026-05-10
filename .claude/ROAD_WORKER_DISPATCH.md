@@ -22,8 +22,8 @@ When a segment job ends (reconcile `onFreeWorker`, validation, or heal):
    - Missing / broken segment assignment → `freeSegmentWorker`.
    - **Idle** on a cell that is not `hasRoad && walkable` (stale path finished on grass) → `freeSegmentWorker`.
    - **Moving:** any **remaining** waypoint fails the same `hasRoad && walkable` rule as `PathFinder.findPath` → `freeSegmentWorker` (abort stale tail before walking onto deleted tiles).
-   - **Idle** on-road but off current `getCenterRestPosition` → `moveSegmentWorker`.
-   - **Moving** with valid waypoints but path end far from current rest (e.g. post–T-merge) → `moveSegmentWorker`.
+   - **Idle** on-road but off current `getCenterRestPosition` → `moveSegmentWorker` **only when not** `transportTask` (otherwise the goal is building pickup / dropoff, not segment rest).
+   - **Moving** with valid waypoints but path end far from segment rest → `moveSegmentWorker` **only when not** `transportTask` (same reason — transport paths end at endpoints, not the corridor center).
 3. **`enforceRoadSegmentWorkerRegistryConsistency`** — Orphan ids in `roadSegmentWorkers` not listed as any segment’s `assignedWorkerId` → `freeSegmentWorker`. If a connected segment has no worker and no road workers are homing, `scheduleRoadFillCheck?.()` (avoids stacking spawns while returns are in flight).
 4. **`processHqStreetEntries`** — On release, rebuild HQ→segment path with `buildHqToSegmentRestStreetPath(segment)` (do not replay the queued snapshot).
 5. **`healRoadDispatchStaleAssignments`** — Throttled (~`ROAD_DISPATCH_HEAL_INTERVAL_MS`): same assignment/tile integrity checks as a backup when recalc lags behind edits.
@@ -42,6 +42,7 @@ When a segment job ends (reconcile `onFreeWorker`, validation, or heal):
 |------|--------|
 | `roadWorkerSpawnNoPile.spec.ts` | Strip + restore single corridor; no second spawn while first homing |
 | `roadWorkerTmergeDuty.spec.ts` | T-junction merge, duty rest sync, mid-walk abort on deleted spine |
+| `roadWorkerTransportPathRegression.spec.ts` | `transportTask` + segment carrier: pickup path must not be replaced by duty `moveSegmentWorker` |
 | `roadWorkerStaleDispatch.spec.ts` | Pending / moving / heal vs debounced recalc |
 | `roadWorkerReturn.spec.ts` | Population reserved until HQ conceal completes |
 | `roadWorkerCorridorCount.spec.ts` | Orphan carriers after T → line |

@@ -428,6 +428,7 @@ export class GameWorkerRegistry {
   /**
    * Sync `roadSegmentWorkers` with the live map: broken assignment, stale duty paths, idle
    * off-road after edits, and post-merge rest drift (see `.claude/ROAD_WORKER_DISPATCH.md`).
+   * When `transportTask` is set, the walker’s goal is pickup/dropoff — skip duty-rest realignment.
    */
   private validateMovingRoadSegmentCarriers(): void {
     /** Match `moveSegmentWorker` “already at duty rest” tolerance (grid coords). */
@@ -458,6 +459,8 @@ export class GameWorkerRegistry {
       }
 
       const tileMap = this.world.getTileMap();
+      /** Segment peasants also run `transportTask`; path goal is then pickup/dropoff, not duty rest. */
+      const onTransportDuty = workerComp?.transportTask != null;
 
       if (!movable?.isMoving) {
         const { tx, ty } = this.roadDutyGridCell(pos.x, pos.y);
@@ -465,7 +468,7 @@ export class GameWorkerRegistry {
           this.freeSegmentWorker(workerId);
           continue;
         }
-        if (Math.hypot(pos.x - rest.x, pos.y - rest.y) > dutyRestEps) {
+        if (!onTransportDuty && Math.hypot(pos.x - rest.x, pos.y - rest.y) > dutyRestEps) {
           this.moveSegmentWorker(workerId, seg);
         }
         continue;
@@ -476,9 +479,11 @@ export class GameWorkerRegistry {
           this.freeSegmentWorker(workerId);
           continue;
         }
-        const end = movable.path[movable.path.length - 1]!;
-        if (Math.hypot(end.x - rest.x, end.y - rest.y) > pathGoalEps) {
-          this.moveSegmentWorker(workerId, seg);
+        if (!onTransportDuty) {
+          const end = movable.path[movable.path.length - 1]!;
+          if (Math.hypot(end.x - rest.x, end.y - rest.y) > pathGoalEps) {
+            this.moveSegmentWorker(workerId, seg);
+          }
         }
       }
     }

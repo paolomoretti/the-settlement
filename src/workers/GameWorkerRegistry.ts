@@ -34,6 +34,8 @@ import type {
 import type { WildlifeCoordinator } from '@/wildlife/WildlifeCoordinator';
 
 const HQ_STREET_DISPATCH_SPACING_MS = 500;
+/** Throttle for self-healing road carriers vs stale segment / pending dispatch state. */
+const ROAD_DISPATCH_HEAL_INTERVAL_MS = 750;
 
 type PendingHqStreetEntry = {
   entity: Entity;
@@ -151,6 +153,7 @@ export class GameWorkerRegistry {
   private readonly explorerWorkers = new Set<number>();
   private readonly pendingHqStreetEntries: PendingHqStreetEntry[] = [];
   private nextHqStreetDispatchAtMs = 0;
+  private lastRoadDispatchHealAtMs = 0;
   /** Workers entering HQ, concealed briefly before removal for visual feedback (workerId → removal timestamp). */
   private readonly workersEnteringHq = new Map<number, number>();
 
@@ -307,6 +310,221 @@ export class GameWorkerRegistry {
     });
   }
 
+  /**
+   * Removes queued HQ→road releases for this entity so a stale path is never applied
+   * after the destination segment was cancelled (e.g. road deleted while concealed).
+   */
+  private cancelPendingHqStreetEntriesForEntity(entity: Entity): void {
+    for (let i = this.pendingHqStreetEntries.length - 1; i >= 0; i--) {
+      const entry = this.pendingHqStreetEntries[i]!;
+      if (entry.entity.id !== entity.id) continue;
+      this.pendingHqStreetEntries.splice(i, 1);
+      entry.onRelease?.();
+    }
+  }
+
+  /**
+   * Cheap safety pass: road segment workers whose segment vanished from the manager,
+   * or whose segment tiles no longer form a valid open-road corridor, are sent home
+   * the same way as an explicit `freeSegmentWorker` from segment reconcile.
+   */
+  private healRoadDispatchStaleAssignments(): void {
+    const now = this.world.getSimulationNowMs();
+    const dt = now - this.lastRoadDispatchHealAtMs;
+    if (dt >= 0 && dt < ROAD_DISPATCH_HEAL_INTERVAL_MS) return;
+    this.lastRoadDispatchHealAtMs = now;
+
+    for (const workerId of [...this.roadSegmentWorkers]) {
+      const seg = roadSegmentManager.getSegmentForWorker(workerId);
+      if (!seg || !this.isRoadSegmentDispatchIntact(seg, workerId)) {
+        this.freeSegmentWorker(workerId);
+      }
+    }
+  }
+
+  /** True when every segment tile is still an open (unoccupied) road on the live map. */
+  private isRoadSegmentDispatchIntact(segment: RoadSegment, workerId: number): boolean {
+    if (segment.assignedWorkerId !== workerId) return false;
+    const tileMap = this.world.getTileMap();
+    return segment.tiles.every(t => {
+      const tile = tileMap.getTile(t.x, t.y);
+      return Boolean(tile?.hasRoad && !tile.isOccupied());
+    });
+  }
+
+  /** Same walkability rule as `PathFinder.findPath` (road-only grid). */
+  private isRoadDutyWalkableCell(tileMap: TileMap, x: number, y: number): boolean {
+    const tile = tileMap.getTile(x, y);
+    return Boolean(tile && tile.hasRoad && tile.walkable);
+  }
+
+  private roadDutyGridCell(x: number, y: number): { tx: number; ty: number } {
+    return { tx: Math.floor(x + 1e-9), ty: Math.floor(y + 1e-9) };
+  }
+
+  /** Any remaining duty waypoint is off the current road grid (map changed after path was built). */
+  private roadSegmentDutyRemainingPathBroken(tileMap: TileMap, movable: Movable): boolean {
+    for (let i = movable.currentPathIndex; i < movable.path.length; i++) {
+      const p = movable.path[i]!;
+      const { tx, ty } = this.roadDutyGridCell(p.x, p.y);
+      if (!this.isRoadDutyWalkableCell(tileMap, tx, ty)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * HQ→segment rest polyline using the **current** tile map (must match `spawnSegmentWorker` logic).
+   */
+  private buildHqToSegmentRestStreetPath(segment: RoadSegment): Position[] {
+    const rest = roadSegmentManager.getCenterRestPosition(segment);
+    const near = roadSegmentManager.nearestSegmentTileToPoint(segment, rest.x, rest.y);
+    const hqDispatch = this.findNearestHqForPosition(rest.x, rest.y);
+    const spawnTile = hqDispatch?.spawnTile ?? this.findBaseCampSpawnTile();
+    const tileMap = this.world.getTileMap();
+    const pathFinder = this.world.getPathFinder();
+    const spawnX = spawnTile?.x ?? rest.x;
+    const spawnY = spawnTile?.y ?? rest.y;
+
+    let streetPath: Position[] = [];
+    if (spawnTile && (spawnX !== near.x || spawnY !== near.y)) {
+      let path = pathFinder.findPath(
+        new Position(spawnX, spawnY),
+        new Position(near.x, near.y),
+        tileMap
+      );
+      if (path.length > 0) {
+        const endX = path[path.length - 1]!.x;
+        const endY = path[path.length - 1]!.y;
+        if (Math.hypot(endX - rest.x, endY - rest.y) > 1e-3) {
+          path = [...path, new Position(rest.x, rest.y)];
+        }
+        streetPath = path;
+      }
+    } else if (Math.hypot(spawnX - rest.x, spawnY - rest.y) > 1e-3) {
+      streetPath = [new Position(rest.x, rest.y)];
+    }
+    return streetPath;
+  }
+
+  /**
+   * Runs every frame **before** `processHqStreetEntries`. Segment recalc is often debounced in `Game`,
+   * so the tile map can change while a road worker is still queued — cancel stale dispatch immediately.
+   */
+  private validatePendingRoadSegmentDispatch(): void {
+    for (let i = this.pendingHqStreetEntries.length - 1; i >= 0; i--) {
+      const entry = this.pendingHqStreetEntries[i]!;
+      const wid = entry.entity.id;
+      if (!this.roadSegmentWorkers.has(wid)) continue;
+
+      const seg = roadSegmentManager.getSegmentForWorker(wid);
+      if (!seg || !this.isRoadSegmentDispatchIntact(seg, wid)) {
+        this.pendingHqStreetEntries.splice(i, 1);
+        entry.onRelease?.();
+        this.freeSegmentWorker(wid);
+      }
+    }
+  }
+
+  /**
+   * Sync `roadSegmentWorkers` with the live map: broken assignment, stale duty paths, idle
+   * off-road after edits, and post-merge rest drift (see `.claude/ROAD_WORKER_DISPATCH.md`).
+   */
+  private validateMovingRoadSegmentCarriers(): void {
+    /** Match `moveSegmentWorker` “already at duty rest” tolerance (grid coords). */
+    const dutyRestEps = 0.04;
+    /** Path waypoints can float slightly vs `getCenterRestPosition` fractional rest. */
+    const pathGoalEps = 0.08;
+
+    for (const workerId of [...this.roadSegmentWorkers]) {
+      if (this.returningWorkers.has(workerId)) continue;
+
+      const entity = this.world.getEntities().find(e => e.id === workerId && e.active);
+      if (!entity) continue;
+      const movable = entity.getComponent(Movable);
+      const workerComp = entity.getComponent(Worker);
+      const pos = entity.getComponent(Position);
+      if (!pos) continue;
+
+      const seg = roadSegmentManager.getSegmentForWorker(workerId);
+      if (!seg || !this.isRoadSegmentDispatchIntact(seg, workerId)) {
+        this.freeSegmentWorker(workerId);
+        continue;
+      }
+
+      const rest = roadSegmentManager.getCenterRestPosition(seg);
+
+      if (workerComp?.concealedInBuildingId != null) {
+        continue;
+      }
+
+      const tileMap = this.world.getTileMap();
+
+      if (!movable?.isMoving) {
+        const { tx, ty } = this.roadDutyGridCell(pos.x, pos.y);
+        if (!this.isRoadDutyWalkableCell(tileMap, tx, ty)) {
+          this.freeSegmentWorker(workerId);
+          continue;
+        }
+        if (Math.hypot(pos.x - rest.x, pos.y - rest.y) > dutyRestEps) {
+          this.moveSegmentWorker(workerId, seg);
+        }
+        continue;
+      }
+
+      if (movable.path.length > 0) {
+        if (this.roadSegmentDutyRemainingPathBroken(tileMap, movable)) {
+          this.freeSegmentWorker(workerId);
+          continue;
+        }
+        const end = movable.path[movable.path.length - 1]!;
+        if (Math.hypot(end.x - rest.x, end.y - rest.y) > pathGoalEps) {
+          this.moveSegmentWorker(workerId, seg);
+        }
+      }
+    }
+  }
+
+  /**
+   * Each road segment may list at most one `assignedWorkerId`. The `roadSegmentWorkers`
+   * set must match that set exactly (plus workers already walking home). After merges
+   * (e.g. a T-junction removed so two legs become one corridor), reconcile can leave
+   * **orphan** carrier ids in `roadSegmentWorkers` — they never receive `onFreeWorker`
+   * because their old segment object vanished. Send those orphans home.
+   *
+   * Under-staffed HQ-connected segments are kicked to the game's fill pass.
+   */
+  private enforceRoadSegmentWorkerRegistryConsistency(): void {
+    const segments = roadSegmentManager.getSegments();
+    const claimed = new Set<number>();
+    for (const seg of segments) {
+      const id = seg.assignedWorkerId;
+      if (id == null) continue;
+      const alive = this.world.getEntities().some(e => e.id === id && e.active);
+      if (alive) claimed.add(id);
+    }
+
+    for (const wid of [...this.roadSegmentWorkers]) {
+      if (this.returningWorkers.has(wid)) continue;
+      if (claimed.has(wid)) continue;
+      this.freeSegmentWorker(wid);
+    }
+
+    const connected = this.world.getBaseCampConnectedRoads();
+    const missingStaffedConnectedSegment = segments.some(
+      s =>
+        s.assignedWorkerId === null &&
+        s.tiles.some(t => connected.has(`${t.x},${t.y}`))
+    );
+    // Avoid hammering `Game.scheduleRoadFillCheck` while road workers are still homing —
+    // that extra `recalculate` tended to stack spawns on top of the same corridor.
+    if (
+      missingStaffedConnectedSegment &&
+      this.countPlayerWorkerIds(this.returningRoadWorkers) === 0
+    ) {
+      this.world.scheduleRoadFillCheck?.();
+    }
+  }
+
   private processHqStreetEntries(): void {
     const now = getSimulationNowMs();
     for (let i = this.pendingHqStreetEntries.length - 1; i >= 0; i--) {
@@ -323,8 +541,28 @@ export class GameWorkerRegistry {
       if (typeof entry.speed === 'number') {
         releaseMovable.speed = entry.speed;
       }
-      if (entry.path.length > 0) {
-        releaseMovable.setPath(entry.path);
+
+      const wid = entry.entity.id;
+      let pathToApply: Position[];
+      if (this.roadSegmentWorkers.has(wid)) {
+        const seg = roadSegmentManager.getSegmentForWorker(wid);
+        if (!seg || !this.isRoadSegmentDispatchIntact(seg, wid)) {
+          entry.onRelease?.();
+          this.freeSegmentWorker(wid);
+          continue;
+        }
+        pathToApply = this.buildHqToSegmentRestStreetPath(seg);
+        if (pathToApply.length === 0) {
+          entry.onRelease?.();
+          this.freeSegmentWorker(wid);
+          continue;
+        }
+      } else {
+        pathToApply = entry.path;
+      }
+
+      if (pathToApply.length > 0) {
+        releaseMovable.setPath(pathToApply);
         releaseWorker.setState('walking');
       }
       entry.onRelease?.();
@@ -539,7 +777,11 @@ export class GameWorkerRegistry {
   }
 
   updateConstructionDelivery(): void {
+    this.validatePendingRoadSegmentDispatch();
+    this.validateMovingRoadSegmentCarriers();
+    this.enforceRoadSegmentWorkerRegistryConsistency();
     this.processHqStreetEntries();
+    this.healRoadDispatchStaleAssignments();
     const entities = [...this.world.getEntities()];
     const tileMap = this.world.getTileMap();
     const pathFinder = this.world.getPathFinder();
@@ -793,6 +1035,8 @@ export class GameWorkerRegistry {
         this.spawnToolWorker(entity, buildingDef.requiredTool as string);
       }
     }
+
+    this.enforceRoadSegmentWorkerRegistryConsistency();
   }
 
   updateBuilderPatrol(): void {
@@ -1967,6 +2211,7 @@ export class GameWorkerRegistry {
     this.explorerWorkers.clear();
     this.pendingHqStreetEntries.length = 0;
     this.nextHqStreetDispatchAtMs = 0;
+    this.lastRoadDispatchHealAtMs = 0;
   }
 
   private spawnSegmentWorker(segment: RoadSegment): number | null {
@@ -1982,26 +2227,34 @@ export class GameWorkerRegistry {
       );
       return null;
     }
-    // Count road workers currently walking back to HQ — their population slots are
-    // about to be freed.  We allow spawning against that headroom so a segment that
-    // lost its worker due to a road edit can be filled immediately rather than waiting
-    // until the returning worker physically arrives.
-    const returningRoadBonus = this.countPlayerWorkerIds(this.returningRoadWorkers);
+    const hqConnectedSegmentCount = roadSegmentManager
+      .getSegmentsGraphForWorkerCallbacks()
+      .filter(s => s.tiles.some(t => connectedRoads.has(`${t.x},${t.y}`))).length;
+
+    const carrying = this.countPlayerWorkerIds(this.roadSegmentWorkers);
+    const returningRoad = this.countPlayerWorkerIds(this.returningRoadWorkers);
+
+    // One HQ-connected corridor, nobody assigned yet, but a road worker is already homing —
+    // do not spawn another (population slot can still look "available").
+    if (
+      hqConnectedSegmentCount === 1 &&
+      carrying === 0 &&
+      returningRoad > 0
+    ) {
+      return null;
+    }
+
     const available = this.world.getAvailablePeasantSlotCount();
-    if (available + returningRoadBonus <= 0) {
+    if (available <= 0) {
       console.warn(
-        `[RoadWorker] seg#${segment.id} spawn blocked — population full.` +
-          ` available=${available}, returningRoadBonus=${returningRoadBonus}`
+        `[RoadWorker] seg#${segment.id} spawn blocked — population full.` + ` available=${available}`
       );
       return null;
     }
 
     const rest = roadSegmentManager.getCenterRestPosition(segment);
-    const near = roadSegmentManager.nearestSegmentTileToPoint(segment, rest.x, rest.y);
     const hqDispatch = this.findNearestHqForPosition(rest.x, rest.y);
     const spawnTile = hqDispatch?.spawnTile ?? this.findBaseCampSpawnTile();
-    const tileMap = this.world.getTileMap();
-    const pathFinder = this.world.getPathFinder();
 
     const spawnX = spawnTile?.x ?? rest.x;
     const spawnY = spawnTile?.y ?? rest.y;
@@ -2009,24 +2262,7 @@ export class GameWorkerRegistry {
     const worker = createWorker(spawnX, spawnY);
     this.world.addEntity(worker);
 
-    let streetPath: Position[] = [];
-    if (spawnTile && (spawnX !== near.x || spawnY !== near.y)) {
-      let path = pathFinder.findPath(
-        new Position(spawnX, spawnY),
-        new Position(near.x, near.y),
-        tileMap
-      );
-      if (path.length > 0) {
-        const endX = path[path.length - 1]!.x;
-        const endY = path[path.length - 1]!.y;
-        if (Math.hypot(endX - rest.x, endY - rest.y) > 1e-3) {
-          path = [...path, new Position(rest.x, rest.y)];
-        }
-        streetPath = path;
-      }
-    } else if (Math.hypot(spawnX - rest.x, spawnY - rest.y) > 1e-3) {
-      streetPath = [new Position(rest.x, rest.y)];
-    }
+    const streetPath = this.buildHqToSegmentRestStreetPath(segment);
 
     if (spawnTile) {
       this.queueHqStreetEntry(worker, streetPath, { hqEntity: hqDispatch?.hqEntity });
@@ -2056,6 +2292,8 @@ export class GameWorkerRegistry {
     const entities = [...this.world.getEntities()];
     const entity = entities.find(e => e.id === workerId && e.active);
     if (!entity) return;
+
+    this.cancelPendingHqStreetEntriesForEntity(entity);
 
     const workerComp = entity.getComponent(Worker);
     if (workerComp?.transportTask) {
@@ -2102,6 +2340,24 @@ export class GameWorkerRegistry {
         }
       }
       workerComp.transportTask = null;
+    }
+
+    const movableEarly = entity.getComponent(Movable);
+    if (
+      workerComp &&
+      workerComp.concealedInBuildingId != null &&
+      movableEarly &&
+      !movableEarly.isMoving &&
+      movableEarly.path.length === 0
+    ) {
+      // Still inside HQ concealment and never received a path — job cancelled before dispatch.
+      workerComp.concealedInBuildingId = null;
+      this.world.removeEntity(entity);
+      return;
+    }
+
+    if (workerComp?.concealedInBuildingId != null) {
+      workerComp.concealedInBuildingId = null;
     }
 
     const pos = entity.getComponent(Position);

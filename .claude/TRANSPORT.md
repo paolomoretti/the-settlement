@@ -2,7 +2,7 @@
 
 How road segments are computed and workers are assigned to them. Settlers II style: every segment of road gets exactly one worker standing at its center.
 
-**Last Updated**: 2026-04-20
+**Last Updated**: 2026-05-10
 
 ---
 
@@ -43,33 +43,17 @@ Road neighbors use **4-directional** (cardinal only) to match the pathfinding sy
 
 ### Lifecycle
 
-1. Player places a road tile
-2. `RoadSegmentManager.recalculate()` computes new segments
-3. New segments are compared with old segments:
-   - **Exact match** (same tiles) → keep existing worker
-   - **Fuzzy match** (most tile overlap) → reuse worker, pathfind to new center
-   - **No match** → spawn new worker from base camp
-4. Old segments with no matching new segment → worker walks back to base camp and is removed on arrival
+1. Player edits roads; `Game` debounces then calls `RoadSegmentManager.recalculate()`.
+2. `reconcile` compares old and new segments (exact fingerprint, fuzzy overlap, reassign freed workers, spawn, free) — see `RoadSegmentManager.ts`.
+3. Between recalcs, `GameWorkerRegistry.updateConstructionDelivery` validates queued and moving carriers against the **live** map (stale paths, T-merge duty, mid-walk onto deleted tiles). Details: [.claude/ROAD_WORKER_DISPATCH.md](ROAD_WORKER_DISPATCH.md).
 
 ### Spawning
 
-When a new segment needs a worker:
-
-1. Check available population (`population.current - roadWorkerCount - returningWorkerCount`)
-2. If no population available, segment gets no worker
-3. Find the road tile cardinally adjacent to the base camp entrance
-4. Create worker entity there
-5. Pathfind to the segment's center tile
-6. Worker walks there and stays
+Handled by `GameWorkerRegistry.spawnSegmentWorker` (population, HQ concealment queue, HQ→segment path). Spawns only on HQ-connected segments; reconcile-time graph uses `getSegmentsGraphForWorkerCallbacks()` so corridor counts stay correct during `reconcile`.
 
 ### Freeing (Road Deletion)
 
-When a road is deleted and a segment's worker is freed:
-
-1. Worker pathfinds from their current position back to the base camp entrance
-2. Worker walks along the remaining road network
-3. On arrival at base camp, the worker entity is removed and population is restored
-4. If no path exists (stranded), worker is removed immediately
+`freeSegmentWorker`: nearest reachable road (within 8 tiles) then path to HQ entrance, or off-road fallback; entity removed only if no path exists. Per-frame validation can **abort** a duty walk early if remaining waypoints are no longer valid roads, so workers reroute home instead of finishing a stale polyline onto grass.
 
 ### Center Tile
 
@@ -77,11 +61,7 @@ The center of a segment is `tiles[Math.floor(tiles.length / 2)]` — the middle 
 
 ### Population Cost
 
-Each road worker (active or returning) reduces available population by 1. The formula:
-
-```
-availablePopulation = population.current - roadSegmentManager.getWorkerCount() - returningWorkers.size
-```
+Road-segment peasants in `roadSegmentWorkers` and other reserved roles (returning workers, builders in transit, etc.) reduce `getAvailablePeasantSlotCount()` — see `GameWorkerRegistry` and `Game.getAvailablePopulation`; do not use `roadSegmentManager.getWorkerCount()` alone for UI slots.
 
 ---
 

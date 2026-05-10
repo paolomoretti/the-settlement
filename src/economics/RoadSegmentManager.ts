@@ -16,6 +16,8 @@ export interface RoadSegment {
 
 export class RoadSegmentManager {
   private segments: RoadSegment[] = [];
+  /** During `reconcile`, worker callbacks run before `this.segments` is swapped to the new graph. */
+  private reconcileCallbackSegmentGraph: RoadSegment[] | null = null;
   private roadTiles: Set<string> = new Set();
   private nextSegmentId = 1;
 
@@ -43,6 +45,14 @@ export class RoadSegmentManager {
 
   getSegments(): RoadSegment[] {
     return this.segments;
+  }
+
+  /**
+   * Segment list that matches the map **after** the current `recalculate` pass, including
+   * while `reconcile` spawn/move/free callbacks are running (where `getSegments()` is still stale).
+   */
+  getSegmentsGraphForWorkerCallbacks(): RoadSegment[] {
+    return this.reconcileCallbackSegmentGraph ?? this.segments;
   }
 
   getWorkerCount(): number {
@@ -275,6 +285,15 @@ export class RoadSegmentManager {
   }
 
   private reconcile(oldSegments: RoadSegment[], newSegments: RoadSegment[]): void {
+    this.reconcileCallbackSegmentGraph = newSegments;
+    try {
+      this.reconcileInner(oldSegments, newSegments);
+    } finally {
+      this.reconcileCallbackSegmentGraph = null;
+    }
+  }
+
+  private reconcileInner(oldSegments: RoadSegment[], newSegments: RoadSegment[]): void {
     // Build fingerprint map for exact matches (workers-only — null-worker segments
     // are not in this map and fall through to spawn attempts below).
     const oldByFingerprint = new Map<string, RoadSegment>();
@@ -385,6 +404,7 @@ export class RoadSegmentManager {
 
   reset(): void {
     this.segments = [];
+    this.reconcileCallbackSegmentGraph = null;
     this.roadTiles.clear();
     this.nextSegmentId = 1;
   }

@@ -70,6 +70,13 @@ function projectAssetsFromRoot(root: string): Plugin {
 }
 
 export default defineConfig({
+  test: {
+    environment: 'node',
+    include: ['src/**/*.spec.ts'],
+    setupFiles: ['src/test/vitest.setup.ts'],
+    /** `roadSegmentManager` is a singleton; run spec files sequentially to avoid cross-test races. */
+    fileParallelism: false,
+  },
   plugins: [projectAssetsFromRoot(__dirname)],
   resolve: {
     alias: {

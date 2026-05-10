@@ -66,7 +66,8 @@ Not yet implemented: tool requirements for workers, mine food system (bread/fish
 ## Documentation
 
 - [Economics Runtime](.claude/ECONOMICS_RUNTIME.md) - **How production, storage, and transport work** — the core game economics system
-- [Transport & Road Workers](.claude/TRANSPORT.md) - **Road segments, worker assignment, item carrying, production buffer pickup** — segment graph, `tryStartTransport` / `Game.ts` pitfalls (junction vs `building` endpoints, `pendingBuildingPickups`, route healing)
+- [Transport & Road Workers](.claude/TRANSPORT.md) - **Road segments, item carrying, production buffer pickup** — segment graph, `tryStartTransport` / `Game.ts` pitfalls (junction vs `building` endpoints, `pendingBuildingPickups`, route healing)
+- [Road worker dispatch](.claude/ROAD_WORKER_DISPATCH.md) - **HQ segment peasants** — `updateConstructionDelivery` validation, homing, T-merge / stale-path behavior, `reconcile` spawn graph
 - [Economy Design](.claude/ECONOMY_DESIGN.md) - Game design goals, balance theory, production chains, tech progression
 - [Data System](.claude/DATA_SYSTEM.md) - Data layer: resources.json, buildings.json, `GAME_CONFIG`, DataManager
 - [Game Configuration](.claude/GAME_CONFIGURATION.md) - **Central gameplay tuning object** — starting resources, HQ territory radius, and convention for moving new balance knobs into `src/config/gameConfig.ts`

@@ -5,6 +5,9 @@ node_modules/
 dist/
 *.local
 
+# Accidental / scratch copies (not the real repo-root `assets/`)
+dummy-non-existing-folder/
+
 # Editor
 .vscode/
 .idea/

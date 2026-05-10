@@ -237,7 +237,13 @@
     "name": "Hunter's Hut",
     "description": "Hunts wild rabbits and returns with ham.",
     "size": { "width": 2, "height": 2 },
-    "visual": { "buildingHeight": 50, "color": "#6b4423" },
+    "visual": { 
+      "buildingHeight": 50, 
+      "color": "#6b4423", 
+      "spriteScale": 1.25,
+      "offsetX": -2,
+      "offsetY": 1
+    },
     "buildCost": { "wood_plank": 2 },
     "buildTime": 25,
     "requiresRoad": true,

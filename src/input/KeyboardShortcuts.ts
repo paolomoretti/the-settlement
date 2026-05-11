@@ -31,6 +31,8 @@ export const SHORTCUT_BINDINGS: ShortcutBinding[] = [
   { key: 'Arrow Down', description: 'Pan down', category: 'navigation' },
   { key: 'Arrow Left', description: 'Pan left', category: 'navigation' },
   { key: 'Arrow Right', description: 'Pan right', category: 'navigation' },
+  { key: '-', description: 'Zoom out', category: 'navigation' },
+  { key: '+ / =', description: 'Zoom in', category: 'navigation' },
   {
     key: 'V',
     description: 'Return to view mode / Close dialog (same as Escape)',
@@ -202,6 +204,21 @@ export function setupKeyboardShortcuts(game: Game): void {
     if (inputSystem.getMode() !== 'view') return;
     e.preventDefault();
     renderSystem.moveCamera(-PAN_STEP, 0);
+  });
+
+  // - / + / = — Zoom
+  hotkeys('-', e => {
+    if (isModalOpen()) return;
+    if (inputSystem.getMode() !== 'view') return;
+    e.preventDefault();
+    renderSystem.adjustZoom(0.9, window.innerWidth / 2, window.innerHeight / 2);
+  });
+
+  hotkeys('+,=', e => {
+    if (isModalOpen()) return;
+    if (inputSystem.getMode() !== 'view') return;
+    e.preventDefault();
+    renderSystem.adjustZoom(1.1, window.innerWidth / 2, window.innerHeight / 2);
   });
 
   // V — Same behavior as Escape: dismiss overlays in order, then view mode

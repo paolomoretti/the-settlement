@@ -44,6 +44,7 @@ import {
 } from '@/debug/debugFlags';
 import { paintWorkerFromLegacy } from '@/rendering/workerV2/WorkerBodyRenderer';
 import { getEnemyFactionStyle, getEntityFaction, isPlayerOwned } from '@/components/ownerUtils';
+import { GAME_CONFIG } from '@/config/gameConfig';
 import {
   paintWavingEntranceFlag,
   SURVEY_WAVING_FLAG_FABRIC,
@@ -63,9 +64,6 @@ interface CachedLakeRenderData {
 }
 
 const FLAT_SHORE_CLIP_EXTENT = 1_000_000;
-/** Uniform draw scale for `/assets/resources/*.png` on the main canvas (workers, junctions, map bubbles). */
-const RESOURCE_ICON_DRAW_SCALE = 1.25;
-
 /** Interval between decorative fish jumps. Random pick in [min, max] guarantees roughly one jump
  * every 10–30 s whenever a valid water tile is visible. */
 const FISH_SPAWN_GAP_MIN_MS = 10_000;
@@ -5005,8 +5003,8 @@ export class RenderSystem extends System {
 
     const r = 10;
     const hasIcon = !!icon;
-    const iconDraw = 14 * RESOURCE_ICON_DRAW_SCALE;
-    const pillW = hasIcon ? Math.round(34 * RESOURCE_ICON_DRAW_SCALE) : 20;
+    const iconDraw = 14 * GAME_CONFIG.rendering.resourceIconDrawScale;
+    const pillW = hasIcon ? Math.round(34 * GAME_CONFIG.rendering.resourceIconDrawScale) : 20;
     const pillH = 20;
 
     this.ctx.save();
@@ -5088,39 +5086,39 @@ export class RenderSystem extends System {
         const iy = center.y + offsets[i].y;
 
         const resSprite = this.loadSprite(`/assets/resources/${combined[i].resourceType}.png`);
-        const jw = 10 * RESOURCE_ICON_DRAW_SCALE;
+        const jw = 10 * GAME_CONFIG.rendering.resourceIconDrawScale;
         const jHalf = jw / 2;
         if (resSprite) {
           this.ctx.drawImage(resSprite, ix - jHalf, iy - jHalf, jw, jw);
         } else {
           this.ctx.fillStyle = '#6b5020';
           this.ctx.fillRect(
-            ix - 4 * RESOURCE_ICON_DRAW_SCALE,
-            iy - 1 * RESOURCE_ICON_DRAW_SCALE,
-            8 * RESOURCE_ICON_DRAW_SCALE,
-            4 * RESOURCE_ICON_DRAW_SCALE
+            ix - 4 * GAME_CONFIG.rendering.resourceIconDrawScale,
+            iy - 1 * GAME_CONFIG.rendering.resourceIconDrawScale,
+            8 * GAME_CONFIG.rendering.resourceIconDrawScale,
+            4 * GAME_CONFIG.rendering.resourceIconDrawScale
           );
           this.ctx.fillStyle = '#8b6914';
           this.ctx.fillRect(
-            ix - 4 * RESOURCE_ICON_DRAW_SCALE,
-            iy - 4 * RESOURCE_ICON_DRAW_SCALE,
-            8 * RESOURCE_ICON_DRAW_SCALE,
-            4 * RESOURCE_ICON_DRAW_SCALE
+            ix - 4 * GAME_CONFIG.rendering.resourceIconDrawScale,
+            iy - 4 * GAME_CONFIG.rendering.resourceIconDrawScale,
+            8 * GAME_CONFIG.rendering.resourceIconDrawScale,
+            4 * GAME_CONFIG.rendering.resourceIconDrawScale
           );
           this.ctx.fillStyle = '#a07818';
           this.ctx.fillRect(
-            ix - 3 * RESOURCE_ICON_DRAW_SCALE,
-            iy - 4 * RESOURCE_ICON_DRAW_SCALE,
-            6 * RESOURCE_ICON_DRAW_SCALE,
-            2 * RESOURCE_ICON_DRAW_SCALE
+            ix - 3 * GAME_CONFIG.rendering.resourceIconDrawScale,
+            iy - 4 * GAME_CONFIG.rendering.resourceIconDrawScale,
+            6 * GAME_CONFIG.rendering.resourceIconDrawScale,
+            2 * GAME_CONFIG.rendering.resourceIconDrawScale
           );
           this.ctx.strokeStyle = '#4a3510';
           this.ctx.lineWidth = 0.5;
           this.ctx.strokeRect(
-            ix - 4 * RESOURCE_ICON_DRAW_SCALE,
-            iy - 4 * RESOURCE_ICON_DRAW_SCALE,
-            8 * RESOURCE_ICON_DRAW_SCALE,
-            7 * RESOURCE_ICON_DRAW_SCALE
+            ix - 4 * GAME_CONFIG.rendering.resourceIconDrawScale,
+            iy - 4 * GAME_CONFIG.rendering.resourceIconDrawScale,
+            8 * GAME_CONFIG.rendering.resourceIconDrawScale,
+            7 * GAME_CONFIG.rendering.resourceIconDrawScale
           );
         }
       }
@@ -5409,7 +5407,8 @@ export class RenderSystem extends System {
     const isCombatDuel = worker.visualActivity === 'combat_duel' && worker.role === 'military';
     const frame = isMoving || isCombatDuel ? Math.floor(now / (isCombatDuel ? 120 : 200)) % 4 : 0;
     // Keep military close to civilian size; body proportions are normalized in painter.
-    const s = worker.role === 'military' ? 2.05 : 2;
+    const baseS = worker.role === 'military' ? 2.05 : 2;
+    const s = baseS * GAME_CONFIG.rendering.worldWorkerSpriteScale;
     if (worker.carrierType === 'donkey') {
       this.renderDonkeySprite(s, facing, isMoving, frame, worker.carryingItems);
       return;

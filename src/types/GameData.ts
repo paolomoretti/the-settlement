@@ -441,6 +441,14 @@ export interface GameConfig {
       forwardBarracksSearchRadius: number;
     };
   };
+
+  /** Main canvas visual tuning (not save-specific). */
+  rendering: {
+    /** Scale for `/assets/resources/*.png` when drawn on the map (junction stacks, bubbles, worker-held tools/items). */
+    resourceIconDrawScale: number;
+    /** Extra scale for worker + donkey bodies on the main map (buildings and roads unchanged). */
+    worldWorkerSpriteScale: number;
+  };
 }
 
 // ============================================================================

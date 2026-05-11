@@ -149,4 +149,9 @@ export const GAME_CONFIG = {
       forwardBarracksSearchRadius: 18,
     },
   },
+
+  rendering: {
+    resourceIconDrawScale: 1.25,
+    worldWorkerSpriteScale: 0.7,
+  },
 } satisfies GameConfig;

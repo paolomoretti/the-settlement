@@ -3,8 +3,7 @@
  */
 
 import type { Worker, IdleAnim, WorkerAppearance } from '@/components/Worker';
-
-const RESOURCE_ICON_DRAW_SCALE = 1.25;
+import { GAME_CONFIG } from '@/config/gameConfig';
 
 function clampColorChannel(v: number): number {
   return v < 0 ? 0 : v > 255 ? 255 : v;
@@ -138,7 +137,7 @@ function paintMilitaryWarrior(
   const goldTrim = rank >= 3;
   const swordSprite = loadSprite('/assets/resources/sword.png');
   const shieldSprite = loadSprite('/assets/resources/shield.png');
-  const itemPx = 9 * RESOURCE_ICON_DRAW_SCALE;
+  const itemPx = 9 * GAME_CONFIG.rendering.resourceIconDrawScale;
   if (!showBack) {
     const sx = isCombatDuel ? walkArmSwing : walkArmSwing * 0.3;
     if (swordSprite) {
@@ -488,8 +487,8 @@ export function paintWorkerSpriteBody(
       px(-1, -20, 3, 1, '#f0c060');
     };
 
-    const toolDrawPx = 10 * RESOURCE_ICON_DRAW_SCALE;
-    const carryW = 8 * RESOURCE_ICON_DRAW_SCALE;
+    const toolDrawPx = 10 * GAME_CONFIG.rendering.resourceIconDrawScale;
+    const carryW = 8 * GAME_CONFIG.rendering.resourceIconDrawScale;
 
     if (isHammerConstruct) {
       const strike = Math.floor(hammerSwingT * 8);
@@ -569,7 +568,7 @@ function paintDonkeyLoadIcons(
   items: Array<{ resourceType: string }>,
   s: number
 ): void {
-  const iconSize = 4.6 * s * RESOURCE_ICON_DRAW_SCALE;
+  const iconSize = 4.6 * s * GAME_CONFIG.rendering.resourceIconDrawScale;
   const half = iconSize / 2;
   const positions = [
     { x: -3.4, y: -12.1 },

@@ -6,7 +6,6 @@ import { BuildingMenu } from '@/ui/BuildingMenu';
 import { BuildingPopover } from '@/ui/BuildingPopover';
 import { GamePopover } from '@/ui/GamePopover';
 import { CanvasHoverTooltip } from '@/ui/CanvasHoverTooltip';
-import { Position } from '@/components/Position';
 import { setupKeyboardShortcuts } from '@/input/KeyboardShortcuts';
 import { showToast, setupToastListener } from '@/ui/Toast';
 import { ConfirmDeleteDialog } from '@/ui/ConfirmDeleteDialog';
@@ -27,8 +26,8 @@ let buildingPopover: BuildingPopover | null = null;
 let confirmDeleteDialog: ConfirmDeleteDialog | null = null;
 let cellSurveyPopover: GamePopover | null = null;
 let canvasHoverTooltip: CanvasHoverTooltip | null = null;
-let roadWorkerPopover: GamePopover | null = null;
-let roadWorkerPopoverEntityId: number | null = null;
+let roadSegmentPopover: GamePopover | null = null;
+let roadSegmentPopoverSegmentId: number | null = null;
 let unregisterHoverFrameHook: (() => void) | null = null;
 let inventoryActiveTab: 'resources' | 'workers' | 'production' = 'resources';
 
@@ -572,7 +571,7 @@ function setupGameUI(game: Game): void {
   });
 
   eventBus.on('building:selected', data => {
-    hideRoadWorkerPopover();
+    hideRoadSegmentPopover();
     buildingPopover!.show(data.entity);
   });
 
@@ -580,13 +579,13 @@ function setupGameUI(game: Game): void {
     buildingPopover!.hide();
   });
 
-  eventBus.on('road_worker:selected', data => {
+  eventBus.on('road_segment:selected', data => {
     buildingPopover!.hide();
-    showRoadWorkerPopover(data);
+    showRoadSegmentPopover(data);
   });
 
-  eventBus.on('road_worker:deselected', () => {
-    hideRoadWorkerPopover();
+  eventBus.on('road_segment:deselected', () => {
+    hideRoadSegmentPopover();
   });
 
   eventBus.on('delete:selected', () => {
@@ -625,46 +624,116 @@ function setupGameUI(game: Game): void {
   eventBus.on('close:options', () => closeOptionsOverlay());
 }
 
-function hideRoadWorkerPopover(): void {
-  roadWorkerPopover?.hide();
-  roadWorkerPopoverEntityId = null;
+function hideRoadSegmentPopover(): void {
+  roadSegmentPopover?.hide();
+  roadSegmentPopoverSegmentId = null;
 }
 
-function showRoadWorkerPopover(data: any): void {
-  if (!game) return;
-  const entity = data.entity;
-  const worker = data.worker;
-  if (!entity || !worker) return;
+type RoadSegmentSelectionPayload = {
+  segmentId: number;
+  tiles: ReadonlyArray<{ x: number; y: number }>;
+  assignedWorkerId: number | null;
+  carrierType: 'worker' | 'donkey' | null;
+  donkeysAtHq: number;
+  canReplaceWithDonkey: boolean;
+  canReturnDonkeyToHq: boolean;
+};
 
-  if (!roadWorkerPopover) {
+/**
+ * Popover for the road *segment* (corridor) the player just clicked. Replaces
+ * the older "click the moving worker" flow — selecting the road itself is the
+ * primary way to delete the corridor or swap its carrier with a donkey.
+ *
+ * `data.segmentId` may change behind our back when `RoadSegmentManager`
+ * recalculates the graph. The popover keeps the **latest** id in
+ * `roadSegmentPopoverSegmentId` and re-renders on every `road_segment:selected`
+ * event so the buttons always target the live segment id.
+ */
+function showRoadSegmentPopover(data: RoadSegmentSelectionPayload): void {
+  if (!game) return;
+
+  if (!roadSegmentPopover) {
     const container = document.getElementById('ui-overlay')!;
-    roadWorkerPopover = new GamePopover(container);
-    roadWorkerPopover.onClose = () => {
-      if (game?.selectedEntity?.id === roadWorkerPopoverEntityId) {
-        game.selectedEntity = null;
+    roadSegmentPopover = new GamePopover(container);
+    roadSegmentPopover.onClose = () => {
+      if (game && roadSegmentPopoverSegmentId != null) {
+        eventBus.emit('road_segment:deselect');
       }
-      roadWorkerPopoverEntityId = null;
+      roadSegmentPopoverSegmentId = null;
     };
   }
 
-  roadWorkerPopoverEntityId = entity.id;
-  const isDonkey = worker.carrierType === 'donkey';
-  const capacity = worker.transportCarryCapacity ?? 1;
+  roadSegmentPopoverSegmentId = data.segmentId;
+  const isDonkey = data.carrierType === 'donkey';
+  const isWorker = data.carrierType === 'worker';
+  const hasCarrier = isDonkey || isWorker;
+
   const content = document.createElement('div');
-  content.className = 'road-worker-popover-body';
+  content.className = 'road-segment-popover-body';
   content.style.minWidth = '220px';
 
   const stats = document.createElement('div');
   stats.style.display = 'grid';
   stats.style.gap = '7px';
   stats.style.marginBottom = '10px';
-  stats.appendChild(createRoadWorkerStat('HQ donkeys', `${data.donkeysAtHq ?? 0}`));
-  stats.appendChild(createRoadWorkerStat('Carry capacity', `${capacity}`));
+  stats.appendChild(createRoadSegmentStat('Length', `${data.tiles.length} tiles`));
+  stats.appendChild(
+    createRoadSegmentStat(
+      'Carrier',
+      isDonkey ? 'Donkey' : isWorker ? 'Worker' : 'Unassigned'
+    )
+  );
+  stats.appendChild(createRoadSegmentStat('HQ donkeys', `${data.donkeysAtHq}`));
+  content.appendChild(stats);
 
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.textContent = isDonkey ? 'Swap with normal worker' : 'Replace with donkey';
-  btn.disabled = isDonkey ? !data.canReturnDonkeyToHq : !data.canReplaceWithDonkey;
+  // Swap button: only meaningful when a carrier exists on the segment.
+  if (hasCarrier) {
+    const swap = document.createElement('button');
+    swap.type = 'button';
+    swap.textContent = isDonkey
+      ? 'Use worker for transportation'
+      : 'Use donkey for transportation';
+    swap.disabled = isDonkey ? !data.canReturnDonkeyToHq : !data.canReplaceWithDonkey;
+    styleRoadSegmentPrimaryButton(swap);
+    swap.addEventListener('click', () => {
+      if (roadSegmentPopoverSegmentId == null) return;
+      eventBus.emit(
+        isDonkey ? 'road_segment:return_donkey' : 'road_segment:replace_with_donkey',
+        { segmentId: roadSegmentPopoverSegmentId }
+      );
+    });
+    content.appendChild(swap);
+  }
+
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.textContent = 'Delete road';
+  styleRoadSegmentDangerButton(del);
+  del.addEventListener('click', () => {
+    if (roadSegmentPopoverSegmentId == null) return;
+    eventBus.emit('road_segment:delete', { segmentId: roadSegmentPopoverSegmentId });
+  });
+  content.appendChild(del);
+
+  roadSegmentPopover.show('Road', content, () => {
+    if (!game) return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    // Anchor on the geometric center of the (live) segment so the popover
+    // tracks deletions / merges that happened in the same frame.
+    const seg = game.getRoadSegmentById(data.segmentId);
+    const tiles = seg?.tiles ?? data.tiles;
+    if (tiles.length === 0) return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    let sx = 0;
+    let sy = 0;
+    for (const t of tiles) {
+      const screen = game.renderSystem.gridToScreen(t.x, t.y);
+      sx += screen.x;
+      sy += screen.y;
+    }
+    return { x: sx / tiles.length, y: sy / tiles.length };
+  });
+}
+
+function styleRoadSegmentPrimaryButton(btn: HTMLButtonElement): void {
   btn.style.width = '100%';
   btn.style.padding = '8px 10px';
   btn.style.border = '1px solid rgba(246, 210, 106, 0.75)';
@@ -672,24 +741,22 @@ function showRoadWorkerPopover(data: any): void {
   btn.style.background = btn.disabled ? 'rgba(80, 70, 60, 0.8)' : '#8b5f2b';
   btn.style.color = '#fff8dc';
   btn.style.fontWeight = '700';
+  btn.style.marginBottom = '8px';
   btn.style.cursor = btn.disabled ? 'not-allowed' : 'pointer';
-  btn.addEventListener('click', () => {
-    eventBus.emit(isDonkey ? 'road_worker:return_donkey' : 'road_worker:replace_with_donkey', {
-      entityId: entity.id,
-    });
-  });
-
-  content.appendChild(stats);
-  content.appendChild(btn);
-
-  roadWorkerPopover.show(isDonkey ? 'Donkey Carrier' : 'Road Worker', content, () => {
-    const pos = entity.getComponent(Position);
-    if (!game || !pos) return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-    return game.renderSystem.gridToScreen(pos.x, pos.y);
-  });
 }
 
-function createRoadWorkerStat(label: string, value: string): HTMLElement {
+function styleRoadSegmentDangerButton(btn: HTMLButtonElement): void {
+  btn.style.width = '100%';
+  btn.style.padding = '8px 10px';
+  btn.style.border = '1px solid rgba(210, 107, 95, 0.8)';
+  btn.style.borderRadius = '6px';
+  btn.style.background = 'linear-gradient(180deg, #9f2e2e, #6d1717)';
+  btn.style.color = '#fff8dc';
+  btn.style.fontWeight = '700';
+  btn.style.cursor = 'pointer';
+}
+
+function createRoadSegmentStat(label: string, value: string): HTMLElement {
   const row = document.createElement('div');
   row.style.display = 'grid';
   row.style.gridTemplateColumns = '1fr auto';

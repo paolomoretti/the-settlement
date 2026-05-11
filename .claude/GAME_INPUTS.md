@@ -21,6 +21,7 @@ Behavior depends on **input mode** (toolbar, hotkeys, or post-placement return t
 #### View mode (default)
 
 - **Click** on a tile: Selects or toggles selection of a **building** under the cursor; special cases (e.g. base camp opens inventory, survey UI, empty ground) are handled in `Game.selectEntityAt`.
+- **Click on a road corridor:** Selects the whole **road segment** and opens the **Road** popover — delete the corridor, or swap its carrier between a worker and a donkey. The road tiles get a golden tint on hover and stay highlighted while selected. See [Road segment selection](ROAD_SELECTION.md). Clicking the segment again, clicking elsewhere, or pressing Escape closes the popover.
 - **Drag** (movement past a small threshold): Pans the camera. If the pointer did not move enough to count as a drag, a **click** is sent on release (selection / survey flow as above).
 
 #### Build road mode (`R` or **Build Road** toolbar)

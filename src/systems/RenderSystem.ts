@@ -22,6 +22,7 @@ import { transportManager } from '@/economics/TransportManager';
 import type { SurveyOverlayForRender } from '@/survey/SurveyCoordinator';
 import {
   BUILDING_CONSTRUCTION_SPRITES,
+  BUILDING_FINAL_SPRITES,
   BUILDING_PRODUCTION_SPRITE_ANIMATION,
   BUILDING_PRODUCTION_SPRITES,
   collectAllCataloguedBuildingSpritePaths,
@@ -143,6 +144,10 @@ export class RenderSystem extends System {
   private terrainTextures: TerrainTextures;
   private spriteCache = new Map<string, HTMLImageElement>();
   public hoveredEntityId: number | null = null;
+  /** Tiles of the road segment currently hovered in view mode (golden tint). */
+  public hoveredRoadSegmentTiles: ReadonlyArray<{ x: number; y: number }> | null = null;
+  /** Tiles of the road segment currently selected (popover open). */
+  public selectedRoadSegmentTiles: ReadonlyArray<{ x: number; y: number }> | null = null;
   private cachedLakes = new Map<string, CachedLakeRenderData>();
   /** While Alt/Option is held: draw the tile grid at any zoom (see Game insight sync). */
   public showInsightGrid = false;
@@ -469,6 +474,7 @@ export class RenderSystem extends System {
     // Render tiles
     this.renderTiles();
     this.renderRoads(this.getViewportBounds());
+    this.renderRoadSegmentHighlights();
     this.renderDemolitionScorches(this.getViewportBounds());
     this.renderFishJumps();
 
@@ -883,7 +889,8 @@ export class RenderSystem extends System {
     if (!buildingDef) return;
 
     const { size, visual } = buildingDef;
-    const spritePath = `/assets/buildings/${buildingType}.png`;
+    const spritePath =
+      BUILDING_FINAL_SPRITES[buildingType] ?? `/assets/buildings/${buildingType}.png`;
     const sprite = this.loadSprite(spritePath);
 
     const canPlace = this.canPlacePreview(gridX, gridY, size.width, size.height);
@@ -2456,6 +2463,51 @@ export class RenderSystem extends System {
         );
       }
     }
+  }
+
+  /**
+   * Golden tint + rim on the tiles of the selected / hovered road segment.
+   * Mirrors the "selected worker" feel (warm glow) but applied to the road itself
+   * so the player can target the corridor rather than chasing the carrier sprite.
+   */
+  private renderRoadSegmentHighlights(): void {
+    const sel = this.selectedRoadSegmentTiles;
+    const hov = this.hoveredRoadSegmentTiles;
+    const drawHighlightTile = (
+      tile: { x: number; y: number },
+      strokeColor: string,
+      fillColor: string,
+      lineWidth: number
+    ): void => {
+      const t = this.tileMap.getTile(tile.x, tile.y);
+      if (!t?.isExplored() || !t.hasRoad) return;
+      const corners = this.iso.getTileCorners(tile.x, tile.y);
+      this.ctx.beginPath();
+      this.ctx.moveTo(corners[0].x, corners[0].y);
+      for (let i = 1; i < corners.length; i++) {
+        this.ctx.lineTo(corners[i].x, corners[i].y);
+      }
+      this.ctx.closePath();
+      this.ctx.fillStyle = fillColor;
+      this.ctx.fill();
+      this.ctx.strokeStyle = strokeColor;
+      this.ctx.lineWidth = lineWidth;
+      this.ctx.lineJoin = 'round';
+      this.ctx.stroke();
+    };
+
+    this.ctx.save();
+    if (hov && (!sel || sel !== hov)) {
+      for (const t of hov) {
+        drawHighlightTile(t, 'rgba(255, 224, 150, 0.78)', 'rgba(255, 224, 150, 0.16)', 1.6);
+      }
+    }
+    if (sel) {
+      for (const t of sel) {
+        drawHighlightTile(t, 'rgba(255, 224, 150, 0.96)', 'rgba(255, 224, 150, 0.28)', 2.4);
+      }
+    }
+    this.ctx.restore();
   }
 
   private renderFogOcclusion(viewportBounds: {

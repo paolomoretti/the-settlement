@@ -44,6 +44,10 @@ import {
 } from '@/debug/debugFlags';
 import { paintWorkerFromLegacy } from '@/rendering/workerV2/WorkerBodyRenderer';
 import { getEnemyFactionStyle, getEntityFaction, isPlayerOwned } from '@/components/ownerUtils';
+import {
+  paintWavingEntranceFlag,
+  SURVEY_WAVING_FLAG_FABRIC,
+} from '@/rendering/wavingFlagCanvas';
 
 /** World-space half-plane clip for long straight iso shores (same screen row / column of tile centers). */
 type FlatShoreCut =
@@ -1184,24 +1188,11 @@ export class RenderSystem extends System {
       if (!tile?.isExplored()) continue;
 
       const c = this.iso.gridToScreen(f.x, f.y);
-      this.ctx.save();
-      this.ctx.strokeStyle = '#5c4030';
-      this.ctx.lineWidth = 2;
-      this.ctx.beginPath();
-      this.ctx.moveTo(c.x, c.y + th * 0.1);
-      this.ctx.lineTo(c.x, c.y - th * 0.55);
-      this.ctx.stroke();
-      this.ctx.fillStyle = '#c62828';
-      this.ctx.beginPath();
-      this.ctx.moveTo(c.x + 1, c.y - th * 0.85);
-      this.ctx.lineTo(c.x + th * 0.35, c.y - th * 0.55);
-      this.ctx.lineTo(c.x + 1, c.y - th * 0.38);
-      this.ctx.closePath();
-      this.ctx.fill();
-      this.ctx.strokeStyle = '#3e2723';
-      this.ctx.lineWidth = 1;
-      this.ctx.stroke();
-      this.ctx.restore();
+      const footX = c.x;
+      const footY = c.y + th * 0.1;
+      const poleH = th * 0.65;
+      const waveT = performance.now() * 0.004 + (f.x * 1.7 + f.y * 2.3);
+      paintWavingEntranceFlag(this.ctx, footX, footY, poleH, waveT, SURVEY_WAVING_FLAG_FABRIC, 0.85);
     }
 
     if (o.progress) {
@@ -4543,59 +4534,8 @@ export class RenderSystem extends System {
     const footY = entranceCenterY + tileH / 4;
     const s = 0.8;
     const poleH = Math.max(18, Math.min(27, building.buildingHeight * 0.44));
-    const topY = footY - poleH;
-    const t = performance.now() * 0.004 + (building.width * 1.7 + building.height * 2.3);
-    const wave = Math.sin(t) * 2.2 * s;
-
-    this.ctx.save();
-    this.ctx.lineCap = 'round';
-    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-    this.ctx.beginPath();
-    this.ctx.ellipse(footX, footY + 1.4 * s, 4.2 * s, 2 * s, 0, 0, Math.PI * 2);
-    this.ctx.fill();
-
-    this.ctx.strokeStyle = 'rgba(70, 22, 16, 0.96)';
-    this.ctx.lineWidth = 4 * s;
-    this.ctx.beginPath();
-    this.ctx.moveTo(footX, footY);
-    this.ctx.lineTo(footX, topY);
-    this.ctx.stroke();
-
-    this.ctx.strokeStyle = 'rgba(165, 58, 42, 0.78)';
-    this.ctx.lineWidth = 1.4 * s;
-    this.ctx.beginPath();
-    this.ctx.moveTo(footX - 0.9 * s, footY - 1 * s);
-    this.ctx.lineTo(footX - 0.9 * s, topY + 1 * s);
-    this.ctx.stroke();
-
-    this.ctx.fillStyle = style.flag;
-    this.ctx.strokeStyle = style.flagStroke;
-    this.ctx.lineWidth = 1.1 * s;
-    this.ctx.beginPath();
-    this.ctx.moveTo(footX + 1.5 * s, topY + 3 * s);
-    this.ctx.quadraticCurveTo(footX + 13 * s, topY + 1 * s + wave, footX + 23 * s, topY + 6 * s);
-    this.ctx.quadraticCurveTo(
-      footX + 13 * s,
-      topY + 10 * s - wave * 0.45,
-      footX + 1.5 * s,
-      topY + 12 * s
-    );
-    this.ctx.closePath();
-    this.ctx.fill();
-    this.ctx.stroke();
-
-    this.ctx.strokeStyle = style.flagHighlight;
-    this.ctx.lineWidth = 1 * s;
-    this.ctx.beginPath();
-    this.ctx.moveTo(footX + 4 * s, topY + 5 * s);
-    this.ctx.quadraticCurveTo(
-      footX + 13 * s,
-      topY + 4 * s + wave * 0.7,
-      footX + 20 * s,
-      topY + 7 * s
-    );
-    this.ctx.stroke();
-    this.ctx.restore();
+    const waveT = performance.now() * 0.004 + (building.width * 1.7 + building.height * 2.3);
+    paintWavingEntranceFlag(this.ctx, footX, footY, poleH, waveT, style, s);
   }
 
   /**

@@ -1063,6 +1063,13 @@ function buildGrassPhotoAtlases(
   };
 }
 
+interface CachedRoad {
+  path: Path2D;
+  warm: boolean;
+  pebblesDark: Path2D;
+  pebblesLight: Path2D;
+}
+
 export class TerrainTextures {
   private atlases = new Map<string, HTMLCanvasElement>();
   private roadAtlas: HTMLCanvasElement;
@@ -1071,6 +1078,7 @@ export class TerrainTextures {
   private waterFillPattern: CanvasPattern | null = null;
   /** Stored for async grass photo atlas decoration pass. */
   private noise: NoiseGenerator;
+  private cachedRoads = new Map<string, CachedRoad>();
 
   constructor(seed: number = 42) {
     const noise = new NoiseGenerator(seed);
@@ -1156,18 +1164,17 @@ export class TerrainTextures {
     return { x: p.x - CENTER.x, y: p.y - CENTER.y };
   }
 
-  private traceRoadPath(
-    ctx: CanvasRenderingContext2D,
+  private getRoadPath(
     connections: number[],
     tileX: number,
     tileY: number,
     linearizeCorner: boolean = false
-  ): void {
+  ): Path2D {
     const wobbleX = (this.roadHash(tileX, tileY, 1) - 0.5) * 4.5;
     const wobbleY = (this.roadHash(tileX, tileY, 2) - 0.5) * 2.5;
     const hub = { x: wobbleX, y: wobbleY };
+    const path = new Path2D();
 
-    ctx.beginPath();
     if (
       linearizeCorner &&
       connections.length === 2 &&
@@ -1175,21 +1182,21 @@ export class TerrainTextures {
     ) {
       const a = this.roadLocalPoint(connections[0]!);
       const b = this.roadLocalPoint(connections[1]!);
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      return;
+      path.moveTo(a.x, a.y);
+      path.lineTo(b.x, b.y);
+      return path;
     }
 
     if (connections.length === 0) {
-      ctx.ellipse(hub.x, hub.y, 8, 4.2, 0, 0, Math.PI * 2);
-      return;
+      path.ellipse(hub.x, hub.y, 8, 4.2, 0, 0, Math.PI * 2);
+      return path;
     }
 
     if (connections.length === 1) {
       const end = this.roadLocalPoint(connections[0]!);
-      ctx.moveTo(hub.x, hub.y);
-      ctx.quadraticCurveTo(hub.x * 1.5, hub.y * 1.5, end.x, end.y);
-      return;
+      path.moveTo(hub.x, hub.y);
+      path.quadraticCurveTo(hub.x * 1.5, hub.y * 1.5, end.x, end.y);
+      return path;
     }
 
     if (connections.length === 2) {
@@ -1197,24 +1204,28 @@ export class TerrainTextures {
       const b = this.roadLocalPoint(connections[1]!);
       const opposite = (connections[0]! + 2) % 4 === connections[1]!;
       const bend = opposite ? 0.75 : 1.25;
-      ctx.moveTo(a.x, a.y);
-      ctx.quadraticCurveTo(hub.x * bend, hub.y * bend, b.x, b.y);
-      return;
+      path.moveTo(a.x, a.y);
+      path.quadraticCurveTo(hub.x * bend, hub.y * bend, b.x, b.y);
+      return path;
     }
 
     for (const bit of connections) {
       const end = this.roadLocalPoint(bit);
-      ctx.moveTo(hub.x, hub.y);
-      ctx.quadraticCurveTo(hub.x * 1.25, hub.y * 1.25, end.x, end.y);
+      path.moveTo(hub.x, hub.y);
+      path.quadraticCurveTo(hub.x * 1.25, hub.y * 1.25, end.x, end.y);
     }
+    
+    return path;
   }
 
-  private drawRoadPebbles(
-    ctx: CanvasRenderingContext2D,
+  private getRoadPebbles(
     connections: number[],
     tileX: number,
     tileY: number
-  ): void {
+  ): { dark: Path2D; light: Path2D } {
+    const dark = new Path2D();
+    const light = new Path2D();
+
     const count = 2 + Math.floor(this.roadHash(tileX, tileY, 20) * 4);
     const usableConnections =
       connections.length > 0 ? connections : [Math.floor(this.roadHash(tileX, tileY, 21) * 4)];
@@ -1229,12 +1240,12 @@ export class TerrainTextures {
       const x = end.x * t + nx * side * 5.5;
       const y = end.y * t + ny * side * 3.2;
       const r = 0.8 + this.roadHash(tileX, tileY, 50 + i) * 1.2;
-      ctx.fillStyle =
-        this.roadHash(tileX, tileY, 60 + i) > 0.5
-          ? 'rgba(111, 82, 48, 0.38)'
-          : 'rgba(235, 205, 155, 0.24)';
-      ctx.beginPath();
-      ctx.ellipse(
+      
+      const isDark = this.roadHash(tileX, tileY, 60 + i) > 0.5;
+      const target = isDark ? dark : light;
+      
+      target.moveTo(x + r * 1.35, y);
+      target.ellipse(
         x,
         y,
         r * 1.35,
@@ -1243,8 +1254,9 @@ export class TerrainTextures {
         0,
         Math.PI * 2
       );
-      ctx.fill();
     }
+    
+    return { dark, light };
   }
 
   drawRoad(
@@ -1290,28 +1302,40 @@ export class TerrainTextures {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    this.traceRoadPath(ctx, connections, tileX, tileY, linearizeCorner);
+    const cacheKey = `${tileX},${tileY},${config},${linearizeCorner}`;
+    let cached = this.cachedRoads.get(cacheKey);
+
+    if (!cached) {
+      cached = {
+        path: this.getRoadPath(connections, tileX, tileY, linearizeCorner),
+        warm: this.roadHash(tileX, tileY, 90) > 0.5,
+        pebblesDark: this.getRoadPebbles(connections, tileX, tileY).dark,
+        pebblesLight: this.getRoadPebbles(connections, tileX, tileY).light
+      };
+      this.cachedRoads.set(cacheKey, cached);
+    }
+
     ctx.strokeStyle = 'rgba(78, 54, 31, 0.34)';
     ctx.lineWidth = 13;
-    ctx.stroke();
+    ctx.stroke(cached.path);
 
-    this.traceRoadPath(ctx, connections, tileX, tileY, linearizeCorner);
     ctx.strokeStyle = 'rgba(118, 82, 45, 0.74)';
     ctx.lineWidth = 10;
-    ctx.stroke();
+    ctx.stroke(cached.path);
 
-    this.traceRoadPath(ctx, connections, tileX, tileY, linearizeCorner);
-    const warm = this.roadHash(tileX, tileY, 90);
-    ctx.strokeStyle = warm > 0.5 ? 'rgba(205, 171, 112, 0.96)' : 'rgba(190, 151, 96, 0.96)';
+    ctx.strokeStyle = cached.warm ? 'rgba(205, 171, 112, 0.96)' : 'rgba(190, 151, 96, 0.96)';
     ctx.lineWidth = 7;
-    ctx.stroke();
+    ctx.stroke(cached.path);
 
-    this.traceRoadPath(ctx, connections, tileX, tileY, linearizeCorner);
     ctx.strokeStyle = 'rgba(244, 222, 176, 0.23)';
     ctx.lineWidth = 2.2;
-    ctx.stroke();
+    ctx.stroke(cached.path);
 
-    this.drawRoadPebbles(ctx, connections, tileX, tileY);
+    ctx.fillStyle = 'rgba(111, 82, 48, 0.38)';
+    ctx.fill(cached.pebblesDark);
+    ctx.fillStyle = 'rgba(235, 205, 155, 0.24)';
+    ctx.fill(cached.pebblesLight);
+
     ctx.restore();
   }
 

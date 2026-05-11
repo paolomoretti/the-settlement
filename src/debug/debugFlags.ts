@@ -5,12 +5,7 @@
  */
 export const DEBUG = false;
 
-/**
- * When true, `RenderSystem` logs a line to the console whenever lake/water rendering
- * inputs change (camera, viewport tile range, contour vs atlas fallback). Set to true
- * locally to capture before/after zoom when water disappears; keep false in normal play.
- */
-export const DEBUG_WATER_RENDER_LOG = false;
+
 
 export type RoadRenderingMode = 'vector' | 'classic';
 
@@ -23,6 +18,21 @@ export let ROAD_RENDERING_MODE: RoadRenderingMode = 'vector';
 
 export function setRoadRenderingMode(mode: RoadRenderingMode): void {
   ROAD_RENDERING_MODE = mode;
+}
+
+export type WaterRenderingMode = 'smooth' | 'classic';
+
+/**
+ * Water rendering mode:
+ * - 'smooth': marching-squares contour pipeline with Catmull-Rom smoothing and depth fills.
+ *   Falls back to per-tile atlas only when no closed contours can be produced (e.g. viewport
+ *   fully inside a lake interior).
+ * - 'classic': per-tile atlas pipeline only; no marching-squares work is performed.
+ */
+export let WATER_RENDERING_MODE: WaterRenderingMode = 'smooth';
+
+export function setWaterRenderingMode(mode: WaterRenderingMode): void {
+  WATER_RENDERING_MODE = mode;
 }
 
 /**

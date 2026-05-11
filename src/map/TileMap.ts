@@ -97,6 +97,7 @@ export class TileMap {
     this.clearBaseCampArea();
     this.ensureHqMainlandBridge();
     this.removeIslands();
+    this.enforceMaxLakeSize();
     this.ensureStarterTreesNearHq();
     this.computeWaterDepth();
     this.computeForestDepth();
@@ -566,6 +567,54 @@ export class TileMap {
         if (tile.walkable) {
           tile.terrain = 'water';
           tile.walkable = false;
+        }
+      }
+    }
+  }
+
+  private enforceMaxLakeSize(): void {
+    const W = this.width;
+    const H = this.height;
+    const visited = new Uint8Array(W * H);
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (visited[i]) continue;
+        if (this.tiles[y][x].terrain !== 'water') continue;
+
+        const q: number[] = [x, y];
+        const lake: number[] = [];
+        visited[i] = 1;
+        let head = 0;
+
+        while (head < q.length) {
+          const cx = q[head++];
+          const cy = q[head++];
+          lake.push(cx, cy);
+
+          for (const [dx, dy] of dirs) {
+            const nx = cx + dx;
+            const ny = cy + dy;
+            if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+            const ni = ny * W + nx;
+            if (visited[ni]) continue;
+            if (this.tiles[ny][nx].terrain !== 'water') continue;
+            
+            visited[ni] = 1;
+            q.push(nx, ny);
+          }
+        }
+
+        const lakeSize = lake.length / 2;
+        if (lakeSize > 750) {
+          for (let j = 750 * 2; j < lake.length; j += 2) {
+            const lx = lake[j];
+            const ly = lake[j+1];
+            this.tiles[ly][lx].terrain = 'grass';
+            this.tiles[ly][lx].walkable = true;
+          }
         }
       }
     }

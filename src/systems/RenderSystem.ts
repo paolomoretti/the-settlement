@@ -37,8 +37,8 @@ import { createChimneySmoke, type ChimneySmoke } from '@/rendering/chimneySmoke'
 import { createLoFiFire, type LoFiFire } from '@/rendering/loFiFire';
 import {
   DEBUG,
-  DEBUG_WATER_RENDER_LOG,
   ROAD_RENDERING_MODE,
+  WATER_RENDERING_MODE,
   USE_WORKER_V2,
 } from '@/debug/debugFlags';
 import { paintWorkerFromLegacy } from '@/rendering/workerV2/WorkerBodyRenderer';
@@ -51,6 +51,11 @@ type FlatShoreCut =
 
 type GridPoint = { x: number; y: number };
 type ShorelineSegment = { a: GridPoint; b: GridPoint };
+
+interface CachedLakeRenderData {
+  shorelinePath: Path2D;
+  depthBands: { minDepth: number; path: Path2D; color: string }[];
+}
 
 const FLAT_SHORE_CLIP_EXTENT = 1_000_000;
 /** Uniform draw scale for `/assets/resources/*.png` on the main canvas (workers, junctions, map bubbles). */
@@ -138,6 +143,7 @@ export class RenderSystem extends System {
   private terrainTextures: TerrainTextures;
   private spriteCache = new Map<string, HTMLImageElement>();
   public hoveredEntityId: number | null = null;
+  private cachedLakes = new Map<string, CachedLakeRenderData>();
   /** While Alt/Option is held: draw the tile grid at any zoom (see Game insight sync). */
   public showInsightGrid = false;
   /** Alt+hover in view mode: outline this building sprite. */
@@ -186,7 +192,7 @@ export class RenderSystem extends System {
   private _workerFrontQuadrantBoost = new Map<number, number>();
 
   /** Last signature for `DEBUG_WATER_RENDER_LOG` (avoid duplicate lines). */
-  private _waterRenderDiagLastSig = '';
+
 
   // Minimap
   private minimapCanvas: HTMLCanvasElement;
@@ -1861,147 +1867,173 @@ export class RenderSystem extends System {
     this.renderShorelineContour(viewportBounds);
   }
 
+  private getVisibleLakes(viewportBounds: {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  }): Array<{ id: string; bounds: { minX: number; maxX: number; minY: number; maxY: number }; tiles: Set<string> }> {
+    const W = this.tileMap.width;
+    const H = this.tileMap.height;
+    
+    const visited = new Set<string>();
+    const lakes: Array<{ id: string; bounds: { minX: number; maxX: number; minY: number; maxY: number }; tiles: Set<string> }> = [];
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+
+    for (let y = viewportBounds.minY; y <= viewportBounds.maxY; y++) {
+      for (let x = viewportBounds.minX; x <= viewportBounds.maxX; x++) {
+        const tile = this.tileMap.getTile(x, y);
+        if (!tile || tile.terrain !== 'water') continue;
+        
+        const key = `${x},${y}`;
+        if (visited.has(key)) continue;
+
+        let lMinX = x;
+        let lMaxX = x;
+        let lMinY = y;
+        let lMaxY = y;
+
+        const lakeTiles = new Set<string>();
+        const q: number[] = [x, y];
+        lakeTiles.add(key);
+        visited.add(key);
+        let head = 0;
+
+        while (head < q.length) {
+          const cx = q[head++];
+          const cy = q[head++];
+          
+          if (cx < lMinX) lMinX = cx;
+          if (cx > lMaxX) lMaxX = cx;
+          if (cy < lMinY) lMinY = cy;
+          if (cy > lMaxY) lMaxY = cy;
+
+          for (const [dx, dy] of dirs) {
+            const nx = cx + dx;
+            const ny = cy + dy;
+            if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+            
+            const nkey = `${nx},${ny}`;
+            if (visited.has(nkey)) continue;
+            
+            const ntile = this.tileMap.getTile(nx, ny);
+            if (!ntile || ntile.terrain !== 'water') continue;
+            
+            lakeTiles.add(nkey);
+            visited.add(nkey);
+            q.push(nx, ny);
+          }
+        }
+        lakes.push({ id: key, bounds: { minX: lMinX, maxX: lMaxX, minY: lMinY, maxY: lMaxY }, tiles: lakeTiles });
+      }
+    }
+    return lakes;
+  }
+
   private renderShorelineContour(viewportBounds: {
     minX: number;
     maxX: number;
     minY: number;
     maxY: number;
   }): void {
-    const segments = this.collectShorelineContourSegments(viewportBounds);
-    const polylines = segments.length > 0 ? this.buildContourPolylines(segments) : [];
-    const screenContours = polylines
-      .map(line =>
-        this.jitterClosedShoreline(
-          this.snapNearlyClosedScreenContour(this.simplifyShorelinePolyline(line, 12))
-        )
-      )
-      .filter(line => line.length >= 2);
+    // Classic mode: per-tile atlas only, skip all marching-squares work entirely.
+    if (WATER_RENDERING_MODE === 'classic') {
+      const hasWater = this.viewportHasExploredWater(viewportBounds);
+      if (hasWater) this.renderWaterTilesAsAtlasFallback(viewportBounds);
+      return;
+    }
+
+    const visibleLakes = this.getVisibleLakes(viewportBounds);
 
     this.ctx.save();
     this.ctx.lineCap = 'round';
     this.ctx.lineJoin = 'round';
 
-    const drawContourPath = (source: GridPoint[][] = screenContours): void => {
-      this.ctx.beginPath();
-      for (const simplified of source) {
-        if (simplified.length < 2) continue;
-        this.traceSmoothedScreenContour(simplified);
+    for (const lake of visibleLakes) {
+      let cache = this.cachedLakes.get(lake.id);
+
+      if (!cache) {
+        cache = {
+          shorelinePath: new Path2D(),
+          depthBands: [],
+        };
+
+        // 1. Trace Shoreline
+        const segments = this.collectShorelineContourSegments(lake.bounds, lake.tiles);
+        const polylines = segments.length > 0 ? this.buildContourPolylines(segments) : [];
+        const screenContours = polylines
+          .map(line =>
+            this.jitterClosedShoreline(
+              this.snapNearlyClosedScreenContour(this.simplifyShorelinePolyline(line, 12))
+            )
+          )
+          .filter(line => line.length >= 2);
+
+        const closedContours = screenContours
+          .filter(line => this.isClosedScreenContour(line))
+          .map(line => this.ensureCounterClockwise(line));
+
+        for (const simplified of closedContours) {
+          if (simplified.length < 2) continue;
+          this.traceSmoothedScreenContour(simplified, cache.shorelinePath);
+        }
+
+        // 2. Trace Depth Bands
+        const depthBands = [
+          { minDepth: 2, color: 'rgba(27, 101, 190, 0.17)' },
+          { minDepth: 3, color: 'rgba(21, 86, 172, 0.145)' },
+          { minDepth: 4, color: 'rgba(16, 72, 154, 0.12)' },
+          { minDepth: 5, color: 'rgba(11, 60, 136, 0.095)' },
+          { minDepth: 6, color: 'rgba(8, 50, 118, 0.075)' },
+          { minDepth: 7, color: 'rgba(6, 42, 101, 0.06)' },
+          { minDepth: 8, color: 'rgba(4, 34, 84, 0.05)' },
+        ];
+
+        for (const band of depthBands) {
+          const depthSegments = this.collectContourSegments(lake.bounds, (x, y) => {
+            if (!lake.tiles.has(`${x},${y}`)) return false;
+            const tile = this.tileMap.getTile(x, y);
+            return !!tile && tile.waterDepth >= band.minDepth;
+          });
+          if (depthSegments.length === 0) continue;
+
+          const depthContours = this.buildContourPolylines(depthSegments)
+            .map(line => this.simplifyShorelinePolyline(line, 16))
+            .filter(line => line.length >= 2 && this.isClosedScreenContour(line))
+            .map(line => this.ensureCounterClockwise(line));
+            
+          if (depthContours.length === 0) continue;
+
+          const bandPath = new Path2D();
+          for (const contour of depthContours) {
+            this.traceSmoothedScreenContour(contour, bandPath);
+          }
+          cache.depthBands.push({ minDepth: band.minDepth, path: bandPath, color: band.color });
+        }
+
+        this.cachedLakes.set(lake.id, cache);
       }
-    };
 
-    const closedContours = screenContours.filter(line => this.isClosedScreenContour(line));
-    const hasWater = this.viewportHasExploredWater(viewportBounds);
-    const branch: 'contour' | 'atlas_fallback' | 'none' =
-      closedContours.length > 0 ? 'contour' : hasWater ? 'atlas_fallback' : 'none';
-
-    this.logWaterRenderDiagIfChanged({
-      viewportBounds,
-      segmentsLen: segments.length,
-      polylinesLen: polylines.length,
-      screenContoursLen: screenContours.length,
-      closedContoursLen: closedContours.length,
-      hasWater,
-      branch,
-    });
-
-    if (closedContours.length > 0) {
-      // Per-tile atlas only as an underlay when some polylines stay open (viewport clip /
-      // simplification): fills holes. Smooth marching-squares stroke + pattern fill always
-      // run after so the vector layer stays visually on top.
-      if (hasWater && closedContours.length < screenContours.length) {
-        this.renderWaterTilesAsAtlasFallback(viewportBounds);
-      }
-
-      drawContourPath(closedContours);
+      // Draw using cached Path2D
       this.ctx.strokeStyle = 'rgba(66, 112, 42, 0.58)';
       this.ctx.lineWidth = 6;
-      this.ctx.stroke();
+      this.ctx.stroke(cache.shorelinePath);
 
-      drawContourPath(closedContours);
       if (!this.terrainTextures.useWaterTextureFill(this.ctx)) {
         this.ctx.fillStyle = '#3484d6';
       }
-      this.ctx.fill('evenodd');
+      this.ctx.fill(cache.shorelinePath, 'nonzero');
 
-      this.renderWaterDepthContourFills(viewportBounds);
-    } else if (hasWater) {
-      // Marching squares only emits edges between water and non-water. A viewport that is
-      // entirely water (lake interior) yields no segments; a clipped shore can yield open
-      // polylines only, so nothing closes. Per-tile atlas fill matches the pre-contour look.
-      this.renderWaterTilesAsAtlasFallback(viewportBounds);
+      for (const band of cache.depthBands) {
+        this.ctx.fillStyle = band.color;
+        this.ctx.fill(band.path, 'nonzero');
+      }
     }
 
     this.ctx.restore();
   }
 
-  private logWaterRenderDiagIfChanged(state: {
-    viewportBounds: { minX: number; maxX: number; minY: number; maxY: number };
-    segmentsLen: number;
-    polylinesLen: number;
-    screenContoursLen: number;
-    closedContoursLen: number;
-    hasWater: boolean;
-    branch: 'contour' | 'atlas_fallback' | 'none';
-  }): void {
-    if (!DEBUG_WATER_RENDER_LOG) return;
 
-    const { minX, maxX, minY, maxY } = state.viewportBounds;
-    let exploredWater = 0;
-    let fogWater = 0;
-    let firstExploredWater: { x: number; y: number } | null = null;
-    for (let y = minY; y <= maxY; y++) {
-      for (let x = minX; x <= maxX; x++) {
-        const tile = this.tileMap.getTile(x, y);
-        if (tile?.terrain !== 'water') continue;
-        if (tile.isExplored()) {
-          exploredWater++;
-          if (!firstExploredWater) firstExploredWater = { x, y };
-        } else {
-          fogWater++;
-        }
-      }
-    }
-
-    const sig = [
-      state.branch,
-      state.segmentsLen,
-      state.polylinesLen,
-      state.closedContoursLen,
-      state.hasWater,
-      exploredWater,
-      fogWater,
-      minX,
-      maxX,
-      minY,
-      maxY,
-      Math.round(this.camera.x),
-      Math.round(this.camera.y),
-      this.camera.zoom.toFixed(3),
-      this.canvas.width,
-      this.canvas.height,
-    ].join('|');
-
-    if (sig === this._waterRenderDiagLastSig) return;
-    this._waterRenderDiagLastSig = sig;
-
-    // eslint-disable-next-line no-console -- intentional debug aid (gated by DEBUG_WATER_RENDER_LOG)
-    console.log('[water-render]', {
-      wallMs: Math.round(performance.now()),
-      branch: state.branch,
-      contour: {
-        segments: state.segmentsLen,
-        polylines: state.polylinesLen,
-        screenContours: state.screenContoursLen,
-        closedContours: state.closedContoursLen,
-      },
-      hasWaterFlag: state.hasWater,
-      waterTilesInView: { explored: exploredWater, fog: fogWater },
-      firstExploredWater,
-      viewportTile: { minX, maxX, minY, maxY, w: maxX - minX + 1, h: maxY - minY + 1 },
-      camera: { x: this.camera.x, y: this.camera.y, zoom: this.camera.zoom },
-      canvasCssPx: { w: this.canvas.width, h: this.canvas.height },
-    });
-  }
 
   private viewportHasExploredWater(viewportBounds: {
     minX: number;
@@ -2050,42 +2082,7 @@ export class RenderSystem extends System {
     }
   }
 
-  private renderWaterDepthContourFills(viewportBounds: {
-    minX: number;
-    maxX: number;
-    minY: number;
-    maxY: number;
-  }): void {
-    const depthBands = [
-      { minDepth: 2, color: 'rgba(27, 101, 190, 0.17)' },
-      { minDepth: 3, color: 'rgba(21, 86, 172, 0.145)' },
-      { minDepth: 4, color: 'rgba(16, 72, 154, 0.12)' },
-      { minDepth: 5, color: 'rgba(11, 60, 136, 0.095)' },
-      { minDepth: 6, color: 'rgba(8, 50, 118, 0.075)' },
-      { minDepth: 7, color: 'rgba(6, 42, 101, 0.06)' },
-      { minDepth: 8, color: 'rgba(4, 34, 84, 0.05)' },
-    ];
 
-    for (const band of depthBands) {
-      const segments = this.collectContourSegments(viewportBounds, (x, y) => {
-        const tile = this.tileMap.getTile(x, y);
-        return !!tile?.isExplored() && tile.terrain === 'water' && tile.waterDepth >= band.minDepth;
-      });
-      if (segments.length === 0) continue;
-
-      const contours = this.buildContourPolylines(segments)
-        .map(line => this.simplifyShorelinePolyline(line, 16))
-        .filter(line => line.length >= 2 && this.isClosedScreenContour(line));
-      if (contours.length === 0) continue;
-
-      this.ctx.beginPath();
-      for (const contour of contours) {
-        this.traceSmoothedScreenContour(contour);
-      }
-      this.ctx.fillStyle = band.color;
-      this.ctx.fill('evenodd');
-    }
-  }
 
   /** Squared distance below this ⇒ treat polyline as closed (simplify/jitter drift). */
   private static readonly SHORELINE_NEAR_CLOSED_SQ = 2.5 * 2.5;
@@ -2094,6 +2091,35 @@ export class RenderSystem extends System {
    * `simplifyShorelinePolyline` can leave the ring slightly open in screen px; jitter
    * only runs on closed rings. Snap so nearly-closed paths qualify.
    */
+  /**
+   * Compute the signed area of a closed screen-space contour using the shoelace formula.
+   * Positive = counter-clockwise (canvas Y-down convention: positive = clockwise visually).
+   * We use this to normalise all contours to the same winding so `nonzero` fill works
+   * correctly when multiple contour rings from the same lake overlap in screen space.
+   */
+  private signedArea(points: GridPoint[]): number {
+    // For a closed ring the last point equals the first; skip it in the sum.
+    const ring = this.isClosedScreenContour(points) ? points.slice(0, -1) : points;
+    let area = 0;
+    for (let i = 0, n = ring.length; i < n; i++) {
+      const a = ring[i]!;
+      const b = ring[(i + 1) % n]!;
+      area += a.x * b.y - b.x * a.y;
+    }
+    return area / 2;
+  }
+
+  /**
+   * Return a copy of `points` with vertex order reversed (and the closing duplicate
+   * point updated) so the ring winds counter-clockwise in canvas space (positive signed area).
+   */
+  private ensureCounterClockwise(points: GridPoint[]): GridPoint[] {
+    if (this.signedArea(points) < 0) return points;
+    const ring = this.isClosedScreenContour(points) ? points.slice(0, -1) : points;
+    const reversed = ring.slice().reverse();
+    return [...reversed, { ...reversed[0]! }];
+  }
+
   private snapNearlyClosedScreenContour(points: GridPoint[]): GridPoint[] {
     if (points.length < 3) return points;
     const first = points[0]!;
@@ -2112,15 +2138,16 @@ export class RenderSystem extends System {
     return Math.abs(first.x - last.x) < 0.001 && Math.abs(first.y - last.y) < 0.001;
   }
 
-  private traceSmoothedScreenContour(points: GridPoint[]): void {
+  private traceSmoothedScreenContour(points: GridPoint[], path?: Path2D): void {
+    const target = path || this.ctx;
     const closed = this.isClosedScreenContour(points);
     const ring = closed ? points.slice(0, -1) : points;
     if (ring.length < 3) {
       const first = points[0]!;
-      this.ctx.moveTo(first.x, first.y);
+      target.moveTo(first.x, first.y);
       for (let i = 1; i < points.length; i++) {
         const p = points[i]!;
-        this.ctx.lineTo(p.x, p.y);
+        target.lineTo(p.x, p.y);
       }
       return;
     }
@@ -2160,31 +2187,31 @@ export class RenderSystem extends System {
 
     if (closed) {
       const firstCorner = corner(0);
-      this.ctx.moveTo(firstCorner.exit.x, firstCorner.exit.y);
+      target.moveTo(firstCorner.exit.x, firstCorner.exit.y);
       for (let i = 1; i < ring.length; i++) {
         const c = corner(i);
-        this.ctx.lineTo(c.entry.x, c.entry.y);
-        this.ctx.quadraticCurveTo(c.control.x, c.control.y, c.exit.x, c.exit.y);
+        target.lineTo(c.entry.x, c.entry.y);
+        target.quadraticCurveTo(c.control.x, c.control.y, c.exit.x, c.exit.y);
       }
-      this.ctx.lineTo(firstCorner.entry.x, firstCorner.entry.y);
-      this.ctx.quadraticCurveTo(
+      target.lineTo(firstCorner.entry.x, firstCorner.entry.y);
+      target.quadraticCurveTo(
         firstCorner.control.x,
         firstCorner.control.y,
         firstCorner.exit.x,
         firstCorner.exit.y
       );
-      this.ctx.closePath();
+      target.closePath();
       return;
     }
 
-    this.ctx.moveTo(ring[0]!.x, ring[0]!.y);
+    target.moveTo(ring[0]!.x, ring[0]!.y);
     for (let i = 1; i < ring.length - 1; i++) {
       const c = corner(i);
-      this.ctx.lineTo(c.entry.x, c.entry.y);
-      this.ctx.quadraticCurveTo(c.control.x, c.control.y, c.exit.x, c.exit.y);
+      target.lineTo(c.entry.x, c.entry.y);
+      target.quadraticCurveTo(c.control.x, c.control.y, c.exit.x, c.exit.y);
     }
     const last = ring[ring.length - 1]!;
-    this.ctx.lineTo(last.x, last.y);
+    target.lineTo(last.x, last.y);
   }
 
   private jitterClosedShoreline(points: GridPoint[]): GridPoint[] {
@@ -2214,15 +2241,12 @@ export class RenderSystem extends System {
     return n - Math.floor(n);
   }
 
-  private collectShorelineContourSegments(viewportBounds: {
-    minX: number;
-    maxX: number;
-    minY: number;
-    maxY: number;
-  }): ShorelineSegment[] {
-    return this.collectContourSegments(viewportBounds, (x, y) => {
-      const tile = this.tileMap.getTile(x, y);
-      return !!tile?.isExplored() && tile.terrain === 'water';
+  private collectShorelineContourSegments(
+    bounds: { minX: number; maxX: number; minY: number; maxY: number },
+    tiles: Set<string>
+  ): ShorelineSegment[] {
+    return this.collectContourSegments(bounds, (x, y) => {
+      return tiles.has(`${x},${y}`);
     });
   }
 
@@ -3768,31 +3792,41 @@ export class RenderSystem extends System {
       return this.cachedViewportBounds;
     }
 
-    // Calculate which tiles are visible in the current viewport
+    // Calculate which tiles are visible in the current viewport.
     const padding = 10; // Extra tiles to render outside viewport to avoid pop-in
 
-    // Get corners of viewport in world space
-    const topLeft = this.screenToWorld(0, 0);
-    const topRight = this.screenToWorld(this.canvas.width, 0);
-    const bottomLeft = this.screenToWorld(0, this.canvas.height);
-    const bottomRight = this.screenToWorld(this.canvas.width, this.canvas.height);
+    // In isometric projection the visible tile range is a rotated diamond, not an
+    // axis-aligned rectangle.  The extremes of gx and gy do NOT occur at the screen
+    // corners — they occur at the left/right/top/bottom edge midpoints:
+    //   gx is minimised at the left-centre of the screen  (screenX=0,  screenY=h/2)
+    //   gx is maximised at the right-centre               (screenX=w,  screenY=h/2)
+    //   gy is minimised at the top-centre                 (screenX=w/2, screenY=0)
+    //   gy is maximised at the bottom-centre              (screenX=w/2, screenY=h)
+    // Sampling only the 4 corners therefore underestimates the bounds and causes
+    // water (and other content) near the left/right screen edges to disappear.
+    // We sample all 8 points (4 corners + 4 edge midpoints) to cover the full range.
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const probes = [
+      this.screenToWorld(0, 0), // top-left corner
+      this.screenToWorld(w, 0), // top-right corner
+      this.screenToWorld(0, h), // bottom-left corner
+      this.screenToWorld(w, h), // bottom-right corner
+      this.screenToWorld(w / 2, 0), // top-centre  (gy minimum)
+      this.screenToWorld(w / 2, h), // bottom-centre (gy maximum)
+      this.screenToWorld(0, h / 2), // left-centre  (gx minimum)
+      this.screenToWorld(w, h / 2), // right-centre (gx maximum)
+    ];
 
-    // Find min/max grid coordinates
-    const minX = Math.max(
-      0,
-      Math.floor(Math.min(topLeft.x, topRight.x, bottomLeft.x, bottomRight.x)) - padding
-    );
+    const minX = Math.max(0, Math.floor(Math.min(...probes.map(p => p.x))) - padding);
     const maxX = Math.min(
       this.tileMap.width - 1,
-      Math.ceil(Math.max(topLeft.x, topRight.x, bottomLeft.x, bottomRight.x)) + padding
+      Math.ceil(Math.max(...probes.map(p => p.x))) + padding
     );
-    const minY = Math.max(
-      0,
-      Math.floor(Math.min(topLeft.y, topRight.y, bottomLeft.y, bottomRight.y)) - padding
-    );
+    const minY = Math.max(0, Math.floor(Math.min(...probes.map(p => p.y))) - padding);
     const maxY = Math.min(
       this.tileMap.height - 1,
-      Math.ceil(Math.max(topLeft.y, topRight.y, bottomLeft.y, bottomRight.y)) + padding
+      Math.ceil(Math.max(...probes.map(p => p.y))) + padding
     );
 
     // Cache the result

@@ -12,7 +12,12 @@ import { showToast, setupToastListener } from '@/ui/Toast';
 import { ConfirmDeleteDialog } from '@/ui/ConfirmDeleteDialog';
 import { audioManager } from '@/audio/AudioManager';
 import { anySaveSlotsExist, GameSaveSession } from '@/save/GameSaveSession';
-import { setRoadRenderingMode, type RoadRenderingMode } from '@/debug/debugFlags';
+import {
+  setRoadRenderingMode,
+  type RoadRenderingMode,
+  setWaterRenderingMode,
+  type WaterRenderingMode,
+} from '@/debug/debugFlags';
 import tippy from 'tippy.js';
 import 'tippy.js/dist/tippy.css';
 
@@ -38,11 +43,16 @@ type GameOptions = {
   navigator: boolean;
   soundEffects: boolean;
   roadRenderingMode: RoadRenderingMode;
+  waterRenderingMode: WaterRenderingMode;
   veganMode: boolean;
 };
 
 function normalizeRoadRenderingMode(value: unknown): RoadRenderingMode {
   return value === 'classic' ? 'classic' : 'vector';
+}
+
+function normalizeWaterRenderingMode(value: unknown): WaterRenderingMode {
+  return value === 'classic' ? 'classic' : 'smooth';
 }
 
 function loadOptions(): GameOptions {
@@ -53,6 +63,7 @@ function loadOptions(): GameOptions {
     navigator: true,
     soundEffects: true,
     roadRenderingMode: 'vector',
+    waterRenderingMode: 'smooth',
     veganMode: false,
   };
   try {
@@ -63,6 +74,7 @@ function loadOptions(): GameOptions {
         ...defaults,
         ...parsed,
         roadRenderingMode: normalizeRoadRenderingMode(parsed.roadRenderingMode),
+        waterRenderingMode: normalizeWaterRenderingMode(parsed.waterRenderingMode),
       };
     }
   } catch {}
@@ -723,11 +735,22 @@ function setupOptionsPanel(game: Game): void {
   const roadRenderingButtons = Array.from(
     document.querySelectorAll<HTMLButtonElement>('[data-road-rendering]')
   );
+  const waterRenderingButtons = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('[data-water-rendering]')
+  );
   const opts = loadOptions();
   let roadRenderingMode = opts.roadRenderingMode;
+  let waterRenderingMode = opts.waterRenderingMode;
   const syncRoadRenderingButtons = (): void => {
     for (const btn of roadRenderingButtons) {
       const active = btn.dataset.roadRendering === roadRenderingMode;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    }
+  };
+  const syncWaterRenderingButtons = (): void => {
+    for (const btn of waterRenderingButtons) {
+      const active = btn.dataset.waterRendering === waterRenderingMode;
       btn.classList.toggle('is-active', active);
       btn.setAttribute('aria-pressed', active ? 'true' : 'false');
     }
@@ -742,6 +765,9 @@ function setupOptionsPanel(game: Game): void {
   roadRenderingMode = opts.roadRenderingMode;
   setRoadRenderingMode(roadRenderingMode);
   syncRoadRenderingButtons();
+  waterRenderingMode = opts.waterRenderingMode;
+  setWaterRenderingMode(waterRenderingMode);
+  syncWaterRenderingButtons();
 
   if (!opts.debugInfo) document.getElementById('debug-info')!.style.display = 'none';
   if (!opts.buildingLabels) game.renderSystem.showBuildingLabels = false;
@@ -756,6 +782,7 @@ function setupOptionsPanel(game: Game): void {
       navigator: navigatorToggle.checked,
       soundEffects: soundEffectsToggle.checked,
       roadRenderingMode,
+      waterRenderingMode,
       veganMode: veganModeToggle.checked,
     });
 
@@ -831,6 +858,15 @@ function setupOptionsPanel(game: Game): void {
       roadRenderingMode = normalizeRoadRenderingMode(btn.dataset.roadRendering);
       setRoadRenderingMode(roadRenderingMode);
       syncRoadRenderingButtons();
+      persistAll();
+    });
+  }
+
+  for (const btn of waterRenderingButtons) {
+    btn.addEventListener('click', () => {
+      waterRenderingMode = normalizeWaterRenderingMode(btn.dataset.waterRendering);
+      setWaterRenderingMode(waterRenderingMode);
+      syncWaterRenderingButtons();
       persistAll();
     });
   }

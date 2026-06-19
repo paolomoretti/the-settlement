@@ -154,6 +154,7 @@ export class ThemeManager {
         ...(override.animation.gatherMode && { gatherMode: override.animation.gatherMode as any }),
         ...(override.animation.targetTerrain && { targetTerrain: override.animation.targetTerrain }),
         ...(override.animation.searchRadius !== undefined && { searchRadius: override.animation.searchRadius }),
+        ...(override.animation.carriedResource && { carriedResource: override.animation.carriedResource }),
       };
     }
 

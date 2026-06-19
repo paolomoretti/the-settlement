@@ -30,6 +30,12 @@ export class Tile {
    * reduced by each water production cycle. `0` means this cell cannot supply a well again.
    */
   public cellWellWaterRemaining?: number;
+  /**
+   * Vegan-mode mushroom regrow timer (sim-time epoch ms). When set and in the future, the tile
+   * is currently "picked" and hides its mushroom decor / is not pickable until `simNowMs` passes.
+   * Undefined means mushrooms are present whenever the deterministic predicate says so.
+   */
+  public mushroomPickedUntilMs?: number;
 
   constructor(
     public x: number,

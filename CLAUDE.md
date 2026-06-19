@@ -107,7 +107,8 @@ Not yet implemented: tool requirements for workers, mine food system (bread/fish
 - [Survey & cell minerals](.claude/SURVEY.md) - **Surveyor**, lazy `cellMinerals`, labels, area lock
 - [Well aquifer](.claude/WELL_AQUIFER.md) - **Lazy `cellWellWaterRemaining`**, depletion, save, auto-demolish
 - [Water fish](.claude/WATER_FISH.md) - **Lake-wide fish clusters**, fisher shore reachability, regen, saves, decorative jumps
-- [Wild rabbits & Hunter](.claude/WILDLIFE_RABBITS.md) - **WildlifeCoordinator**, spawn/wander/save, `gatherMode: wild_hunt`, ham output on return
+- [Wild rabbits & Hunter](.claude/WILDLIFE_RABBITS.md) - **WildlifeCoordinator**, spawn/wander/save, `gatherMode: wild_hunt`, ham output on return; **vegan mode** suppresses all new-rabbit spawns (existing rabbits stay)
+- [Mushrooms (vegan mode)](.claude/MUSHROOMS_VEGAN.md) - **Vegan Gatherer harvest** — deterministic mushroom dots on forest-edge tiles, 60s regrow cooldown via `Tile.mushroomPickedUntilMs`, `forest_forage` gather flow
 - [Territory & cordon vision](.claude/TERRITORY_VISION.md) - **TerritoryCoordinator**, HQ + military disks, preview band, cordon render, build/road rules, save fog
 - [Military & garrison](.claude/MILITARY.md) - **HQ soldier assembly**, march to fort, `gold_coin` promotions, armory weapon alternation, territory vs garrison
 - [Military attacks](.claude/MILITARY_ATTACKS.md) - **Enemy target selection, rank-limited attack UI, sequential duels, conquest aftermath**

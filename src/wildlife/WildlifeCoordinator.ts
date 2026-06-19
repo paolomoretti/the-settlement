@@ -8,6 +8,12 @@ import type { PathFinder } from '@/pathfinding/AStar';
 import { getSimulationNowMs } from '@/core/simulationClock';
 import { Position } from '@/components/Position';
 import type { Tile } from '@/map/Tile';
+import { themeManager } from '@/data/ThemeManager';
+
+/** Themes that suppress all new-rabbit spawns (initial seed + periodic). Hunting still works for existing rabbits. */
+function rabbitSpawningSuppressed(): boolean {
+  return themeManager.getActiveThemeName() === 'vegan';
+}
 
 export type RabbitVariant = 'white' | 'beige' | 'brown';
 
@@ -205,6 +211,11 @@ export class WildlifeCoordinator {
 
   /** After a brand-new map (HQ + initial explore), place starter rabbits and arm periodic spawns. */
   seedInitialRabbits(tileMap: TileMap, centerX: number, centerY: number): void {
+    if (rabbitSpawningSuppressed()) {
+      console.log('[Rabbits] Vegan mode active: skipping initial rabbit seed.');
+      this.scheduleNextSpawnFromNow(getSimulationNowMs());
+      return;
+    }
     // Always place 2-3 starter rabbits regardless of how large the explored area is.
     // The habitat cap only governs *ongoing* periodic spawns, not the initial population.
     const target = INITIAL_MIN + Math.floor(Math.random() * (INITIAL_MAX - INITIAL_MIN + 1));
@@ -490,6 +501,10 @@ export class WildlifeCoordinator {
    * Stops early if random search finds no free stand tile.
    */
   private trySpawnBatch(tileMap: TileMap): void {
+    if (rabbitSpawningSuppressed()) {
+      console.log('[Rabbits] Vegan mode active: skipping periodic spawn batch.');
+      return;
+    }
     // Scan all explored valid tiles once and split into forest-edge vs other.
     // This avoids the futile blind-random approach on a 1000×1000 map where only
     // a tiny fraction of tiles are explored — 96 random attempts would almost never

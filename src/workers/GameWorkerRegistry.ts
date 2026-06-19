@@ -32,6 +32,7 @@ import type {
   BuildingType,
 } from '@/types/GameData';
 import type { WildlifeCoordinator } from '@/wildlife/WildlifeCoordinator';
+import { markMushroomsPickedAt, tileHasMushrooms } from '@/world/mushroomTiles';
 
 const HQ_STREET_DISPATCH_SPACING_MS = 500;
 /** Throttle for self-healing road carriers vs stale segment / pending dispatch state. */
@@ -70,6 +71,8 @@ type GatherAnimState = {
   /** Hunter: walk to a reserved wild rabbit, brief site action, return with ham. */
   wildHunt?: boolean;
   rabbitId?: number;
+  /** Vegan gatherer: walk to a mushroom tile, brief pick, return with mushrooms (carries `ham`). */
+  forestForage?: boolean;
   digUntilMs?: number;
   /** Fisher: attempts to pick a non-empty water tile (handles races / depletion). */
   waterFishPickAttempts?: number;
@@ -1524,6 +1527,46 @@ export class GameWorkerRegistry {
               if (returnPathH.length > 0) {
                 movable.speed = spdH;
                 movable.setPath(returnPathH);
+                gather.phase = 'returning';
+              } else {
+                this.world.removeEntity(workerEntity);
+                this.cleanupAnimationWorker(workerId, gather);
+              }
+            }
+            break;
+          }
+
+          if (gather.forestForage) {
+            const bldgF = buildingEntity.getComponent(Building);
+            const bDefF = bldgF ? dataManager.getBuilding(bldgF.buildingType) : null;
+            const animF = bDefF?.animation;
+            if (!gather.terrainModified) {
+              const nowMsF = getSimulationNowMs();
+              if (gather.digUntilMs === undefined) {
+                const digSec = animF?.type === 'gather' ? (animF.digAtSiteSec ?? 2.5) : 2.5;
+                gather.digUntilMs = nowMsF + digSec * 1000;
+                workerComp.visualActivity = 'production_gather';
+                workerComp.setState('working');
+                break;
+              }
+              if (nowMsF < gather.digUntilMs) break;
+              const tileF = tileMap.getTile(gather.targetTile.x, gather.targetTile.y);
+              if (tileF) markMushroomsPickedAt(tileF, nowMsF);
+              gather.terrainModified = true;
+              const carriedF =
+                animF?.type === 'gather' && animF.carriedResource ? animF.carriedResource : 'ham';
+              workerComp.pickUpResource(carriedF, 'overhead');
+              workerComp.setState('carrying');
+              workerComp.visualActivity = 'general';
+              const spdF = animF?.type === 'gather' ? animF.workerSpeed : 1.1;
+              const returnPathF = pathFinder.findOffRoadPath(
+                new Position(Math.floor(workerPos.x), Math.floor(workerPos.y)),
+                new Position(gather.entranceTile.x, gather.entranceTile.y),
+                tileMap
+              );
+              if (returnPathF.length > 0) {
+                movable.speed = spdF;
+                movable.setPath(returnPathF);
                 gather.phase = 'returning';
               } else {
                 this.world.removeEntity(workerEntity);
@@ -3177,7 +3220,8 @@ export class GameWorkerRegistry {
     const waterGather = anim.gatherMode === 'water_depletion';
     const mineSiteGather = anim.gatherMode === 'mine_site';
     const wildHunt = anim.gatherMode === 'wild_hunt';
-    if (rockGather || waterGather || mineSiteGather || wildHunt) {
+    const forestForage = anim.gatherMode === 'forest_forage';
+    if (rockGather || waterGather || mineSiteGather || wildHunt || forestForage) {
       if (!production) return;
       const departBuffer = (anim.walkLeadSec ?? 0) + (anim.digAtSiteSec ?? 0) + 5;
       if (departBuffer > 0 && production.timer < production.productionTime - departBuffer) return;
@@ -3198,7 +3242,7 @@ export class GameWorkerRegistry {
       anim.searchRadius;
 
     const gatherExclude = new Set(this.reservedTreeTiles);
-    if (rockGather || waterGather || mineSiteGather || wildHunt) {
+    if (rockGather || waterGather || mineSiteGather || wildHunt || forestForage) {
       for (let dy = 0; dy < building.height; dy++) {
         for (let dx = 0; dx < building.width; dx++) {
           gatherExclude.add(`${pos.x + dx},${pos.y + dy}`);
@@ -3296,6 +3340,33 @@ export class GameWorkerRegistry {
         path = huntPick.path;
         huntRabbitId = huntPick.rabbit.id;
       }
+    } else if (forestForage) {
+      const simNow = getSimulationNowMs();
+      const candidates: { x: number; y: number; d: number }[] = [];
+      for (let dy = -gatherRadius; dy <= gatherRadius; dy++) {
+        for (let dx = -gatherRadius; dx <= gatherRadius; dx++) {
+          const cx = entranceX + dx;
+          const cy = entranceY + dy;
+          const cell = `${cx},${cy}`;
+          if (gatherExclude.has(cell)) continue;
+          const t = tileMap.getTile(cx, cy);
+          if (!tileHasMushrooms(t, tileMap, simNow)) continue;
+          candidates.push({ x: cx, y: cy, d: Math.abs(dx) + Math.abs(dy) });
+        }
+      }
+      candidates.sort((a, b) => a.d - b.d);
+      for (const c of candidates) {
+        const p = pathFinder.findOffRoadPath(
+          new Position(entranceX, entranceY),
+          new Position(c.x, c.y),
+          tileMap
+        );
+        if (p.length > 0 && p.length <= maxWalkCells) {
+          sourceTile = { x: c.x, y: c.y };
+          path = p;
+          break;
+        }
+      }
     } else {
       const candidates = tileMap.listNearbyTerrainSorted(
         entranceX,
@@ -3324,7 +3395,9 @@ export class GameWorkerRegistry {
     }
     building.outOfMapResources = false;
 
-    if (!wildHunt) {
+    // Hunt (rabbit reservation) and forage (mushroom cooldown) don't need the tree-tile reservation;
+    // foresters/rock/water do — same tile can't be claimed by two animation workers concurrently.
+    if (!wildHunt && !forestForage) {
       this.reservedTreeTiles.add(`${sourceTile.x},${sourceTile.y}`);
     }
 
@@ -3334,10 +3407,20 @@ export class GameWorkerRegistry {
 
     const workerComp = worker.getComponent(Worker);
     if (workerComp) {
-      workerComp.pickUpResource(
-        (buildingDef.requiredTool as string) ||
-          (rockGather ? 'pickaxe' : waterGather ? 'fishing_rod' : wildHunt ? 'bow' : 'axe')
-      );
+      const tool = (buildingDef.requiredTool as string) || null;
+      if (tool) {
+        workerComp.pickUpResource(tool);
+      } else if (rockGather) {
+        workerComp.pickUpResource('pickaxe');
+      } else if (waterGather) {
+        workerComp.pickUpResource('fishing_rod');
+      } else if (wildHunt) {
+        workerComp.pickUpResource('bow');
+      } else if (forestForage) {
+        // Gatherer works by hand — no tool overhead. Skip pickUpResource so nothing is shown.
+      } else {
+        workerComp.pickUpResource('axe');
+      }
       workerComp.visualActivity = 'production_gather';
     }
 
@@ -3362,6 +3445,7 @@ export class GameWorkerRegistry {
       mineGather: mineSiteGather,
       wildHunt,
       rabbitId: huntRabbitId,
+      forestForage,
     });
   }
 
@@ -3541,7 +3625,8 @@ export class GameWorkerRegistry {
     if (state.kind === 'gather') {
       if (state.wildHunt && state.rabbitId != null) {
         this.world.getWildlife().releaseHuntReservation(state.rabbitId);
-      } else {
+      } else if (!state.forestForage) {
+        // Forage doesn't reserve a tree tile (mushroom regrow cooldown handles re-claim races).
         this.reservedTreeTiles.delete(`${state.targetTile.x},${state.targetTile.y}`);
       }
     }

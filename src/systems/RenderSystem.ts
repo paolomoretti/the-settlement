@@ -33,6 +33,11 @@ import {
   paintDonkeySprite,
 } from '@/rendering/WorkerSpritePainter';
 import { RABBIT_JUMP_DURATION_MS, type WildRabbit } from '@/wildlife/WildlifeCoordinator';
+import {
+  mushroomCapColor,
+  mushroomDotsForTile,
+  tileHasMushrooms,
+} from '@/world/mushroomTiles';
 import { territoryKey } from '@/map/TerritoryCoordinator';
 import { createChimneySmoke, type ChimneySmoke } from '@/rendering/chimneySmoke';
 import { createLoFiFire, type LoFiFire } from '@/rendering/loFiFire';
@@ -4194,6 +4199,41 @@ export class RenderSystem extends System {
       this.ctx.stroke();
       this.ctx.restore();
     }
+
+    if (themeManager.getActiveThemeName() === 'vegan') {
+      this.renderMushroomDecor(tile);
+    }
+  }
+
+  /**
+   * Vegan-mode ground decor: tiny mushroom dots on tiles bordering forest. Cheap vector draw,
+   * skipped when the tile is on regrow cooldown or fails the deterministic presence predicate.
+   */
+  private renderMushroomDecor(tile: Tile): void {
+    const simNow = getSimulationNowMs();
+    if (!tileHasMushrooms(tile, this.tileMap, simNow)) return;
+    const dots = mushroomDotsForTile(tile.x, tile.y);
+    const tw = this.iso.tileWidth / 2;
+    const th = this.iso.tileHeight / 2;
+    const center = this.iso.gridToScreen(tile.x, tile.y);
+    this.ctx.save();
+    for (const dot of dots) {
+      const screenX = center.x + (dot.dx - dot.dy) * tw;
+      const screenY = center.y + (dot.dx + dot.dy) * th;
+      // Stalk: short off-white rounded rect under the cap.
+      this.ctx.fillStyle = '#f3ead0';
+      this.ctx.fillRect(screenX - 1, screenY, 2, 3);
+      // Cap: solid colored half-circle dome with a darker rim.
+      this.ctx.fillStyle = mushroomCapColor(dot.cap);
+      this.ctx.beginPath();
+      this.ctx.arc(screenX, screenY, dot.capRadius, Math.PI, 2 * Math.PI);
+      this.ctx.closePath();
+      this.ctx.fill();
+      this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
+      this.ctx.lineWidth = 0.6;
+      this.ctx.stroke();
+    }
+    this.ctx.restore();
   }
 
   private renderFishJumps(): void {

@@ -29,6 +29,8 @@ export interface BuildingThemeOverride {
     gatherMode?: string;
     targetTerrain?: string[];
     searchRadius?: number;
+    /** Resource sprite shown overhead while the worker carries the harvest back. */
+    carriedResource?: ResourceType;
   };
   /** Override required tool (set to undefined to remove tool requirement) */
   requiredTool?: ResourceType | null;
@@ -76,9 +78,10 @@ export const VeganTheme: ThemeOverrides = {
         outputs: { ham: 1 }, // Still uses 'ham' internally, displays as 'mushrooms'
       },
       animation: {
-        gatherMode: 'forest_forage', // Never runs out, as long as trees exist
-        targetTerrain: ['grass', 'forest'], // Search for forest areas
+        gatherMode: 'forest_forage', // Pick mushroom tiles near trees (see mushroomTiles.ts)
+        targetTerrain: ['grass', 'forest'], // Search for forest-edge grass
         searchRadius: 16, // Keep same search radius
+        carriedResource: 'ham', // Worker carries the mushroom icon (ham is themed → mushrooms)
       },
     },
     pig_farm: {

@@ -1122,6 +1122,7 @@ export class TileMap {
     const waterFishClusters: { r: number; m: number; cells: string[] }[] = [];
     const cellMinerals: { x: number; y: number; c: number; i: number; g: number; r: number }[] = [];
     const wellWater: { x: number; y: number; w: number }[] = [];
+    const mushroomPicked: { x: number; y: number; u: number }[] = [];
 
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
@@ -1160,6 +1161,10 @@ export class TileMap {
         if (tile.cellWellWaterRemaining !== undefined) {
           wellWater.push({ x, y, w: tile.cellWellWaterRemaining });
         }
+
+        if (tile.mushroomPickedUntilMs !== undefined) {
+          mushroomPicked.push({ x, y, u: tile.mushroomPickedUntilMs });
+        }
       }
     }
 
@@ -1195,6 +1200,7 @@ export class TileMap {
       waterFishClusters,
       cellMinerals,
       wellWater,
+      mushroomPicked,
     };
   }
 
@@ -1329,6 +1335,15 @@ export class TileMap {
         const tile = map.getTile(entry.x, entry.y);
         if (tile) {
           tile.cellWellWaterRemaining = entry.w;
+        }
+      }
+    }
+
+    if (data.mushroomPicked && Array.isArray(data.mushroomPicked)) {
+      for (const entry of data.mushroomPicked as { x: number; y: number; u: number }[]) {
+        const tile = map.getTile(entry.x, entry.y);
+        if (tile) {
+          tile.mushroomPickedUntilMs = entry.u;
         }
       }
     }

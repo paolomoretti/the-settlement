@@ -14,6 +14,7 @@ import type { TileMap } from '@/map/TileMap';
 import type { PathFinder } from '@/pathfinding/AStar';
 import { fisherHasReachableFish } from '@/map/fisherFishProbe';
 import type { WildlifeCoordinator } from '@/wildlife/WildlifeCoordinator';
+import { tileHasMushrooms } from '@/world/mushroomTiles';
 import { BuildingType, ResourceType } from '@/types/GameData';
 import type { ProductionPriorityState } from '@/components/Production';
 
@@ -375,7 +376,7 @@ export class ProductionSystem extends System {
         }
       }
 
-      // Forest forage: check for nearby trees (never runs out as long as trees exist)
+      // Forest forage: check for mushroom-bearing tiles near trees (depletes briefly when picked).
       if (forestForageGather && pos && building.animationWorkerId == null) {
         const now = getSimulationNowMs();
         if (now - building.lastHuntRabbitProbeAt >= 500) {
@@ -388,20 +389,17 @@ export class ProductionSystem extends System {
           const animSearch = gatherAnim?.searchRadius ?? 16;
           const gatherRadius = buildingDef.production?.maxGatherRadius ?? animSearch;
 
-          // Check for forest/grass tiles with trees nearby
           const tileMap = this.getTileMap();
-          let foundForest = false;
-          for (let dy = -gatherRadius; dy <= gatherRadius && !foundForest; dy++) {
-            for (let dx = -gatherRadius; dx <= gatherRadius && !foundForest; dx++) {
-              const checkX = entranceX + dx;
-              const checkY = entranceY + dy;
-              const tile = tileMap.getTile(checkX, checkY);
-              if (tile && (tile.terrain === 'forest' || tile.terrain === 'grass')) {
-                foundForest = true;
+          let foundMushrooms = false;
+          for (let dy = -gatherRadius; dy <= gatherRadius && !foundMushrooms; dy++) {
+            for (let dx = -gatherRadius; dx <= gatherRadius && !foundMushrooms; dx++) {
+              const t = tileMap.getTile(entranceX + dx, entranceY + dy);
+              if (tileHasMushrooms(t, tileMap, now)) {
+                foundMushrooms = true;
               }
             }
           }
-          building.outOfMapResources = !foundForest;
+          building.outOfMapResources = !foundMushrooms;
         }
       }
 

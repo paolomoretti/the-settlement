@@ -40,6 +40,16 @@ Wild rabbits are lightweight world objects (not ECS entities): they persist in `
 - `getSaveData` includes `wildlife: wildlife.serialize()` (rabbit list, `nextRabbitId`, `nextSpawnAttemptAtMs`).
 - `loadSaveData` calls `deserialize`; missing key uses `reset()` + `onLoadedLegacySave()`.
 
+## Vegan mode
+
+When `themeManager.getActiveThemeName() === 'vegan'`, the Hunter's Hut is themed into the **Gatherer** (mushrooms instead of rabbits — see [MUSHROOMS_VEGAN.md](./MUSHROOMS_VEGAN.md)) and the rabbit pipeline is suppressed:
+
+- **`seedInitialRabbits`** early-returns with no placements on a new vegan game — the world starts with **zero rabbits**.
+- **`trySpawnBatch`** early-returns on every periodic tick, so no rabbits are ever added in vegan mode (the soft per-habitat cap is moot because the gatherer never culls them).
+- **Existing rabbits** (from a save that predates vegan toggle, or from a player toggling vegan on mid-game) are **kept**. They continue to wander forever; nothing reduces their population in vegan mode. The user explicitly accepted this trade-off — no lifespan field is needed because no new rabbits ever spawn.
+
+Disabling vegan re-arms both the initial seed (next new game only) and the periodic batches.
+
 ## Art note
 
 Rabbits use **`RenderSystem.renderWildRabbit`**: no stroke — scaled ~**0.7**; **elliptical body**; **hind feet** as small rotated rects (kick only while **jumping**); **head + ears + eyes + nose** in a local frame rotated **±45°** with **nose below the eyes** and offset sideways (`noseSide` vs `tailOnRight`); ears tight; **tail** as overlapping circles; **head** mirrors on a timer; **jump** arc unchanged. Replace with sprites later if needed.
